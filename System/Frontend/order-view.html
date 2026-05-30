@@ -1254,7 +1254,11 @@
     function onAnimDone(finalStep, srcs) {
       _mascotCurrentStep = finalStep;
       _mascotAnimLock    = false;
-      if (_mascotPendingStep !== null && _mascotPendingStep !== finalStep) {
+      // เดินหน้าเท่านั้น: ทิ้ง pending ที่เป็นสถานะเท่าเดิม/ถอยหลัง เพื่อกัน animation เล่นย้อนกลับ
+      if (_mascotPendingStep !== null && _mascotPendingStep <= finalStep) {
+        _mascotPendingStep = null;
+      }
+      if (_mascotPendingStep !== null) {
         var next = _mascotPendingStep;
         _mascotPendingStep = null;
         _mascotAnimLock = true;
@@ -1272,7 +1276,7 @@
 
     /* Fast path: mascot already popped-in and srcs cached → no reset needed */
     if (_mascotCurrentStep >= 0 && _mascotSrcs) {
-      if (targetStep === _mascotCurrentStep) return; // already there
+      if (targetStep <= _mascotCurrentStep) return; // อยู่ที่/เลยเป้าหมายแล้ว — กันเล่นย้อนกลับ
       _mascotAnimLock    = true;
       _mascotPendingStep = null;
       var fromStep = _mascotCurrentStep;
@@ -1616,14 +1620,22 @@
     _trackFallbackTimer = setTimeout(function () {
       _trackFallbackTimer = null;
       if (_mascotCurrentStep < stepIndex) {
-        _mascotAnimLock    = false;
-        _mascotPendingStep = null;
-        _playMascotAnimation(stepIndex);
+        if (_mascotAnimLock) {
+          // มี animation กำลังเล่นอยู่จริง — ห้ามตัด lock ทิ้ง (จะทำให้เล่นซ้อน/ย้อนกลับ)
+          // ฝากเป้าหมายไว้ใน queue ให้ sequence ปัจจุบัน drain ต่อเอง
+          if (_mascotPendingStep === null || _mascotPendingStep < stepIndex) {
+            _mascotPendingStep = stepIndex;
+          }
+        } else {
+          _playMascotAnimation(stepIndex);
+        }
       }
     }, 8000);
 
     callRpc('getCarrierTrackingRpc', _currentToken, trackNum0, td.carrier_id || '')
       .then(function(res) {
+        // API ตอบแล้ว → ยกเลิก fallback timer กันไม่ให้ยิง animation ซ้ำตอนใกล้ 8 วิ
+        if (_trackFallbackTimer) { clearTimeout(_trackFallbackTimer); _trackFallbackTimer = null; }
         if (res && res.events && res.events.length && res.source !== 'no_key' && res.source !== 'invalid_token') {
           // อัปเดต mascot animation ตาม AfterShip tag — mascot อยู่ที่ step 0 อยู่แล้ว จึง animate ไปตำแหน่งที่ถูกต้อง
           if (res.tag === 'Delivered') {
@@ -1663,7 +1675,8 @@
         }
       })
       .catch(function() {
-        // API error → animate mascot ไป stepIndex ที่ถูกต้อง แล้วแสดง static timeline
+        // API error → ยกเลิก fallback timer แล้ว animate mascot ไป stepIndex ที่ถูกต้อง
+        if (_trackFallbackTimer) { clearTimeout(_trackFallbackTimer); _trackFallbackTimer = null; }
         _playMascotAnimation(stepIndex);
         timelineEl.innerHTML = _buildStaticTimeline(order);
       });
