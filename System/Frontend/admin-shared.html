@@ -1,0 +1,856 @@
+<!-- ===== ADMIN SHARED COMPONENT (v2) ===== -->
+<!-- Include in each admin HTML file via:  <?!= include('admin-shared') ?>  -->
+<!-- Place early in <body>, after: <script>window._EXEC_URL='<?!= execUrl ?>';</script> -->
+<style>
+/* ===== ROOT & LAYOUT ===== */
+:root { --bg:#f6f7f9; --panel:#fff; --muted:#6b7280; --border:#e5e7eb; --accent:#111827; --radius:16px; }
+html, body { height:100%; }
+body { background:var(--bg); font-family:"Noto Sans Thai","Zen Maru Gothic",ui-sans-serif,system-ui,sans-serif; }
+body, button, input, textarea, select { font-family:"Noto Sans Thai","Zen Maru Gothic",ui-sans-serif,system-ui,sans-serif; letter-spacing:normal; word-spacing:normal; text-transform:none; font-variant:normal; }
+.app { display:grid; grid-template-columns:280px 1fr; min-height:100%; }
+@media (max-width:991.98px) { .app { grid-template-columns:1fr; } .sidebar { position:sticky; top:0; z-index:1030; } }
+
+/* ===== SIDEBAR ===== */
+.sidebar { background:#fff; border-right:1px solid var(--border); display:flex; flex-direction:column; }
+.sidebar .brand {
+  min-height:68px;
+  padding:14px 18px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  border-bottom:1px solid var(--border);
+}
+.sidebar .brand #brandLogo,
+.sidebar .brand .brand-logo-fallback {
+  width:40px !important;
+  height:40px !important;
+  border-radius:50%;
+  border:1px solid var(--border);
+  background:#f3f4f6;
+  color:#94a3b8;
+  flex-shrink:0;
+}
+.sidebar .brand #brandLogo { object-fit:cover !important; display:none; }
+.sidebar .brand .brand-logo-fallback { display:none; align-items:center; justify-content:center; font-size:1rem; }
+.sidebar .brand > div {
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:2px;
+}
+.sidebar .brand #brandName {
+  color:#0f172a;
+  font-size:.98rem;
+  font-weight:800;
+  line-height:1.18;
+  letter-spacing:0;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.sidebar .brand .small {
+  color:#64748b !important;
+  font-size:.82rem;
+  line-height:1.2;
+}
+.side-nav { padding:10px; flex:1; }
+.side-nav .link {
+  position:relative;
+  display:flex;
+  gap:10px;
+  padding:10px 12px;
+  border-radius:12px;
+  color:#111827;
+  text-decoration:none;
+  font-size:.92rem;
+  align-items:center;
+  cursor:pointer;
+  transition:background .16s ease,color .16s ease,transform .12s ease;
+}
+.side-nav .link:hover { background:#f1f5f9; }
+.side-nav .link:active { transform:translateY(1px); }
+.side-nav .link.active { background:#111827; color:#fff; }
+.side-nav .link.is-loading {
+  background:#f8fafc;
+  color:#111827;
+  pointer-events:none;
+}
+.side-nav .link.is-loading::after {
+  content:'';
+  width:13px;
+  height:13px;
+  margin-left:auto;
+  border:2px solid #d1d5db;
+  border-top-color:#111827;
+  border-radius:50%;
+  animation:plSpin .75s linear infinite;
+}
+.side-nav .link.active.is-loading {
+  background:#111827;
+  color:#fff;
+}
+.side-nav .link.active.is-loading::after {
+  border-color:rgba(255,255,255,.35);
+  border-top-color:#fff;
+}
+.sidebar-footer { padding:12px 14px; border-top:1px solid var(--border); flex-shrink:0; }
+.btn-logout { display:flex; align-items:center; gap:8px; width:100%; padding:9px 12px; border:none; background:transparent; color:#b91c1c; font-size:.88rem; font-weight:600; border-radius:10px; cursor:pointer; }
+.btn-logout:hover { background:#fff5f5; }
+
+/* ===== TOPBAR ===== */
+.topbar { position:sticky; top:0; z-index:100; background:#fff; border-bottom:1px solid var(--border); }
+.topbar .wrap { display:flex; align-items:center; justify-content:space-between; padding:10px 16px; flex-wrap:wrap; gap:8px; }
+
+/* ===== PANEL ===== */
+.panel { background:#fff; border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 10px 30px rgba(0,0,0,.04); }
+
+/* ===== HUD TOAST ===== */
+#hud { position:fixed; left:12px; bottom:12px; z-index:2000; background:#111827; color:#fff; border-radius:12px; padding:10px 14px; display:none; align-items:center; gap:8px; min-width:180px; max-width:360px; }
+#hud .spinner-border { width:1rem; height:1rem; border-width:.15rem; flex-shrink:0; }
+#hud.ok { background:#14532d; } #hud.err { background:#7f1d1d; }
+
+/* ===== UTILITIES ===== */
+.pill { border-radius:999px; }
+
+/* ===== PAGE LOADER ===== */
+#pageLoader { position:fixed; inset:0; z-index:9999; background:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; transition:transform .65s cubic-bezier(.87,0,.13,1); will-change:transform; }
+#pageLoader.is-done { transform:translateY(-100%); pointer-events:none; }
+#plSpinner { width:36px; height:36px; border-radius:50%; border:3px solid #e5e7eb; border-top-color:#6b7280; animation:plSpin .75s linear infinite; }
+@keyframes plSpin { to { transform:rotate(360deg); } }
+#plLabel { font-size:13px; color:#9ca3af; letter-spacing:.04em; }
+
+/* ===== BRAND SKELETON ===== */
+.brand-skeleton { min-width:90px; height:13px; border-radius:4px; background:linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%); background-size:200% 100%; font-size:0 !important; animation:shimmer 1.2s infinite; }
+
+/* ===== SKELETON ROWS ===== */
+.skel { position:relative; overflow:hidden; background:#e5e7eb; border-radius:6px; height:14px; }
+.skel.lg { height:18px; }
+.skel.pill { height:22px; border-radius:999px; width:72px; }
+.skel::after { content:''; position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.6) 50%,rgba(255,255,255,0) 100%); animation:shimmer 1.25s infinite; }
+@keyframes shimmer { 100% { transform:translateX(100%); } }
+
+/* ===== EMPTY STATE ===== */
+.empty-state { text-align:center; padding:3rem 1rem; color:var(--muted); }
+.empty-state > i { font-size:2.5rem; display:block; margin-bottom:.75rem; opacity:.4; }
+.empty-state-cta { display:inline-flex; align-items:center; }
+.empty-state-cta i { font-size:.875rem !important; display:inline !important; opacity:1 !important; margin-bottom:0 !important; }
+
+/* ===== ADMIN TABLE (unified list density) ===== */
+.admin-list-table { margin-bottom:0; }
+.admin-list-table thead th,
+.admin-table th,
+.gift-table th,
+.promo-table th,
+.user-table th {
+  font-size:.82rem !important;
+  color:#64748b !important;
+  font-weight:700 !important;
+  border-bottom:1px solid var(--border) !important;
+  padding:12px 10px !important;
+  vertical-align:middle !important;
+  white-space:nowrap;
+}
+.admin-list-table tbody td,
+.admin-table td,
+.gift-table td,
+.promo-table td,
+.user-table td {
+  font-size:.875rem !important;
+  color:#0f172a;
+  padding:12px 10px !important;
+  vertical-align:middle !important;
+  border-bottom:1px solid var(--border);
+}
+.admin-list-table tbody tr { transition:background .12s ease; }
+.admin-list-table tbody tr:hover { background:#f8fafc; }
+.admin-main-text { color:#0f172a; font-size:.92rem; font-weight:700; line-height:1.35; }
+.admin-sub-text { color:#64748b; font-size:.8rem; line-height:1.45; font-weight:400; }
+.admin-cell-center { text-align:center !important; }
+.admin-cell-end { text-align:right !important; }
+.admin-muted-dash { color:#94a3b8; font-size:.8rem; font-weight:600; }
+.admin-tag-wrap { display:flex; align-items:center; justify-content:center; gap:4px; flex-wrap:wrap; min-width:0; }
+
+/* ===== STATUS BADGES (unified) ===== */
+.admin-chip,
+.admin-tag,
+.admin-status,
+.admin-stock,
+.status-badge,
+.badge-status,
+.stock-chip,
+.badge-soft,
+.target-tag {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  min-height:24px;
+  padding:0 .6rem;
+  border-radius:999px;
+  font-size:.72rem;
+  font-weight:700;
+  line-height:1;
+  letter-spacing:0;
+  white-space:nowrap;
+  vertical-align:middle;
+  margin:0;
+}
+.admin-tag,
+.target-tag,
+.badge-soft { background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; }
+.admin-status i,
+.admin-stock i,
+.admin-tag i { font-size:.68rem; line-height:1; }
+.admin-status.active,
+.status-badge.active,
+.badge-status.active,
+.badge-active    { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; }
+.admin-status.scheduled,
+.status-badge.scheduled,
+.badge-status.scheduled,
+.badge-scheduled { background:#eff6ff; color:#0369a1; border:1px solid #bae6fd; }
+.admin-status.expired,
+.status-badge.expired,
+.badge-status.expired,
+.badge-expired   { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+.admin-status.disabled,
+.status-badge.disabled,
+.badge-status.disabled,
+.badge-disabled  { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+.admin-status.unpaid,
+.status-badge.unpaid,
+.badge-status.unpaid    { background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
+.admin-status.paid,
+.status-badge.paid,
+.badge-status.paid      { background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe; }
+.admin-status.approved,
+.status-badge.approved,
+.badge-status.approved  { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; }
+.admin-status.shipped,
+.status-badge.shipped,
+.badge-status.shipped   { background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; }
+.admin-status.delivered,
+.status-badge.delivered,
+.badge-status.delivered { background:#d1fae5; color:#065f46; border:1px solid #6ee7b7; }
+.admin-status.rejected,
+.status-badge.rejected,
+.badge-status.rejected  { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+/* Backward-compat: badge-status + badge-{state} classes still work */
+.badge-status.badge-active    { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; }
+.badge-status.badge-scheduled { background:#eff6ff; color:#0369a1; border:1px solid #bae6fd; }
+.badge-status.badge-expired   { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+.badge-status.badge-disabled  { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+
+/* ===== STOCK CHIPS (unified) ===== */
+.admin-stock.s-ok,
+.stock-chip.s-ok   { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; }
+.admin-stock.s-low,
+.stock-chip.s-low  { background:#fff7ed; color:#c2410c; border:1px solid #fed7aa; }
+.admin-stock.s-zero,
+.stock-chip.s-zero { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+.admin-stock.s-inf,
+.stock-chip.s-inf  { background:#f8fafc; color:#64748b; border:1px solid #e2e8f0; }
+.admin-stock.s-on,
+.stock-chip.s-on   { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; }
+.admin-stock.s-off,
+.stock-chip.s-off  { background:#f8fafc; color:#64748b; border:1px solid #e2e8f0; }
+
+/* ===== ROW ACTIONS (unified product/gift/promotion controls) ===== */
+.admin-actions { display:inline-flex; align-items:center; justify-content:flex-end; gap:6px; white-space:nowrap; }
+.admin-action-btn { width:34px; height:34px; padding:0; border-radius:999px; border:1px solid #cbd5e1; background:#fff; color:#475569; display:inline-flex; align-items:center; justify-content:center; line-height:1; transition:background .15s,color .15s,border-color .15s,box-shadow .15s; }
+.admin-action-btn i { font-size:.95rem; line-height:1; }
+.admin-action-btn:hover { background:#f8fafc; border-color:#94a3b8; color:#111827; }
+.admin-action-btn:disabled, .admin-action-btn.disabled { opacity:.45; pointer-events:none; }
+.admin-action-btn.is-toggle-on { color:#475569; }
+.admin-action-btn.is-toggle-off { color:#64748b; background:#f8fafc; }
+.admin-action-btn.is-danger { color:#e11d48; border-color:#fecdd3; }
+.admin-action-btn.is-danger:hover { color:#be123c; background:#fff1f2; border-color:#fb7185; }
+
+/* ===== PAGINATION BAR ===== */
+.pg-bar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; padding:10px 16px; border-top:1px solid var(--border); font-size:.875rem; }
+.pg-bar .pg-info { color:var(--muted); font-size:.8rem; }
+
+/* ===== FILTER TABS (order/print-order style) ===== */
+.filter-tab { display:inline-flex; align-items:center; gap:5px; padding:5px 12px; border:1.5px solid var(--border); border-radius:999px; font-size:.8rem; font-weight:500; background:#fff; color:#374151; cursor:pointer; white-space:nowrap; transition:background .15s,color .15s,border-color .15s; }
+.filter-tab:hover { background:#f3f4f6; }
+.filter-tab.active { background:#111827; color:#fff; border-color:#111827; }
+
+/* ===== SEARCH PANEL ===== */
+.search-panel { background:#fff; border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 10px 30px rgba(0,0,0,.04); padding:12px 16px; margin-bottom:16px; }
+.searchbox { border-left:0 !important; }
+.searchbox:focus { box-shadow:none; border-color:#ced4da; }
+</style>
+
+<!-- Page Loader -->
+<div id="pageLoader"><div id="plSpinner"></div><div id="plLabel">กำลังเตรียมระบบ…</div></div>
+<!-- HUD Toast -->
+<div id="hud"><span class="spinner-border" id="hudSpinner"></span><span id="hudText">…</span></div>
+
+<script>
+/* ============================================================
+ * [SHARED-ADMIN-UX v2]
+ * Provides: GAS_ENV, ADMIN_SESSION_KEY, callRpc, _rpc,
+ *   _getAdminToken, _setAdminToken, _clearAdminToken, _nav, _redirectToLogin, _initAuth,
+ *   _dismissPageLoader, showHUD, hideHUD, MSG, _RPC_ERR_MAP,
+ *   translateRpcError, _setButtonBusy, withButtonLoading,
+ *   callRpcWithFeedback, confirmDanger, showFormError,
+ *   _paginate, escHtml, escAttr, safeUrl, fmtDateTime, _setupAdminPage
+ * ============================================================ */
+var GAS_ENV = !!(window.google && window.google.script && window.google.script.run);
+var ADMIN_SESSION_KEY = 'ADMIN_SESSION_V1';
+var _hudTimer = null;
+
+/* ---------- RPC core ---------- */
+function callRpc(method) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  return new Promise(function(resolve, reject) {
+    if (!GAS_ENV) { reject(new Error('ต้องเปิดผ่าน GAS Web App')); return; }
+    var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+    runner[method].apply(runner, args);
+  });
+}
+
+/* ---------- Auth helpers ---------- */
+/* Token is stored in localStorage so admin pages opened in another tab keep the
+   same authenticated session. Keep sessionStorage cleanup for older builds. */
+function _getAdminToken() {
+  return localStorage.getItem(ADMIN_SESSION_KEY) || '';
+}
+function _setAdminToken(token) {
+  localStorage.setItem(ADMIN_SESSION_KEY, token);
+  try { sessionStorage.removeItem(ADMIN_SESSION_KEY); } catch(_) {}
+}
+function _clearAdminToken() {
+  localStorage.removeItem(ADMIN_SESSION_KEY);
+  try { sessionStorage.removeItem(ADMIN_SESSION_KEY); } catch(_) {}
+}
+function _nav(url) { try { window.top.location.href = url; } catch(_) { window.location.href = url; } }
+function _navReplace(url) { try { window.top.location.replace(url); } catch(_) { window.location.replace(url); } }
+
+function _adminPageUrl(page) {
+  var p = String(page || '');
+  var base = (window._EXEC_URL || '').startsWith('http') ? window._EXEC_URL : '';
+  if (base) return base + '?page=' + encodeURIComponent(p);
+  var localMap = {
+    editstore: 'edit-store.html',
+    product: 'product.html',
+    order: 'order.html',
+    'print-order': 'print-order.html',
+    shipping: 'shipping-page.html',
+    payment: 'payment.html',
+    promotion: 'promotion.html',
+    gift: 'gift.html',
+    user: 'user.html',
+    legal: 'legal.html',
+    system: 'system.html'
+  };
+  return localMap[p] || (p + '.html');
+}
+
+function _showPageNavigating(label) {
+  var loader = document.getElementById('pageLoader');
+  var text = document.getElementById('plLabel');
+  if (text) text.textContent = label || 'กำลังเปิดหน้า…';
+  if (loader) {
+    loader.classList.remove('is-done');
+    loader.style.pointerEvents = 'auto';
+  }
+}
+
+function _redirectToLogin() {
+  _clearAdminToken();
+  var base = (window._EXEC_URL || '').startsWith('http') ? window._EXEC_URL : null;
+  var loginUrl = base ? (base + '?page=login') : 'login.html';
+  if (document.getElementById('sessionExpiredOverlay')) return;
+  var ov = document.createElement('div');
+  ov.id = 'sessionExpiredOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#f3f4f6;display:flex;align-items:center;justify-content:center;padding:24px';
+  ov.innerHTML = '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:18px;width:100%;max-width:420px;box-shadow:0 24px 70px rgba(15,23,42,.12);overflow:hidden">'
+    + '<div style="padding:1rem 1.25rem;border-bottom:1px solid #eef2f7;display:flex;align-items:center;gap:12px">'
+    + '<span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:#ef4444">'
+    + '<i class="bi bi-exclamation-triangle-fill" style="font-size:1rem;line-height:1;display:block"></i></span>'
+    + '<div style="text-align:left;min-width:0">'
+    + '<div style="color:#0f172a;font-weight:800;font-size:.95rem;line-height:1.25">เซสชันหมดอายุ</div>'
+    + '<div style="color:#64748b;font-size:.78rem;margin-top:2px">ต้องเข้าสู่ระบบใหม่เพื่อใช้งานต่อ</div>'
+    + '</div></div>'
+    + '<div style="padding:1.5rem 1.5rem 1.6rem;text-align:center">'
+    + '<i class="bi bi-shield-exclamation" style="display:block;color:#ef4444;font-size:2.55rem;line-height:1;margin:0 auto 1rem"></i>'
+    + '<h4 style="font-weight:800;color:#0f172a;margin-bottom:.55rem;font-size:1.25rem">กลับเข้าสู่ระบบ</h4>'
+    + '<p style="color:#64748b;font-size:.88rem;line-height:1.65;margin:0 auto 1.35rem;max-width:310px">เวลาเข้าใช้งานสิ้นสุดแล้ว กรุณายืนยันตัวตนอีกครั้งเพื่อความปลอดภัยของระบบ</p>'
+    + '<a href="' + loginUrl + '" style="display:flex;align-items:center;justify-content:center;width:100%;background:#0f172a;color:#fff;border-radius:12px;padding:.82rem 1.25rem;font-weight:800;font-size:.95rem;text-decoration:none">'
+    + 'เข้าสู่ระบบ</a>'
+    + '</div></div>';
+  document.body.appendChild(ov);
+}
+
+/* _rpc: prepends admin token + auto-redirects on AUTH_REQUIRED */
+function _rpc(method) {
+  var extra = Array.prototype.slice.call(arguments, 1);
+  var allArgs = [method, _getAdminToken()].concat(extra);
+  return callRpc.apply(null, allArgs).then(function(res) {
+    if (res && res.ok === false && res.error === 'AUTH_REQUIRED') {
+      _redirectToLogin();
+      return Promise.reject(new Error('AUTH_REQUIRED'));
+    }
+    return res;
+  });
+}
+
+function _initAuth() {
+  var token = _getAdminToken();
+  if (!token) { _redirectToLogin(); return Promise.reject(new Error('NOT_LOGGED_IN')); }
+  return callRpc('validateSessionRpc', token).then(function(r) {
+    if (!r || !r.ok) { _redirectToLogin(); throw new Error('SESSION_INVALID'); }
+    return r;
+  }).catch(function(err) {
+    if (err.message !== 'AUTH_REQUIRED') _redirectToLogin();
+    throw err;
+  });
+}
+
+/* ---------- Session-context beacon (best-effort) ----------
+   On admin page load, collect a fresh client context and report it so the
+   backend can flag a `session.ip_changed` when the client-reported IP differs
+   from the one observed at login. ADVISORY ONLY — the IP is client-fetched and
+   spoofable. Fire-and-forget: never blocks or redirects the page. */
+var _LOG_IP_OBS_ENABLED = false;
+if (GAS_ENV) {
+  callRpc('getLogPublicConfigRpc').then(function(r) {
+    if (r && r.ok) _LOG_IP_OBS_ENABLED = !!r.ipObservation;
+  }).catch(function(){});
+}
+function collectThirdPartyIpObservation() {
+  return new Promise(function(resolve) {
+    if (!_LOG_IP_OBS_ENABLED || typeof fetch !== 'function') {
+      resolve({ ok:false, network_source:'unavailable' }); return;
+    }
+    var startedAt = new Date().toISOString();
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 2000);
+    fetch('https://api.ipify.org?format=json', ctrl ? { signal: ctrl.signal } : {})
+      .then(function(res) {
+        var status = res.status;
+        return res.json().then(function(j) {
+          clearTimeout(timer);
+          resolve({ ok:true, provider:'ipify', provider_url:'api.ipify.org',
+            started_at:startedAt, fetched_at:new Date().toISOString(),
+            public_ip:(j && j.ip) ? String(j.ip) : '', http_status:status,
+            trust_level:'third_party_observed_client_fetched' });
+        });
+      }).catch(function() {
+        clearTimeout(timer);
+        resolve({ ok:false, provider:'ipify', network_source:'unavailable' });
+      });
+  });
+}
+function collectClientLogContext() {
+  return collectThirdPartyIpObservation().then(function(ipObs) {
+    var clientId = '';
+    try {
+      clientId = localStorage.getItem('os_client_id') || '';
+      if (!clientId) {
+        clientId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+          : ('c-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,12));
+        localStorage.setItem('os_client_id', clientId);
+      }
+    } catch(_) {}
+    var ctx = {
+      client_ts: new Date().toISOString(), client_id: clientId,
+      page_url: location.href, page_path: location.pathname,
+      referrer: document.referrer || '', user_agent: navigator.userAgent || '',
+      language: navigator.language || '', timezone: '',
+      timezone_offset_min: new Date().getTimezoneOffset(),
+      screen_w: (window.screen && screen.width) || null,
+      screen_h: (window.screen && screen.height) || null,
+      dpr: window.devicePixelRatio || null,
+      viewport_w: window.innerWidth || null, viewport_h: window.innerHeight || null,
+      ip_observation: ipObs
+    };
+    try { ctx.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch(_) {}
+    return ctx;
+  });
+}
+(function _sessionContextBeacon() {
+  if (!GAS_ENV) return;
+  var token = _getAdminToken();
+  if (!token) return;
+  try {
+    var last = Number(sessionStorage.getItem('os_ctx_beacon_ts') || 0);
+    if (last && (Date.now() - last) < 10 * 60 * 1000) return;  // throttle: 10 min
+    sessionStorage.setItem('os_ctx_beacon_ts', String(Date.now()));
+  } catch(_) {}
+  // Delay slightly so the beacon never competes with the page's own init RPCs.
+  setTimeout(function() {
+    collectClientLogContext()
+      .then(function(ctx) { return callRpc('reportSessionContextRpc', token, ctx); })
+      .catch(function(){});
+  }, 1500);
+})();
+
+// Async page-view beacon — fires once per page load, after render, never blocks.
+// Server-side doGet does no logging; this is the only page-view signal.
+(function _pageViewBeacon() {
+  if (!GAS_ENV) return;
+  var route = '';
+  try {
+    var act = document.querySelector('.side-nav .link.active');
+    route = (act && act.getAttribute('data-page')) || location.pathname || '';
+  } catch(_) {}
+  setTimeout(function() {
+    collectClientLogContext()
+      .then(function(ctx) { return callRpc('logPageViewRpc', route, ctx); })
+      .catch(function(){});
+  }, 1800);
+})();
+
+/* ---------- Page loader ---------- */
+function _dismissPageLoader() {
+  var el = document.getElementById('pageLoader');
+  if (el) el.classList.add('is-done');
+}
+
+/* ---------- HUD Toast ---------- */
+function showHUD(text) {
+  var el = document.getElementById('hud'); if (!el) return;
+  el.className = ''; el.style.display = 'flex';
+  var sp = document.getElementById('hudSpinner'); if (sp) sp.style.display = '';
+  var tx = document.getElementById('hudText'); if (tx) tx.textContent = text || 'กำลังดำเนินการ…';
+  clearTimeout(_hudTimer);
+}
+function hideHUD(state, text) {
+  var el = document.getElementById('hud'); if (!el) return;
+  var sp = document.getElementById('hudSpinner'); if (sp) sp.style.display = 'none';
+  var tx = document.getElementById('hudText');
+  if (state === 'ok')       { el.className = 'ok';  if (tx) tx.textContent = text || 'ดำเนินการสำเร็จ'; }
+  else if (state === 'err') { el.className = 'err'; if (tx) tx.textContent = text || 'ไม่สามารถดำเนินการได้'; }
+  else { el.style.display = 'none'; el.className = ''; return; }
+  el.style.display = 'flex';
+  clearTimeout(_hudTimer);
+  _hudTimer = setTimeout(function() { el.style.display = 'none'; el.className = ''; }, state === 'err' ? 3500 : 1500);
+}
+
+/* ---------- Messages ---------- */
+var MSG = Object.freeze({
+  loading:  { generic:'กำลังดำเนินการ กรุณารอสักครู่…', fetch:'กำลังโหลดข้อมูล…', save:'กำลังบันทึกข้อมูล…', delete:'กำลังลบข้อมูล…', update:'กำลังปรับปรุงข้อมูล…', upload:'กำลังอัปโหลดรูปภาพ…', toggleOn:'กำลังเปิดใช้งาน…', toggleOff:'กำลังปิดใช้งาน…', otpSend:'กำลังส่งรหัส OTP…', otpVerify:'กำลังตรวจสอบรหัส OTP…', export:'กำลังจัดเตรียมไฟล์…' },
+  success:  { fetch:'โหลดข้อมูลเรียบร้อยแล้ว', save:'บันทึกข้อมูลเรียบร้อยแล้ว', delete:'ลบข้อมูลเรียบร้อยแล้ว', update:'ปรับปรุงข้อมูลเรียบร้อยแล้ว', upload:'อัปโหลดรูปภาพเรียบร้อยแล้ว', toggleOn:'เปิดใช้งานเรียบร้อยแล้ว', toggleOff:'ปิดใช้งานเรียบร้อยแล้ว', otpSent:'ส่งรหัส OTP ไปยังอีเมลเรียบร้อยแล้ว', export:'สร้างไฟล์เรียบร้อยแล้ว' },
+  error:    { fetch:'ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง', save:'ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่อีกครั้ง', delete:'ไม่สามารถลบข้อมูลได้ กรุณาลองใหม่อีกครั้ง', upload:'ไม่สามารถอัปโหลดรูปภาพได้ กรุณาตรวจสอบไฟล์และลองใหม่อีกครั้ง', network:'ไม่สามารถเชื่อมต่อระบบได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่', generic:'เกิดข้อผิดพลาด ไม่สามารถดำเนินการได้ กรุณาลองใหม่อีกครั้ง' },
+  validate: { required:'กรุณากรอกข้อมูลให้ครบถ้วน', selectGift:'กรุณาเลือกของแถม', selectProduct:'กรุณาเลือกสินค้าอย่างน้อย 1 รายการ', imageRequired:'กรุณาเลือกรูปภาพ', email:'รูปแบบอีเมลไม่ถูกต้อง', otp:'กรุณากรอกรหัส OTP จำนวน 6 หลัก' },
+  empty:    { generic:'ยังไม่มีข้อมูล', searchNoMatch:'ไม่พบข้อมูลที่ตรงกับการค้นหา' }
+});
+
+var _RPC_ERR_MAP = {
+  AUTH_REQUIRED:     'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
+  ROTATE_LOCK:       'ระบบกำลังปรับปรุงความปลอดภัย กรุณารอสักครู่แล้วลองใหม่',
+  SERVER_BUSY:       'ระบบกำลังประมวลผลคำขออื่น กรุณาลองใหม่อีกครั้ง',
+  STOCK_INSUFFICIENT:'สินค้าในสต็อกไม่เพียงพอ',
+  OTP_INVALID:       'รหัส OTP ไม่ถูกต้อง กรุณาตรวจสอบและลองใหม่',
+  OTP_EXPIRED:       'รหัส OTP หมดอายุ กรุณาขอรหัสใหม่',
+  PERMISSION_DENIED: 'ไม่มีสิทธิ์ดำเนินการนี้',
+  NOT_LOGGED_IN:     'กรุณาเข้าสู่ระบบก่อนใช้งาน',
+  SESSION_INVALID:   'เซสชันไม่ถูกต้อง กรุณาเข้าสู่ระบบใหม่'
+};
+
+function translateRpcError(err, fallback) {
+  try { console.error('[RPC error]', err); } catch(_) {}
+  if (!err) return fallback || MSG.error.generic;
+  var code = '';
+  if (typeof err === 'string') code = err;
+  else if (err.error)   code = String(err.error);
+  else if (err.message) code = String(err.message);
+  if (_RPC_ERR_MAP[code]) return _RPC_ERR_MAP[code];
+  for (var k in _RPC_ERR_MAP) { if (code && code.indexOf(k) === 0) return _RPC_ERR_MAP[k]; }
+  if (code && /[฀-๿]/.test(code) && !/[<>{}\[\]]/.test(code) && code.length < 200) return code;
+  return fallback || MSG.error.generic;
+}
+
+/* ---------- Button helpers ---------- */
+function _setButtonBusy(btn, busy, label) {
+  if (!btn) return;
+  if (busy) {
+    if (!btn.dataset.originalHtml) btn.dataset.originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>' + (label || 'กำลังดำเนินการ…');
+  } else {
+    btn.disabled = false;
+    if (btn.dataset.originalHtml) { btn.innerHTML = btn.dataset.originalHtml; delete btn.dataset.originalHtml; }
+  }
+}
+
+function withButtonLoading(btn, busyLabel, asyncFn) {
+  _setButtonBusy(btn, true, busyLabel);
+  return Promise.resolve().then(asyncFn).finally(function() { _setButtonBusy(btn, false); });
+}
+
+function confirmDanger(opts) {
+  opts = opts || {};
+  if (typeof Swal === 'undefined') {
+    return Promise.resolve(window.confirm(opts.text || opts.title || 'ยืนยันหรือไม่'));
+  }
+  return Swal.fire({
+    icon: 'warning',
+    title: opts.title || 'ยืนยันการลบ',
+    text:  opts.text  || 'ยืนยันการลบข้อมูลนี้หรือไม่ การดำเนินการนี้ไม่สามารถย้อนกลับได้',
+    showCancelButton: true,
+    confirmButtonText: opts.confirmLabel || 'ลบ',
+    cancelButtonText:  'ยกเลิก',
+    confirmButtonColor: '#dc2626',
+    cancelButtonColor:  '#6b7280'
+  }).then(function(r) { return r.isConfirmed; });
+}
+
+function showFormError(el, message) {
+  if (!el) return;
+  if (typeof el === 'string') el = document.getElementById(el) || document.querySelector(el);
+  if (!el) return;
+  if (message) {
+    el.classList.add('is-invalid');
+    var fb = el.parentElement ? el.parentElement.querySelector('.invalid-feedback') : null;
+    if (fb) fb.textContent = message;
+  } else {
+    el.classList.remove('is-invalid');
+  }
+}
+
+/* callRpcWithFeedback: uses raw callRpc — callers must include token in opts.args */
+function callRpcWithFeedback(opts) {
+  opts = opts || {};
+  var btn = opts.button || null;
+  var busyText = opts.busyText || MSG.loading.generic;
+  var successText = opts.successText || MSG.success.save;
+  var errorFallback = opts.errorText || MSG.error.generic;
+  var silent = !!opts.silent;
+  if (!silent) showHUD(busyText);
+  if (btn) _setButtonBusy(btn, true, busyText);
+  var args = [opts.method].concat(opts.args || []);
+  return callRpc.apply(null, args)
+    .then(function(res) {
+      if (res && res.ok === false) throw { error: res.error || errorFallback };
+      if (!silent) hideHUD('ok', successText);
+      return res;
+    })
+    .catch(function(err) {
+      var msg = translateRpcError(err, errorFallback);
+      if (!silent) hideHUD('err', msg);
+      throw err;
+    })
+    .finally(function() { if (btn) _setButtonBusy(btn, false); });
+}
+
+/* ---------- Pagination ---------- */
+function _paginate(allItems, page, pageSize) {
+  var total = allItems.length;
+  var totalPages = Math.max(1, Math.ceil(total / pageSize));
+  var p = Math.max(1, Math.min(page, totalPages));
+  var start = (p - 1) * pageSize;
+  return {
+    items: allItems.slice(start, start + pageSize),
+    page: p,
+    totalPages: totalPages,
+    total: total,
+    from: total === 0 ? 0 : start + 1,
+    to: Math.min(start + pageSize, total)
+  };
+}
+
+/* _bindPaginationBar: wires a pagination bar to a render function.
+ *   container:  element id or element containing #pgPrev, #pgNext, #pgInfo, #pgSize
+ *   getItems:   function() -> filtered array (called on every render)
+ *   renderRows: function(items) -> void (renders the visible slice to DOM)
+ */
+function _bindPaginationBar(container, getItems, renderRows) {
+  var el = typeof container === 'string' ? document.getElementById(container) : container;
+  if (!el) return;
+  var prevBtn  = el.querySelector('#pgPrev');
+  var nextBtn  = el.querySelector('#pgNext');
+  var infoEl   = el.querySelector('#pgInfo');
+  var sizeEl   = el.querySelector('#pgSize');
+  var _page = 1;
+  var _size = sizeEl ? parseInt(sizeEl.value, 10) || 20 : 20;
+
+  function _render() {
+    var result = _paginate(getItems(), _page, _size);
+    _page = result.page;
+    renderRows(result.items);
+    if (infoEl) infoEl.textContent = result.total === 0 ? 'ไม่พบรายการ' : 'แสดง ' + result.from + '–' + result.to + ' จาก ' + result.total + ' รายการ';
+    if (prevBtn) prevBtn.disabled = _page <= 1;
+    if (nextBtn) nextBtn.disabled = _page >= result.totalPages;
+  }
+  if (prevBtn) prevBtn.addEventListener('click', function() { if (_page > 1) { _page--; _render(); } });
+  if (nextBtn) nextBtn.addEventListener('click', function() { _page++; _render(); });
+  if (sizeEl)  sizeEl.addEventListener('change', function() { _size = parseInt(sizeEl.value, 10) || 20; _page = 1; _render(); });
+  return { render: _render, reset: function() { _page = 1; _render(); } };
+}
+
+/* ---------- Utility ---------- */
+function escHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, function(c) {
+    return ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c];
+  });
+}
+function escAttr(s) {
+  return String(s || '').replace(/[&<>"'`]/g, function(c) {
+    return ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;', '`':'&#96;' })[c];
+  });
+}
+function safeUrl(s) {
+  var str = String(s || '').trim();
+  if (/^(https?:\/\/|\/)/i.test(str)) return str;
+  return '';
+}
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleString('th-TH', { dateStyle:'short', timeStyle:'short' });
+}
+function fmtDate(iso) {
+  if (!iso) return '—';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('th-TH', { dateStyle:'short' });
+}
+
+function _extractDriveFileId(url) {
+  var s = String(url || '');
+  var m = s.match(/\/file\/d\/([^/?#]+)/);
+  if (m) return m[1];
+  m = s.match(/[?&]id=([^&#]+)/);
+  return m ? m[1] : '';
+}
+
+function _ensureBrandLogoFallback(logoEl) {
+  if (!logoEl || !logoEl.parentNode) return null;
+  var fb = document.getElementById('brandLogoFallback');
+  if (!fb) {
+    fb = document.createElement('div');
+    fb.id = 'brandLogoFallback';
+    fb.className = 'brand-logo-fallback';
+    fb.innerHTML = '<i class="bi bi-shop"></i>';
+    logoEl.parentNode.insertBefore(fb, logoEl.nextSibling);
+  }
+  return fb;
+}
+
+function _showBrandLogoFallback(logoEl) {
+  var fb = _ensureBrandLogoFallback(logoEl);
+  if (logoEl) {
+    logoEl.removeAttribute('src');
+    logoEl.style.display = 'none';
+  }
+  if (fb) fb.style.display = 'inline-flex';
+}
+
+function _showBrandLogoImage(logoEl, src) {
+  if (!logoEl || !src) { _showBrandLogoFallback(logoEl); return; }
+  var fb = _ensureBrandLogoFallback(logoEl);
+  logoEl.onload = function() {
+    logoEl.style.display = 'block';
+    if (fb) fb.style.display = 'none';
+  };
+  logoEl.onerror = function() { _showBrandLogoFallback(logoEl); };
+  logoEl.src = src;
+}
+
+function _bindAdminBrandLogo(info) {
+  var logoEl = document.getElementById('brandLogo');
+  if (!logoEl) return;
+  var logoUrl = (info && info.logoImage) || '';
+  var logoFid = (info && info.logoImageDriveFileId) || _extractDriveFileId(logoUrl);
+  var cacheKey = 'SHOP_BRAND_CACHE_V1';
+
+  if (!logoUrl && !logoFid) {
+    _showBrandLogoFallback(logoEl);
+    return;
+  }
+
+  if (logoFid) {
+    try {
+      var cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+      var cacheMatches = cached && cached.logo && (!cached.logoFid || cached.logoFid === logoFid);
+      if (cacheMatches && String(cached.logo).indexOf('data:') === 0) {
+        _showBrandLogoImage(logoEl, cached.logo);
+        return;
+      }
+    } catch(_) {}
+  }
+
+  if (logoFid && GAS_ENV) {
+    callRpc('getFileDataUrlRpc', logoFid).then(function(r) {
+      if (r && r.ok && r.dataUrl) {
+        try { localStorage.setItem(cacheKey, JSON.stringify({ logo:r.dataUrl, title:(info && info.siteTitle) || '', logoFid:logoFid, ts:Date.now() })); } catch(_) {}
+        _showBrandLogoImage(logoEl, r.dataUrl);
+      } else if (logoUrl && !/drive\.google\.com/i.test(logoUrl)) {
+        _showBrandLogoImage(logoEl, logoUrl);
+      } else {
+        _showBrandLogoFallback(logoEl);
+      }
+    }).catch(function() {
+      if (logoUrl && !/drive\.google\.com/i.test(logoUrl)) _showBrandLogoImage(logoEl, logoUrl);
+      else _showBrandLogoFallback(logoEl);
+    });
+    return;
+  }
+
+  if (logoUrl && !/drive\.google\.com/i.test(logoUrl)) {
+    _showBrandLogoImage(logoEl, logoUrl);
+  } else {
+    _showBrandLogoFallback(logoEl);
+  }
+}
+
+/* ---------- Shared page setup ----------
+ * Call _setupAdminPage() inside each page's DOMContentLoaded handler.
+ * Sets up: sidebar nav links, logout button, brand name/logo.
+ */
+function _setupAdminPage() {
+  document.querySelectorAll('.side-nav .link[data-page]').forEach(function(a) {
+    var href = _adminPageUrl(a.dataset.page);
+    a.setAttribute('href', href);
+    a.addEventListener('click', function(e) {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      a.classList.add('is-loading');
+      _showPageNavigating('กำลังเปิดหน้า…');
+      setTimeout(function() { _nav(href); }, 90);
+    });
+  });
+  var logoutBtn = document.getElementById('btnLogout');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', function() {
+      _showPageNavigating('กำลังออกจากระบบ…');
+      _rpc('logoutRpc').then(function() { _redirectToLogin(); }).catch(function() { _redirectToLogin(); });
+    });
+  }
+  // แสดง logo จาก cache ทันทีก่อน RPC จะตอบกลับ (stale-while-revalidate)
+  // ถ้าไม่มี cache ให้ show fallback icon ทันที (ไม่รอ RPC ให้ UI ว่างเปล่า)
+  (function() {
+    function _isUsable(s) {
+      if (!s) return false;
+      if (s.indexOf('data:') === 0) return true;
+      return /^https?:\/\//i.test(s) && s.indexOf('drive.google.com') < 0;
+    }
+    try {
+      var _earlyCache = JSON.parse(localStorage.getItem('SHOP_BRAND_CACHE_V1') || 'null');
+      if (_earlyCache && _isUsable(_earlyCache.logo)) {
+        _showBrandLogoImage(document.getElementById('brandLogo'), _earlyCache.logo);
+        var _earlyName = document.getElementById('brandName');
+        if (_earlyName && _earlyCache.title) { _earlyName.textContent = _earlyCache.title; _earlyName.classList.remove('brand-skeleton'); }
+        return;
+      }
+    } catch(_) {}
+    // ไม่มี cache — show fallback icon ทันที แทนที่จะว่างเปล่าจนกว่า RPC จะตอบ
+    _showBrandLogoFallback(document.getElementById('brandLogo'));
+  })();
+  if (GAS_ENV) {
+    google.script.run.withSuccessHandler(function(r) {
+      if (!r || !r.ok) { _showBrandLogoFallback(document.getElementById('brandLogo')); return; }
+      var nameEl = document.getElementById('brandName');
+      if (nameEl) { nameEl.textContent = r.siteTitle || ''; nameEl.classList.remove('brand-skeleton'); }
+      _bindAdminBrandLogo(r);
+    }).getBrandInfoRpc();
+  } else {
+    _showBrandLogoFallback(document.getElementById('brandLogo'));
+  }
+}
+</script>

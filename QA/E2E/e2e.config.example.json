@@ -1,0 +1,9 @@
+{
+  "baseUrl": "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec",
+  "adminToken": "PASTE_ADMIN_SESSION_V1_HERE",
+  "gasRpcTimeoutMs": 120000,
+  "fixtureVisibleTimeoutMs": 180000,
+  "fixturePollMs": 3000,
+  "swalTimeoutMs": 90000,
+  "googleScriptTimeoutMs": 180000
+}

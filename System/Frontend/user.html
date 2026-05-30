@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ผู้ดูแลระบบ • Open Storefront</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+
+    .pill { border-radius: 999px; }
+    .empty-state { text-align: center; padding: 3rem 1rem; color: var(--muted); }
+    .empty-state > i { font-size: 2.5rem; display: block; margin-bottom: .75rem; opacity: .4; }
+    .empty-state-cta { display:inline-flex; align-items:center; }
+    .empty-state-cta i { font-size:.875rem !important; display:inline !important; opacity:1 !important; margin-bottom:0 !important; }
+
+    .user-table th { font-size: .8rem; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .user-table td { font-size: .875rem; vertical-align: middle; }
+    .badge-role { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; font-weight: 600; padding: .2rem .55rem; border-radius: 999px; }
+    .badge-admin  { background: #111827; color: #fff; }
+    .badge-viewer { background: #f1f5f9; color: #4b5563; border: 1px solid #e5e7eb; }
+    .badge-owner  { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+    .badge-otp-on  { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+    .badge-otp-off { color: #9ca3af; font-weight: 500; }
+    .table-loading-overlay { position:absolute; inset:0; background:rgba(255,255,255,.6); display:flex; align-items:center; justify-content:center; z-index:10; pointer-events:none; }
+    .table-loading-overlay .spinner-border { width:1.75rem; height:1.75rem; border-width:.2rem; color:#6b7280; }
+    .tbl-wrap-pos { position:relative; }
+    tbody.is-loading { opacity:.5; pointer-events:none; }
+  </style>
+</head>
+<body>
+<script>window._EXEC_URL = '<?!= execUrl ?>';</script>
+<?!= include('admin-shared') ?>
+<div class="app">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <img id="brandLogo" alt="logo" style="height:36px;width:36px;object-fit:cover;border-radius:50%;display:none;flex-shrink:0">
+      <div>
+        <div class="fw-bold brand-skeleton" id="brandName"></div>
+        <div class="small text-muted">Dashboard</div>
+      </div>
+    </div>
+    <nav class="side-nav" id="sideNav">
+      <a class="link" data-page="editstore"><i class="bi bi-paint-bucket"></i> ตกแต่งหน้าร้าน</a>
+      <a class="link" data-page="product"><i class="bi bi-boxes"></i> จัดการสินค้า</a>
+      <a class="link" data-page="order"><i class="bi bi-receipt"></i> คำสั่งซื้อ</a>
+      <a class="link" data-page="print-order"><i class="bi bi-printer"></i> พิมพ์ใบขนส่ง</a>
+      <a class="link" data-page="shipping"><i class="bi bi-truck"></i> ขนส่ง</a>
+      <a class="link" data-page="payment"><i class="bi bi-qr-code"></i> ตั้งค่าการชำระเงิน</a>
+      <a class="link" data-page="promotion"><i class="bi bi-tag"></i> โปรโมชั่น</a>
+      <a class="link" data-page="gift"><i class="bi bi-gift"></i> ของแถม</a>
+      <a class="link active" data-page="user"><i class="bi bi-people"></i> ผู้ดูแลระบบ</a>
+      <a class="link" data-page="legal"><i class="bi bi-file-earmark-text"></i> ข้อมูลทางกฎหมาย</a>
+      <a class="link" data-page="system"><i class="bi bi-shield-check"></i> ตั้งค่าระบบ</a>
+    </nav>
+    <div class="sidebar-footer">
+      <button id="btnLogout" class="btn-logout">
+        <i class="bi bi-box-arrow-right"></i> ออกจากระบบ
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main>
+    <div class="topbar">
+      <div class="wrap">
+        <div class="d-flex align-items-center gap-2">
+          <span class="fw-bold">ผู้ดูแลระบบ</span>
+          <span class="text-muted">•</span>
+          <span class="text-muted small">จัดการบัญชีผู้ใช้งาน</span>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm pill" id="btnRefresh">
+            <i class="bi bi-arrow-clockwise me-1"></i>รีเฟรช
+          </button>
+          <button class="btn btn-dark btn-sm pill" id="btnAdd">
+            <i class="bi bi-plus-lg me-1"></i>เพิ่มผู้ใช้
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="container py-4">
+      <div class="panel p-3 p-md-4">
+        <div class="mb-3 d-flex gap-2 align-items-center flex-wrap">
+          <input type="search" class="form-control" style="max-width:300px" placeholder="ค้นหาอีเมล…" id="q">
+          <span class="text-muted small ms-auto" id="resultCount"></span>
+        </div>
+        <div id="userPgBar" style="display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border)">
+          <div style="font-size:.8rem;color:#6b7280" id="pgInfo"></div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:.8rem;color:#6b7280">แสดง</span>
+            <select class="form-select form-select-sm" style="width:auto;border-radius:999px" id="pgSize">
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+            <span style="font-size:.8rem;color:#6b7280">รายการ</span>
+            <div class="btn-group btn-group-sm" style="margin-left:8px">
+              <button class="btn btn-outline-secondary" id="pgPrev">‹</button>
+              <button class="btn btn-outline-secondary" id="pgNext">›</button>
+            </div>
+          </div>
+        </div>
+        <div id="userTableWrap">
+          <div class="text-center py-5">
+            <div class="spinner-border text-secondary" style="width:1.5rem;height:1.5rem;border-width:.2rem" role="status"></div>
+            <div class="text-muted small mt-2">กำลังโหลด…</div>
+          </div>
+        </div>      </div>
+    </div>
+  </main>
+</div>
+
+<!-- User Modal -->
+<div class="modal fade" id="userModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold" id="userModalTitle">เพิ่มผู้ใช้</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold" style="font-size:.8rem">อีเมล</label>
+          <input type="email" class="form-control" id="userEmail" placeholder="admin@example.com" autocomplete="off">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold" style="font-size:.8rem">รหัสผ่าน <span id="pwHint" class="text-muted fw-normal">(เว้นว่างเพื่อไม่เปลี่ยน)</span></label>
+          <input type="password" class="form-control" id="userPassword" placeholder="••••••••" autocomplete="new-password">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold" style="font-size:.8rem">บทบาท</label>
+          <select class="form-select" id="userRole">
+            <option value="admin">admin</option>
+            <option value="viewer">viewer</option>
+          </select>
+        </div>
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="userOtp">
+          <label class="form-check-label" for="userOtp" style="font-size:.875rem">ต้องการ OTP ทุกครั้งที่เข้าสู่ระบบ</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary pill" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-dark pill" id="btnSaveUser">
+          <span class="spinner-border spinner-border-sm me-1 d-none" id="saveSpinner"></span>
+          บันทึก
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Email Change Modal -->
+<div class="modal fade" id="emailChangeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold">เปลี่ยนอีเมล</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Phase 1: enter new email -->
+        <div id="ecPhase1">
+          <p class="text-muted small mb-3">กรอกอีเมลใหม่ที่ต้องการ ระบบจะส่งรหัส OTP ไปยืนยัน</p>
+          <div class="mb-3">
+            <label class="form-label fw-semibold" style="font-size:.8rem">อีเมลใหม่</label>
+            <input type="email" class="form-control" id="ecNewEmail" placeholder="new@example.com" autocomplete="off">
+          </div>
+          <div id="ecErr1" class="text-danger small d-none mb-2"></div>
+          <button type="button" class="btn btn-dark w-100 pill" id="btnRequestOtp">
+            <span class="spinner-border spinner-border-sm me-1 d-none" id="ecSpinner1"></span>
+            ส่ง OTP ไปยังอีเมลใหม่
+          </button>
+        </div>
+        <!-- Phase 2: enter OTP -->
+        <div id="ecPhase2" style="display:none">
+          <p class="text-muted small mb-3">กรอกรหัส OTP ที่ส่งไปยัง <strong id="ecTargetEmail"></strong></p>
+          <div class="mb-3">
+            <label class="form-label fw-semibold" style="font-size:.8rem">รหัส OTP (6 หลัก)</label>
+            <input type="text" inputmode="numeric" maxlength="6" class="form-control" id="ecOtp"
+              style="text-align:center;letter-spacing:.4em;font-size:1.4rem;font-weight:700" placeholder="――――――">
+          </div>
+          <div id="ecErr2" class="text-danger small d-none mb-2"></div>
+          <button type="button" class="btn btn-dark w-100 pill mb-2" id="btnConfirmEmail">
+            <span class="spinner-border spinner-border-sm me-1 d-none" id="ecSpinner2"></span>
+            ยืนยันเปลี่ยนอีเมล
+          </button>
+          <button type="button" class="btn btn-link w-100 text-muted small" id="btnResendOtp">← ขอรหัสใหม่</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+function _applyOwnerVisibility() {
+  var btnAdd = document.getElementById('btnAdd');
+  if (btnAdd) btnAdd.style.display = _currentIsOwner ? '' : 'none';
+}
+
+/* ==========================================
+   State
+========================================== */
+var _editId = null; // null = add new, string = edit id
+var _modal  = null;
+var _usersCache = []; // current page only — used by openEdit lookup
+var _ownerEmailCache = '';
+var _currentIsOwner = false; // set from validateSessionRpc on init; gates write UI
+var _pgPage = 1, _pgSize = 20, _pgTotal = 0, _pgLoading = false, _firstLoad = true, _pgRefetchNeeded = false;
+var _searchDebounce = null;
+
+function _setPgControlsDisabled(disabled) {
+  var ids = ['pgPrev','pgNext','pgSize'];
+  ids.forEach(function(id){ var el = document.getElementById(id); if (el) el.disabled = !!disabled; });
+}
+
+function _showSkeletonRows(n) {
+  var wrap = document.getElementById('userTableWrap');
+  var rows = '';
+  for (var i=0; i<n; i++) {
+    rows += '<tr>'
+      + '<td><div class="skel lg"></div></td>'
+      + '<td class="text-center"><div class="skel pill" style="width:80px"></div></td>'
+      + '<td class="text-center"><div class="skel pill" style="width:50px"></div></td>'
+      + '<td><div class="skel" style="width:90px"></div></td>'
+      + '<td><div class="d-flex justify-content-end gap-2"><div class="skel pill" style="width:110px"></div></div></td>'
+      + '</tr>';
+  }
+  wrap.innerHTML = '<div class="table-responsive tbl-wrap-pos">'
+    + '<table class="table table-hover user-table align-middle mb-0">'
+    + '<thead><tr><th>อีเมล</th><th style="width:150px" class="text-center">บทบาท</th><th style="width:90px" class="text-center">OTP</th><th style="width:130px">วันที่สร้าง</th><th style="width:120px"></th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table></div>';
+}
+
+function _showOverlay() {
+  var tbody = document.querySelector('#userTableWrap tbody');
+  var wrap  = document.querySelector('#userTableWrap .table-responsive');
+  if (tbody) tbody.classList.add('is-loading');
+  if (wrap && !wrap.querySelector('.table-loading-overlay')) {
+    wrap.classList.add('tbl-wrap-pos');
+    var ov = document.createElement('div');
+    ov.className = 'table-loading-overlay';
+    ov.innerHTML = '<div class="spinner-border" role="status"></div>';
+    wrap.appendChild(ov);
+  }
+}
+function _hideOverlay() {
+  var tbody = document.querySelector('#userTableWrap tbody');
+  if (tbody) tbody.classList.remove('is-loading');
+  var ov = document.querySelector('#userTableWrap .table-loading-overlay');
+  if (ov) ov.remove();
+}
+
+function fetchPage() {
+  if (_pgLoading) return;
+  _pgLoading = true;
+  _setPgControlsDisabled(true);
+  if (_firstLoad) _showSkeletonRows(_pgSize); else _showOverlay();
+  var q = (document.getElementById('q') ? document.getElementById('q').value : '').trim();
+  var opts = { q: q, offset: (_pgPage - 1) * _pgSize, limit: _pgSize };
+  return _rpc('userListRpc', opts).then(function(r) {
+    _usersCache = r.users || [];
+    _ownerEmailCache = r.ownerEmail || '';
+    _pgTotal = Number(r.total)||0;
+    if (_usersCache.length === 0 && _pgTotal > 0) {
+      var _tp = Math.max(1, Math.ceil(_pgTotal / _pgSize));
+      var _cl = Math.max(1, Math.min(_pgPage, _tp));
+      if (_cl !== _pgPage) { _pgPage = _cl; _pgRefetchNeeded = true; return; }
+    }
+    _firstLoad = false;
+    renderTable(_usersCache, _ownerEmailCache);
+    _pgUpdateBar();
+  }).catch(function(err) {
+    if (err && err.message === 'AUTH_REQUIRED') return;
+    document.getElementById('userTableWrap').innerHTML =
+      '<div class="empty-state"><i class="bi bi-exclamation-circle"></i>โหลดข้อมูลไม่สำเร็จ</div>';
+    _firstLoad = true;
+  }).finally(function() {
+    _pgLoading = false;
+    _setPgControlsDisabled(false);
+    _hideOverlay();
+    if (_pgRefetchNeeded) { _pgRefetchNeeded = false; fetchPage(); }
+  });
+}
+
+function _pgUpdateBar() {
+  var total = _pgTotal;
+  var totalPages = Math.max(1, Math.ceil(total / _pgSize));
+  _pgPage = Math.max(1, Math.min(_pgPage, totalPages));
+  var start = (_pgPage - 1) * _pgSize;
+  var from = total === 0 ? 0 : start + 1;
+  var to = Math.min(start + _pgSize, total);
+  var bar = document.getElementById('userPgBar');
+  if (bar) bar.style.display = total > 0 ? 'flex' : 'none';
+  var info = document.getElementById('pgInfo');
+  if (info) info.textContent = total === 0 ? 'ไม่พบรายการ' : 'แสดง ' + from + '–' + to + ' จาก ' + total + ' รายการ';
+  var prev = document.getElementById('pgPrev'); if (prev) prev.disabled = _pgPage <= 1 || _pgLoading;
+  var next = document.getElementById('pgNext'); if (next) next.disabled = _pgPage >= totalPages || _pgLoading;
+}
+
+function _onSearchInput() {
+  if (_searchDebounce) clearTimeout(_searchDebounce);
+  _searchDebounce = setTimeout(function(){
+    _pgPage = 1;
+    fetchPage();
+  }, 300);
+}
+
+function escHtml(str) {
+  return String(str || '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+/* ==========================================
+   Load & render
+========================================== */
+function loadUsers() {
+  _firstLoad = true;
+  _pgPage = 1;
+  return fetchPage();
+}
+
+function renderTable(users, ownerEmail) {
+  var owner = (ownerEmail || '').toLowerCase();
+  var wrap = document.getElementById('userTableWrap');
+  if (!users.length) {
+    var q = document.getElementById('q');
+    var isFiltered = q && q.value.trim();
+    var emptyMsg = isFiltered ? 'ไม่พบผู้ใช้ที่ตรงกับการค้นหา' : 'ยังไม่มีผู้ดูแลระบบ';
+    var ctaHtml = isFiltered ? '' : '<button class="btn btn-dark btn-sm pill mt-3 empty-state-cta" onclick="document.getElementById(\'btnAdd\').click()"><i class="bi bi-plus-lg me-1"></i>เพิ่มผู้ใช้</button>';
+    wrap.innerHTML = '<div class="empty-state"><i class="bi bi-people"></i><div class="fw-semibold">' + emptyMsg + '</div>' + ctaHtml + '</div>';
+    document.getElementById('resultCount').textContent = '';
+    return;
+  }
+  document.getElementById('resultCount').textContent = '';
+  var rows = users.map(function(u) {
+    var isOwner = owner && String(u.email).toLowerCase() === owner;
+    var roleBadge = u.role === 'admin'
+      ? '<span class="badge-role badge-admin"><i class="bi bi-shield-check"></i> admin</span>'
+      : '<span class="badge-role badge-viewer"><i class="bi bi-eye"></i> viewer</span>';
+    var ownerBadge = isOwner
+      ? ' <span class="badge-role badge-owner"><i class="bi bi-lock-fill"></i> เจ้าของ</span>'
+      : '';
+    var otpBadge = u.otp_required
+      ? '<span class="badge-role badge-otp-on"><i class="bi bi-phone"></i> เปิด</span>'
+      : '<span class="badge-role badge-otp-off">ปิด</span>';
+    var created = u.created_at ? u.created_at.slice(0, 10) : '-';
+    var actionBtns = '';
+    if (_currentIsOwner) {
+      var delBtn = isOwner
+        ? '<button class="btn btn-sm btn-outline-danger pill" disabled title="ไม่สามารถลบเจ้าของ Script ได้"><i class="bi bi-lock"></i></button>'
+        : '<button class="btn btn-sm btn-outline-danger pill" data-delete="' + escHtml(u.id) + '"><i class="bi bi-trash"></i></button>';
+      var emailBtn = isOwner
+        ? '<button class="btn btn-sm btn-outline-primary pill" disabled title="ไม่สามารถเปลี่ยนอีเมลเจ้าของ Script ได้"><i class="bi bi-lock"></i></button>'
+        : '<button class="btn btn-sm btn-outline-primary pill" data-emailchange="' + escHtml(u.id) + '" data-email="' + escHtml(u.email) + '" title="เปลี่ยนอีเมล"><i class="bi bi-envelope"></i></button>';
+      actionBtns = '<button class="btn btn-sm btn-outline-secondary pill" data-edit="' + escHtml(u.id) + '"><i class="bi bi-pencil"></i></button>'
+        + emailBtn + delBtn;
+    }
+    return '<tr>'
+      + '<td>' + escHtml(u.email) + ownerBadge + '</td>'
+      + '<td class="text-center">' + roleBadge + '</td>'
+      + '<td class="text-center">' + otpBadge + '</td>'
+      + '<td class="text-muted">' + created + '</td>'
+      + '<td><div class="d-flex justify-content-end gap-2">' + actionBtns + '</div></td>'
+      + '</tr>';
+  }).join('');
+  wrap.innerHTML = '<div class="table-responsive tbl-wrap-pos">'
+    + '<table class="table table-hover user-table align-middle mb-0">'
+    + '<thead><tr>'
+    + '<th>อีเมล</th><th style="width:150px" class="text-center">บทบาท</th><th style="width:90px" class="text-center">OTP</th><th style="width:130px">วันที่สร้าง</th><th style="width:120px"></th>'
+    + '</tr></thead>'
+    + '<tbody>' + rows + '</tbody>'
+    + '</table></div>';
+}
+
+/* ==========================================
+   Modal helpers
+========================================== */
+function openAdd() {
+  if (!_currentIsOwner) return;
+  _editId = null;
+  document.getElementById('userModalTitle').textContent = 'เพิ่มผู้ใช้';
+  document.getElementById('userEmail').value = '';
+  document.getElementById('userEmail').disabled = false;
+  document.getElementById('userPassword').value = '';
+  document.getElementById('pwHint').style.display = 'none';
+  document.getElementById('userRole').value = 'admin';
+  document.getElementById('userOtp').checked = false;
+  _modal.show();
+}
+
+function openEdit(id) {
+  var u = _usersCache.find(function(x) { return x.id === id; });
+  if (!u) return;
+  _editId = id;
+  document.getElementById('userModalTitle').textContent = 'แก้ไขผู้ใช้';
+  document.getElementById('userEmail').value = u.email;
+  document.getElementById('userEmail').disabled = true;
+  document.getElementById('userPassword').value = '';
+  document.getElementById('pwHint').style.display = '';
+  document.getElementById('userRole').value = u.role || 'admin';
+  document.getElementById('userOtp').checked = !!u.otp_required;
+  _modal.show();
+}
+
+function saveUser() {
+  var email    = document.getElementById('userEmail').value.trim();
+  var password = document.getElementById('userPassword').value;
+  var role     = document.getElementById('userRole').value;
+  var otp      = document.getElementById('userOtp').checked;
+
+  if (!_editId && (!email || !password)) {
+    Swal.fire({ icon: 'warning', title: 'กรุณากรอกข้อมูล', text: 'ต้องระบุอีเมลและรหัสผ่านสำหรับผู้ใช้ใหม่' }); return;
+  }
+
+  var saveBtn = document.getElementById('btnSaveUser');
+  var spinner = document.getElementById('saveSpinner');
+  saveBtn.disabled = true; spinner.classList.remove('d-none');
+
+  var p;
+  if (_editId) {
+    var patch = { role: role, otp_required: otp };
+    if (password) patch.password = password;
+    p = _rpc('userUpdateRpc', _editId, patch);
+  } else {
+    p = _rpc('userCreateRpc', { email: email, password: password, role: role, otp_required: otp });
+  }
+
+  p.then(function(r) {
+    _modal.hide();
+    hideHUD('ok', '✓ บันทึกสำเร็จ');
+    loadUsers();
+  }).catch(function(err) {
+    if (err && err.message === 'AUTH_REQUIRED') return;
+    Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: translateRpcError(err, MSG.error.save) });
+  }).finally(function() {
+    saveBtn.disabled = false; spinner.classList.add('d-none');
+  });
+}
+
+function deleteUser(id) {
+  Swal.fire({
+    title: 'ลบผู้ใช้?',
+    text: 'การเปลี่ยนแปลงนี้ไม่สามารถย้อนกลับได้',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ลบ', cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#dc2626'
+  }).then(function(result) {
+    if (!result.isConfirmed) return;
+    showHUD('กำลังลบ…');
+    _rpc('userDeleteRpc', id).then(function() {
+      hideHUD('ok', '✓ ลบสำเร็จ');
+      loadUsers();
+    }).catch(function(err) {
+      if (err && err.message === 'AUTH_REQUIRED') return;
+      hideHUD('err', translateRpcError(err, MSG.error.delete));
+    });
+  });
+}
+
+/* ==========================================
+   Email Change
+========================================== */
+var _ecUserId  = null;
+var _ecNewEmail = '';
+var _ecModal   = null;
+
+function openEmailChange(id, currentEmail) {
+  _ecUserId   = id;
+  _ecNewEmail = '';
+  document.getElementById('ecNewEmail').value = '';
+  document.getElementById('ecOtp').value = '';
+  document.getElementById('ecErr1').classList.add('d-none');
+  document.getElementById('ecErr2').classList.add('d-none');
+  document.getElementById('ecPhase1').style.display = '';
+  document.getElementById('ecPhase2').style.display = 'none';
+  _ecModal.show();
+}
+
+function _ecShowErr(phase, msg) {
+  var el = document.getElementById('ecErr' + phase);
+  el.textContent = msg;
+  el.classList.remove('d-none');
+}
+
+document.getElementById('btnRequestOtp').addEventListener('click', function() {
+  var email = document.getElementById('ecNewEmail').value.trim();
+  if (!email || email.indexOf('@') < 1) { _ecShowErr(1, 'กรุณากรอกอีเมลที่ถูกต้อง'); return; }
+  document.getElementById('ecErr1').classList.add('d-none');
+  var btn = this, sp = document.getElementById('ecSpinner1');
+  btn.disabled = true; sp.classList.remove('d-none');
+  _rpc('userRequestEmailChangeOtpRpc', _ecUserId, email).then(function() {
+    _ecNewEmail = email;
+    document.getElementById('ecTargetEmail').textContent = email;
+    document.getElementById('ecPhase1').style.display = 'none';
+    document.getElementById('ecPhase2').style.display = '';
+    setTimeout(function() { document.getElementById('ecOtp').focus(); }, 80);
+  }).catch(function(err) {
+    if (err && err.message !== 'AUTH_REQUIRED') _ecShowErr(1, translateRpcError(err, MSG.error.generic));
+  }).finally(function() { btn.disabled = false; sp.classList.add('d-none'); });
+});
+
+document.getElementById('btnConfirmEmail').addEventListener('click', function() {
+  var otp = document.getElementById('ecOtp').value.trim();
+  if (!otp || otp.length < 6) { _ecShowErr(2, 'กรุณากรอกรหัส OTP 6 หลัก'); return; }
+  document.getElementById('ecErr2').classList.add('d-none');
+  var btn = this, sp = document.getElementById('ecSpinner2');
+  btn.disabled = true; sp.classList.remove('d-none');
+  _rpc('userConfirmEmailChangeRpc', _ecUserId, _ecNewEmail, otp).then(function() {
+    _ecModal.hide();
+    hideHUD('ok', '✓ เปลี่ยนอีเมลสำเร็จ');
+    loadUsers();
+  }).catch(function(err) {
+    if (err && err.message !== 'AUTH_REQUIRED') _ecShowErr(2, translateRpcError(err, MSG.error.generic));
+  }).finally(function() { btn.disabled = false; sp.classList.add('d-none'); });
+});
+
+document.getElementById('btnResendOtp').addEventListener('click', function() {
+  document.getElementById('ecPhase2').style.display = 'none';
+  document.getElementById('ecPhase1').style.display = '';
+  document.getElementById('ecOtp').value = '';
+  document.getElementById('ecErr2').classList.add('d-none');
+});
+
+/* ==========================================
+   Events
+========================================== */
+document.getElementById('btnAdd').addEventListener('click', openAdd);
+
+/* ตารางผู้ใช้ — event delegation แทน inline onclick */
+document.getElementById('userTableWrap').addEventListener('click', function(e) {
+  var editBtn  = e.target.closest('[data-edit]');
+  var ecBtn    = e.target.closest('[data-emailchange]');
+  var delBtn   = e.target.closest('[data-delete]');
+  if (editBtn) openEdit(editBtn.dataset.edit);
+  if (ecBtn)   openEmailChange(ecBtn.dataset.emailchange, ecBtn.dataset.email);
+  if (delBtn)  deleteUser(delBtn.dataset.delete);
+});
+
+document.getElementById('btnRefresh').addEventListener('click', function() {
+  loadUsers();
+});
+
+document.getElementById('q').addEventListener('input', _onSearchInput);
+document.getElementById('btnSaveUser').addEventListener('click', saveUser);
+
+/* ==========================================
+   Pagination events
+========================================== */
+document.getElementById('pgPrev').addEventListener('click', function() { if (_pgPage > 1 && !_pgLoading) { _pgPage--; fetchPage(); } });
+document.getElementById('pgNext').addEventListener('click', function() { var _tp = Math.max(1, Math.ceil(_pgTotal / _pgSize)); if (!_pgLoading && _pgPage < _tp) { _pgPage++; fetchPage(); } });
+document.getElementById('pgSize').addEventListener('change', function() { _pgSize = parseInt(this.value, 10) || 20; _pgPage = 1; fetchPage(); });
+
+/* ==========================================
+   Init
+========================================== */
+_modal   = new bootstrap.Modal(document.getElementById('userModal'));
+_ecModal = new bootstrap.Modal(document.getElementById('emailChangeModal'));
+
+(function init() {
+  _setupAdminPage();
+  if (!GAS_ENV) {
+    _dismissPageLoader();
+    document.getElementById('userTableWrap').innerHTML =
+      '<div class="empty-state"><i class="bi bi-plug"></i>ไม่ได้รันใน GAS — เปิดผ่าน Web App URL</div>';
+    return;
+  }
+  _initAuth().then(function(sess) {
+    _currentIsOwner = !!(sess && sess.isOwner);
+    _applyOwnerVisibility();
+    return loadUsers();
+  }).then(function() {
+    _dismissPageLoader();
+  }).catch(function(err) {
+    var authErrs = ['NOT_LOGGED_IN','SESSION_INVALID','AUTH_REQUIRED'];
+    if (authErrs.indexOf(err.message) !== -1) return; // loader ค้างระหว่าง redirect
+    _dismissPageLoader();
+    document.getElementById('userTableWrap').innerHTML =
+      '<div class="empty-state"><i class="bi bi-exclamation-circle"></i>โหลดข้อมูลไม่สำเร็จ</div>';
+  });
+})();
+
+</script>
+</body>
+</html>

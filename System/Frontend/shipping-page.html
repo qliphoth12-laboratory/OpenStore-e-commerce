@@ -1,0 +1,916 @@
+﻿<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ขนส่ง • Open Storefront</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    .pill { border-radius: 999px; }
+    .fw-semibold { font-weight: 600 !important; }
+    .empty-state { text-align: center; padding: 3rem 1rem; color: var(--muted); }
+    .empty-state > i { font-size: 2.5rem; display: block; margin-bottom: .75rem; opacity: .4; }
+    .empty-state-cta { display:inline-flex; align-items:center; }
+    .empty-state-cta i { font-size:.875rem !important; display:inline !important; opacity:1 !important; margin-bottom:0 !important; }
+
+    /* Company cards */
+    .company-card {
+      background: #fff; border: 1.5px solid var(--border); border-radius: 16px;
+      overflow: hidden; transition: box-shadow .18s, border-color .18s;
+      display: flex; flex-direction: column;
+    }
+    .company-card:hover { box-shadow: 0 6px 20px rgba(0,0,0,.08); border-color: #c4c9d4; }
+    .company-card.is-inactive { opacity: .55; }
+
+    .card-head {
+      display: flex; align-items: center; gap: 12px;
+      padding: 1rem 1.1rem .8rem; border-bottom: 1px solid var(--border);
+    }
+    .card-logo-wrap { flex-shrink: 0; }
+    .card-info { flex: 1; min-width: 0; }
+    .company-name { font-weight: 700; font-size: .97rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
+    .card-meta-text { font-size: .75rem; color: var(--muted); }
+    .card-actions { display: flex; gap: 5px; flex-shrink: 0; }
+    .card-btn { width: 32px; height: 32px; border-radius: 8px; border: 1.5px solid var(--border); background: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: .85rem; transition: all .15s; color: #374151; }
+    .card-btn:hover { border-color: #9ca3af; background: #f9fafb; }
+    .card-btn.danger:hover { border-color: #fca5a5; background: #fff5f5; color: #dc2626; }
+
+    .card-body { padding: .75rem 1.1rem .9rem; flex: 1; }
+
+    .method-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      border-radius: 999px; padding: .18rem .6rem;
+      font-size: .72rem; font-weight: 600;
+    }
+    .method-badge.flat   { background: #f1f5f9; color: #475569; }
+    .method-badge.weight { background: #f1f5f9; color: #475569; }
+    .badge-aftership { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; font-size: .68rem; font-weight: 600; border-radius: 999px; padding: .15rem .5rem; display: inline-flex; align-items: center; gap: 3px; }
+    .badge-inactive { background: #f3f4f6; color: #9ca3af; border: 1px solid #e5e7eb; font-size: .68rem; font-weight: 600; border-radius: 999px; padding: .15rem .5rem; }
+
+    /* Carrier picker */
+    .carrier-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:.5rem; }
+    .carrier-btn { border:1.5px solid var(--border); border-radius:14px; padding:.7rem .4rem .65rem; background:#fff; cursor:pointer; text-align:center; transition:all .15s; font-size:.73rem; font-weight:600; color:#374151; width:100%; }
+    .carrier-btn:hover { border-color:#9ca3af; background:#f9fafb; }
+    .carrier-btn.selected { border-color:#111827; background:#f8fafc; box-shadow:0 0 0 2px #111827; color:#111827; }
+    .carrier-icon { width:52px; height:52px; border-radius:10px; overflow:hidden; display:flex; align-items:center; justify-content:center; margin:0 auto .5rem; background:#f3f4f6; }
+    .carrier-icon img { width:100%; height:100%; object-fit:contain; }
+    .carrier-icon-initial { width:52px; height:52px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:1rem; color:#fff; margin:0 auto .5rem; }
+    .carrier-btn-label { display:block; line-height:1.25; }
+    /* Company card logo */
+    .company-logo { width:30px; height:30px; object-fit:contain; border-radius:6px; flex-shrink:0; }
+    .company-logo-initial { width:30px; height:30px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:.7rem; color:#fff; flex-shrink:0; }
+
+    /* Method editor inside modal */
+    .method-block {
+      background: #f8fafc; border: 1px solid var(--border); border-radius: 12px;
+      padding: .85rem 1rem; margin-bottom: .75rem;
+    }
+    .method-block.has-error {
+      background: #fffafa; border-color: #fca5a5;
+      box-shadow: 0 0 0 3px rgba(220,38,38,.06);
+    }
+    .method-block-header {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: .6rem;
+    }
+    .method-name-field { width: min(100%, 220px); }
+    .method-name-field .form-control { max-width: none; }
+    .method-block.has-error [data-field="name"] {
+      border-color: #dc2626;
+      box-shadow: 0 0 0 .15rem rgba(220,38,38,.08);
+    }
+    .method-error-text {
+      display: none; align-items: center; gap: 4px;
+      margin-top: 4px; color: #991b1b; font-size: .74rem; font-weight: 600;
+    }
+    .method-block.has-error .method-error-text { display: flex; }
+    .bracket-row { display: flex; gap: 6px; align-items: center; margin-bottom: 5px; }
+    .bracket-row input { flex: 1; font-size: .82rem; }
+    .bracket-row .del-bracket { padding: 3px 8px; }
+
+    /* Mode toggle buttons */
+    .mode-btn {
+      border: 1.5px solid var(--border); background: #fff; color: #374151;
+      border-radius: 8px; padding: .3rem .9rem; font-size: .82rem; font-weight: 600;
+      cursor: pointer; transition: all .15s;
+    }
+    .mode-btn.active { background: #111827; color: #fff; border-color: #111827; }
+  </style>
+</head>
+<body>
+<script>window._EXEC_URL = '<?!= execUrl ?>';</script>
+<?!= include('admin-shared') ?>
+<div class="app">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <img id="brandLogo" alt="logo" style="height:36px;width:36px;object-fit:cover;border-radius:50%;display:none;flex-shrink:0">
+      <div>
+        <div class="fw-bold brand-skeleton" id="brandName"></div>
+        <div class="small text-muted">Dashboard</div>
+      </div>
+    </div>
+    <nav class="side-nav" id="sideNav">
+      <a class="link" data-page="editstore"><i class="bi bi-paint-bucket"></i> ตกแต่งหน้าร้าน</a>
+      <a class="link" data-page="product"><i class="bi bi-boxes"></i> จัดการสินค้า</a>
+      <a class="link" data-page="order"><i class="bi bi-receipt"></i> คำสั่งซื้อ</a>
+      <a class="link" data-page="print-order"><i class="bi bi-printer"></i> พิมพ์ใบขนส่ง</a>
+      <a class="link active" data-page="shipping"><i class="bi bi-truck"></i> ขนส่ง</a>
+      <a class="link" data-page="payment"><i class="bi bi-qr-code"></i> ตั้งค่าการชำระเงิน</a>
+      <a class="link" data-page="promotion"><i class="bi bi-tag"></i> โปรโมชั่น</a>
+      <a class="link" data-page="gift"><i class="bi bi-gift"></i> ของแถม</a>
+      <a class="link" data-page="user"><i class="bi bi-people"></i> ผู้ดูแลระบบ</a>
+      <a class="link" data-page="legal"><i class="bi bi-file-earmark-text"></i> ข้อมูลทางกฎหมาย</a>
+      <a class="link" data-page="system"><i class="bi bi-shield-check"></i> ตั้งค่าระบบ</a>
+    </nav>
+    <div class="sidebar-footer">
+      <button id="btnLogout" class="btn-logout">
+        <i class="bi bi-box-arrow-right"></i> ออกจากระบบ
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main>
+    <div class="topbar">
+      <div class="wrap">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <span class="fw-bold">ขนส่ง</span>
+          <span class="text-muted">•</span>
+          <span class="text-muted small">จัดการบริษัทขนส่งและวิธีการจัดส่ง</span>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+          <button class="btn btn-outline-secondary btn-sm pill" id="btnRefresh">
+            <i class="bi bi-arrow-clockwise me-1"></i>รีเฟรช
+          </button>
+          <button class="btn btn-dark btn-sm pill" id="btnAdd">
+            <i class="bi bi-plus-lg me-1"></i>เพิ่มบริษัทขนส่ง
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="container py-4">
+      <!-- Company list -->
+      <div id="companyList">
+        <div class="text-center py-5">
+          <div class="spinner-border text-secondary" style="width:1.5rem;height:1.5rem;border-width:.2rem" role="status"></div>
+          <div class="text-muted small mt-2">กำลังโหลด…</div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div><!-- /app -->
+
+<!-- ====== Company Edit Modal ====== -->
+<div class="modal fade" id="companyModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold" id="companyModalTitle">เพิ่มบริษัทขนส่ง</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Carrier type picker -->
+        <div class="mb-3">
+          <label class="col-form-label fw-semibold d-block mb-2">ประเภทขนส่ง <span class="text-danger">*</span></label>
+          <div id="carrierGrid" class="carrier-grid"></div>
+        </div>
+
+        <!-- Company name + active toggle -->
+        <div class="mb-3 row align-items-center">
+          <label class="col-sm-3 col-form-label fw-semibold">ชื่อที่แสดง</label>
+          <div class="col-sm-6">
+            <input type="text" class="form-control" id="cmpName" placeholder="เช่น Kerry, Flash, ไปรษณีย์ไทย" required>
+          </div>
+          <div class="col-sm-3">
+            <div class="form-check form-switch mt-2">
+              <input class="form-check-input" type="checkbox" id="cmpActive" checked>
+              <label class="form-check-label" for="cmpActive">เปิดใช้งาน</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tracking URL template -->
+        <div class="mb-3">
+          <label class="col-form-label fw-semibold d-block mb-1">Tracking URL Template <span class="text-muted fw-normal small">(ไม่บังคับ)</span></label>
+          <input type="text" class="form-control font-monospace" id="cmpTrackingTpl" placeholder="https://carrier.com/track?no={T}">
+          <div class="form-text">ใช้ <code>{T}</code> แทนหมายเลขพัสดุ — ระบบจะสร้างลิงก์ติดตามให้ลูกค้าอัตโนมัติ</div>
+        </div>
+
+        <!-- Tracking provider select -->
+        <div class="mb-3" id="autoTrackingSection">
+          <div id="autoTrackingCard" style="border-radius:10px;border:1.5px solid #e5e7eb;padding:.85rem 1rem;background:#fff;transition:border-color .2s,background .2s">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <i class="bi bi-radar" style="font-size:1.05rem;color:#6b7280"></i>
+              <span class="fw-semibold" style="font-size:.92rem">ติดตามพัสดุอัตโนมัติ</span>
+            </div>
+            <div style="font-size:.78rem;color:#9ca3af;line-height:1.4;margin-bottom:.6rem">เลือกผู้ให้บริการ: AfterShip, ไปรษณีย์ไทย API หรือ ETracking</div>
+            <select class="form-select form-select-sm" id="cmpTrackingProvider" onchange="_onProviderChange()" style="background:#fff;color:#374151;border-color:#d1d5db"></select>
+            <!-- locked message -->
+            <div id="autoTrackingLockedMsg" class="mt-2" style="display:none;border-radius:7px;background:#f0f9ff;border:1px solid #bae6fd;padding:.45rem .7rem;font-size:.77rem;color:#0369a1;align-items:center;justify-content:space-between;gap:.5rem">
+              <span id="autoTrackingLockedText"><i class="bi bi-info-circle me-1" style="color:#0284c7"></i>ต้องตั้งค่า API Key ก่อนจึงจะเปิดใช้ได้</span>
+              <button type="button" class="btn btn-sm pill flex-shrink-0" style="font-size:.72rem;padding:.2rem .6rem;border:1px solid #7dd3fc;color:#0369a1;background:transparent" onclick="_recheckProviderKeys()">
+                <i class="bi bi-arrow-clockwise me-1"></i>รีเฟรช
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <hr>
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="fw-bold">วิธีการจัดส่ง</span>
+          <button type="button" class="btn btn-outline-dark btn-sm pill" id="btnAddMethod">
+            <i class="bi bi-plus-lg me-1"></i>เพิ่มวิธีจัดส่ง
+          </button>
+        </div>
+        <div id="methodsContainer">
+          <!-- method blocks injected here -->
+        </div>
+        <div id="noMethodsMsg" class="text-muted small text-center py-2" style="display:none">
+          ยังไม่มีวิธีการจัดส่ง — กดปุ่ม "เพิ่มวิธีจัดส่ง"
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary pill" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-dark pill" id="btnSaveCompany">
+          <span class="spinner-border spinner-border-sm me-1 d-none" id="saveSpinner"></span>
+          บันทึก
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+/* ==========================================
+   Built-in carrier catalogue
+========================================== */
+var BUILTIN_CARRIERS = [
+  { id:'thaipost', name:'ไปรษณีย์ไทย',  color:'#c0392b',
+    logo:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRtVrfzXaY_QcVy-PYKB38d-O_1h3IJ04l3zQ&s',
+    tpl:'https://track.thailandpost.com/?trackNumber={T}' },
+  { id:'kerry',    name:'Kerry Express', color:'#e8301b',
+    logo:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT2K2DO_WitDPVy1-72gU1HkkAqmpwnRWOJUw&s',
+    tpl:'https://th.kex-express.com/th/track/?track={T}' },
+  { id:'flash',    name:'Flash Express', color:'#ffc72c',
+    logo:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQmMEeqn2zGivwfEO0AmQc-UJVVAc_IXTkyHQ&s',
+    tpl:'https://www.flashexpress.co.th/fle/tracking?se={T}' },
+  { id:'jt',       name:'J&T Express',   color:'#e31837',
+    logo:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRnWpriQiCPuIybtcqUlb7usGTkKsMIA4VnYw&s',
+    tpl:'https://jtexpress.co.th/service/track?billcode={T}' },
+  { id:'best',     name:'BEST Express',  color:'#e8401a',
+    logo:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS2yvPRqh-w4AJUVbnuV1v_b2dZpF3vsnBpiw&s',
+    tpl:'https://www.best-inc.co.th/track?bills={T}' },
+  { id:'dhl',      name:'DHL Express',   color:'#d4a800',
+    logo:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ9F5_FQny-SB3uuat0cGe1-2az5dxEjGp17A&s',
+    tpl:'https://www.dhl.com/th-th/home/tracking.html?tracking-id={T}&submit=1' },
+  { id:'other',    name:'อื่น ๆ',        color:'#6b7280', logo:null, tpl:'' }
+];
+
+function _onLogoImgErr(img, initial, color, size) {
+  var span = document.createElement('span');
+  span.style.cssText = 'width:' + size + 'px;height:' + size + 'px;background:' + color
+    + ';border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:'
+    + Math.round(size * .35) + 'px;color:#fff;flex-shrink:0';
+  span.textContent = initial;
+  img.replaceWith(span);
+}
+
+function _carrierLogoHtml(carrierId, name, size, cls) {
+  size = size || 26; cls = cls || '';
+  var bc = BUILTIN_CARRIERS.find(function(x){ return x.id === carrierId; });
+  var color = (bc && bc.color) || '#6b7280';
+  var initial = (name||'?').replace(/\s+express|\s+co.*$/i,'').trim().charAt(0).toUpperCase();
+  var fallback = '<span class="' + cls + '" style="width:' + size + 'px;height:' + size + 'px;background:' + color
+    + ';border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:'
+    + Math.round(size*.35) + 'px;color:#fff;flex-shrink:0">' + initial + '</span>';
+  if (!bc || !bc.logo) return fallback;
+  return '<img src="' + bc.logo + '" style="width:' + size + 'px;height:' + size
+    + 'px;object-fit:contain;border-radius:4px;flex-shrink:0" onerror="_onLogoImgErr(this,'
+    + JSON.stringify(initial) + ',' + JSON.stringify(color) + ',' + size + ')">';
+}
+
+/* ==========================================
+   State
+========================================== */
+let _companies = []; // array of company objects
+let _editId    = null; // null = add new, string = edit
+let _selectedCarrierId = null;
+let _hasAftershipKey  = false; // set from getShippingRpc response
+let _hasThaipostToken = false;
+let _hasEtrackKey     = false;
+let _shippingBusy = false;
+let _shippingOpSeq = 0;
+
+function _beginShippingOp() {
+  _shippingBusy = true;
+  _shippingOpSeq++;
+  _syncShippingBusyUi();
+  return _shippingOpSeq;
+}
+function _isCurrentShippingOp(token) {
+  return _shippingBusy && _shippingOpSeq === token;
+}
+function _endShippingOp(token) {
+  if (_shippingOpSeq === token) {
+    _shippingBusy = false;
+    _syncShippingBusyUi();
+  }
+}
+function _syncShippingBusyUi() {
+  ['btnAdd', 'btnRefresh', 'btnSaveCompany'].forEach(function(id) {
+    var btn = document.getElementById(id);
+    if (btn) btn.disabled = _shippingBusy;
+  });
+}
+
+function _uuid() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
+/* ==========================================
+   Carrier picker grid
+========================================== */
+function _onCarrierImgErr(img, initial, color) {
+  var wrap = img.parentNode;
+  wrap.style.background = color;
+  img.remove();
+  wrap.innerHTML = '<span style="font-weight:900;font-size:1.2rem;color:#fff">' + initial + '</span>';
+}
+
+function _buildCarrierGrid(selectedId) {
+  var grid = document.getElementById('carrierGrid');
+  grid.innerHTML = BUILTIN_CARRIERS.map(function(bc) {
+    var sel = selectedId === bc.id ? ' selected' : '';
+    var initial = (bc.name || '?').charAt(0).toUpperCase();
+    var iconHtml;
+    if (bc.logo) {
+      iconHtml = '<div class="carrier-icon">'
+        + '<img src="' + bc.logo + '" alt="" onerror="_onCarrierImgErr(this,\'' + initial + '\',\'' + bc.color + '\')">'
+        + '</div>';
+    } else {
+      iconHtml = '<div class="carrier-icon" style="background:' + bc.color + '">'
+        + '<span style="font-weight:900;font-size:1.2rem;color:#fff">•••</span></div>';
+    }
+    return '<button type="button" class="carrier-btn' + sel + '" data-cid="' + bc.id + '" onclick="_selectCarrier(this)">'
+      + iconHtml + '<span class="carrier-btn-label">' + escHtml(bc.name) + '</span></button>';
+  }).join('');
+}
+
+function _selectCarrier(btn) {
+  document.querySelectorAll('#carrierGrid .carrier-btn').forEach(function(b){ b.classList.remove('selected'); });
+  btn.classList.add('selected');
+  _selectedCarrierId = btn.dataset.cid;
+  var bc = BUILTIN_CARRIERS.find(function(x){ return x.id === _selectedCarrierId; });
+  if (bc) {
+    document.getElementById('cmpName').value = bc.name;
+    var tplEl = document.getElementById('cmpTrackingTpl');
+    if (bc.tpl !== undefined) tplEl.value = bc.tpl || '';
+  }
+  // Rebuild provider options for new carrier type
+  var currentProvider = (document.getElementById('cmpTrackingProvider') || {}).value || '';
+  _rebuildProviderSelect(currentProvider);
+}
+
+/* ==========================================
+   Load & render company list
+========================================== */
+let _loadingCompanies = false;
+
+async function loadCompanies() {
+  if (_loadingCompanies) return;
+  _loadingCompanies = true;
+
+  try {
+    const [r, s] = await Promise.all([
+      callRpc('getShippingRpc'),
+      _rpc('getShippingProviderStatusRpc').catch(() => ({ ok:false }))
+    ]);
+
+    _companies = r.companies || [];
+    _hasAftershipKey  = s && s.hasAftershipKey  === true;
+    _hasThaipostToken = s && s.hasThaipostToken === true;
+    _hasEtrackKey     = s && s.hasEtrackKey    === true;
+
+    renderList();
+  } catch (err) {
+    _companies = [];
+    _hasAftershipKey = _hasThaipostToken = _hasEtrackKey = false;
+
+    renderList();
+    hideHUD('err', translateRpcError(err, MSG.error.fetch));
+  } finally {
+    _loadingCompanies = false;
+  }
+}
+
+function renderList() {
+  const el = document.getElementById('companyList');
+  if (!_companies.length) {
+    el.innerHTML = `<div class="empty-state"><i class="bi bi-truck"></i>ยังไม่มีบริษัทขนส่ง<br><small>กดปุ่ม "เพิ่มบริษัทขนส่ง" เพื่อเริ่มต้น</small></div>`;
+    return;
+  }
+  el.innerHTML = `<div class="row g-3">${_companies.map(c => companyCardHtml(c)).join('')}</div>`;
+}
+
+function companyCardHtml(c) {
+  const methods = c.methods || [];
+  const disabled = _shippingBusy ? ' disabled' : '';
+  const methodBadges = methods.map(m => {
+    const icon = m.mode === 'weight' ? '<i class="bi bi-speedometer2"></i>' : '<i class="bi bi-tag"></i>';
+    const cls  = m.mode === 'weight' ? 'weight' : 'flat';
+    return `<span class="method-badge ${cls}">${icon} ${escHtml(m.name)}</span>`;
+  }).join('') || '<span style="font-size:.78rem;color:#9ca3af">ยังไม่มีวิธีจัดส่ง</span>';
+  const logoHtml = _carrierLogoHtml(c.carrier_id, c.name, 36, 'company-logo-initial');
+  const providerBadgeMap = {
+    aftership: '<span class="badge-aftership"><i class="bi bi-radar"></i>AfterShip</span>',
+    thaipost:  '<span class="badge-aftership"><i class="bi bi-envelope-fill"></i>ไปรษณีย์ไทย</span>',
+    etracking: '<span class="badge-aftership"><i class="bi bi-truck"></i>ETracking</span>'
+  };
+  const aftershipBadge = (c.tracking_provider && providerBadgeMap[c.tracking_provider])
+    ? providerBadgeMap[c.tracking_provider]
+    : '';
+  const inactiveBadge = !c.active
+    ? '<span class="badge-inactive">ปิดใช้งาน</span>'
+    : '';
+
+  return `
+    <div class="col-md-6 col-lg-4 d-flex">
+      <div class="company-card w-100 ${!c.active ? 'is-inactive' : ''}">
+        <div class="card-head">
+          <div class="card-logo-wrap">${logoHtml}</div>
+          <div class="card-info">
+            <div class="company-name" title="${escHtml(c.name)}">${escHtml(c.name)}</div>
+            <div class="card-meta">
+              <span class="card-meta-text">${methods.length} วิธีจัดส่ง</span>
+              ${aftershipBadge}
+              ${inactiveBadge}
+            </div>
+          </div>
+          <div class="card-actions">
+            <button class="card-btn js-edit-company" data-id="${escAttr(c.id)}" title="แก้ไข"><i class="bi bi-pencil"></i></button>
+            <button class="card-btn danger js-delete-company" data-id="${escAttr(c.id)}" title="ลบ"><i class="bi bi-trash"></i></button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div style="display:flex;flex-wrap:wrap;gap:5px">${methodBadges}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) {
+  return String(s||'').replace(/[&<>"'`]/g, function(c) {
+    return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;' })[c];
+  });
+}
+
+/* Delegated handlers for company card buttons — avoids inline onclick with interpolated IDs */
+document.addEventListener('click', function(e) {
+  var editBtn = e.target.closest('.js-edit-company');
+  if (editBtn) { openEdit(editBtn.dataset.id); return; }
+  var delBtn = e.target.closest('.js-delete-company');
+  if (delBtn) { deleteCompany(delBtn.dataset.id); return; }
+});
+
+/* ==========================================
+   Modal: open for add / edit
+========================================== */
+const _modal = new bootstrap.Modal(document.getElementById('companyModal'));
+
+function openAdd() {
+  if (_shippingBusy) return;
+  _editId = null;
+  _selectedCarrierId = null;
+  document.getElementById('companyModalTitle').textContent = 'เพิ่มบริษัทขนส่ง';
+  _buildCarrierGrid(null);
+  document.getElementById('cmpName').value = '';
+  document.getElementById('cmpTrackingTpl').value = '';
+  document.getElementById('cmpActive').checked = true;
+  _rebuildProviderSelect('');
+  document.getElementById('methodsContainer').innerHTML = '';
+  document.getElementById('noMethodsMsg').style.display = '';
+  _modal.show();
+}
+
+function openEdit(id) {
+  if (_shippingBusy) return;
+  const c = _companies.find(x => x.id === id);
+  if (!c) return;
+  _editId = id;
+  _selectedCarrierId = c.carrier_id || null;
+  document.getElementById('companyModalTitle').textContent = 'แก้ไขบริษัทขนส่ง';
+  _buildCarrierGrid(c.carrier_id || null);
+  document.getElementById('cmpName').value = c.name || '';
+  document.getElementById('cmpTrackingTpl').value = c.tracking_url_template || '';
+  document.getElementById('cmpActive').checked = c.active !== false;
+  _rebuildProviderSelect(c.tracking_provider || '');
+  document.getElementById('methodsContainer').innerHTML = '';
+  (c.methods || []).forEach(m => addMethodBlock(m));
+  _syncNoMethodsMsg();
+  _modal.show();
+}
+
+/* ==========================================
+   Method blocks
+========================================== */
+function addMethodBlock(data) {
+  const mid = data ? data.id : _uuid();
+  const name = data ? (data.name || '') : '';
+  const mode = data ? (data.mode || 'flat') : 'flat';
+  const flatRate = data ? (data.flat_rate || 0) : 0;
+  const brackets = data ? (data.brackets || []) : [];
+
+  const div = document.createElement('div');
+  div.className = 'method-block';
+  div.dataset.mid = mid;
+  div.innerHTML = `
+    <div class="method-block-header">
+      <div class="d-flex align-items-center gap-2 flex-wrap" style="flex:1">
+        <div class="method-name-field">
+          <input type="text" class="form-control form-control-sm" placeholder="ชื่อวิธีจัดส่ง (เช่น ส่งด่วน, มาตรฐาน)"
+            value="${escHtml(name)}" data-field="name" oninput="_clearMethodNameError(this.closest('.method-block'))">
+          <div class="method-error-text"><i class="bi bi-exclamation-circle"></i> กรุณาระบุชื่อวิธีจัดส่ง</div>
+        </div>
+        <div class="d-flex gap-1">
+          <button type="button" class="mode-btn ${mode==='flat'?'active':''}" data-mode="flat" onclick="_setMode(this,'flat')">ราคาคงที่</button>
+          <button type="button" class="mode-btn ${mode==='weight'?'active':''}" data-mode="weight" onclick="_setMode(this,'weight')">ตามน้ำหนัก</button>
+        </div>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-danger pill ms-2" onclick="_removeMethod(this)">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    <!-- flat panel -->
+    <div class="flat-panel ${mode==='flat'?'':'d-none'}">
+      <div class="row g-2 align-items-center">
+        <label class="col-auto col-form-label col-form-label-sm">ราคาจัดส่ง (฿)</label>
+        <div class="col-auto">
+          <input type="number" class="form-control form-control-sm" style="width:110px" min="0" step="1"
+            value="${Number(flatRate)}" data-field="flat_rate">
+        </div>
+      </div>
+    </div>
+    <!-- weight panel -->
+    <div class="weight-panel ${mode==='weight'?'':'d-none'}">
+      <div class="d-flex align-items-center justify-content-between mb-1">
+        <span class="small fw-semibold text-muted">ช่วงน้ำหนัก</span>
+        <button type="button" class="btn btn-outline-secondary btn-sm pill" onclick="_addBracket(this)">
+          <i class="bi bi-plus-lg"></i> เพิ่มช่วง
+        </button>
+      </div>
+      <div class="brackets-header d-flex gap-1 mb-1" style="font-size:.72rem;color:#9ca3af;font-weight:600">
+        <div style="flex:1">ตั้งแต่ (กรัม)</div>
+        <div style="flex:1">ถึง (กรัม)</div>
+        <div style="flex:1">ราคา (฿)</div>
+        <div style="width:30px"></div>
+      </div>
+      <div class="brackets-list">
+        ${brackets.map(b => bracketRowHtml(b)).join('')}
+      </div>
+    </div>`;
+  document.getElementById('methodsContainer').appendChild(div);
+  document.getElementById('noMethodsMsg').style.display = 'none';
+}
+
+function bracketRowHtml(b) {
+  b = b || {};
+  return `<div class="bracket-row">
+    <input type="number" class="form-control form-control-sm" placeholder="0" min="0" value="${Number(b.from_g||0)}" data-field="from_g">
+    <input type="number" class="form-control form-control-sm" placeholder="9999" min="0" value="${Number(b.to_g||0)}" data-field="to_g">
+    <input type="number" class="form-control form-control-sm" placeholder="ราคา" min="0" value="${Number(b.price||0)}" data-field="price">
+    <button type="button" class="btn btn-sm btn-outline-danger del-bracket" onclick="this.closest('.bracket-row').remove()">
+      <i class="bi bi-x"></i>
+    </button>
+  </div>`;
+}
+
+function _setMode(btn, mode) {
+  const block = btn.closest('.method-block');
+  block.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  block.querySelector('.flat-panel').classList.toggle('d-none', mode !== 'flat');
+  block.querySelector('.weight-panel').classList.toggle('d-none', mode !== 'weight');
+}
+
+async function _removeMethod(btn) {
+  const ok = await confirmDanger({
+    title: 'ยืนยันการลบวิธีจัดส่ง',
+    text: 'การลบวิธีจัดส่งจะมีผลทันทีเมื่อกด "บันทึก" และไม่สามารถย้อนกลับได้'
+  });
+  if (!ok) return;
+  btn.closest('.method-block').remove();
+  _syncNoMethodsMsg();
+}
+
+function _addBracket(btn) {
+  const list = btn.closest('.weight-panel').querySelector('.brackets-list');
+  list.insertAdjacentHTML('beforeend', bracketRowHtml({}));
+}
+
+function _syncNoMethodsMsg() {
+  const hasMethods = document.getElementById('methodsContainer').children.length > 0;
+  document.getElementById('noMethodsMsg').style.display = hasMethods ? 'none' : '';
+}
+
+function _clearMethodNameError(block) {
+  if (!block) return;
+  const input = block.querySelector('[data-field="name"]');
+  if (input && input.value.trim()) {
+    block.classList.remove('has-error');
+    input.removeAttribute('aria-invalid');
+  }
+}
+
+function _validateMethodNames() {
+  const blocks = Array.from(document.querySelectorAll('#methodsContainer .method-block'));
+  let firstInvalid = null;
+
+  blocks.forEach((block, idx) => {
+    const input = block.querySelector('[data-field="name"]');
+    const isInvalid = !input || !input.value.trim();
+    block.classList.toggle('has-error', isInvalid);
+    if (input) input.setAttribute('aria-invalid', isInvalid ? 'true' : 'false');
+    if (isInvalid && !firstInvalid) firstInvalid = { block, input, index: idx + 1 };
+  });
+
+  if (!firstInvalid) return { ok: true };
+  firstInvalid.block.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => { if (firstInvalid.input) firstInvalid.input.focus(); }, 180);
+  return { ok: false, index: firstInvalid.index };
+}
+
+/* ==========================================
+   Read modal form → data object
+========================================== */
+function _readModal() {
+  const name   = document.getElementById('cmpName').value.trim();
+  const active = document.getElementById('cmpActive').checked;
+  const methods = [];
+
+  document.querySelectorAll('#methodsContainer .method-block').forEach(block => {
+    const mid = block.dataset.mid;
+    const mName = block.querySelector('[data-field="name"]').value.trim();
+    const modeBtn = block.querySelector('.mode-btn.active');
+    const mode = modeBtn ? modeBtn.dataset.mode : 'flat';
+    const m = { id: mid, name: mName, mode };
+
+    if (mode === 'flat') {
+      m.flat_rate = Number(block.querySelector('[data-field="flat_rate"]').value || 0);
+    } else {
+      m.brackets = [];
+      block.querySelectorAll('.bracket-row').forEach(row => {
+        m.brackets.push({
+          id: _uuid(),
+          from_g: Number(row.querySelector('[data-field="from_g"]').value || 0),
+          to_g:   Number(row.querySelector('[data-field="to_g"]').value   || 0),
+          price:  Number(row.querySelector('[data-field="price"]').value  || 0)
+        });
+      });
+    }
+    methods.push(m);
+  });
+
+  const carrier_id            = _selectedCarrierId || 'other';
+  const tracking_url_template = document.getElementById('cmpTrackingTpl').value.trim();
+  const tracking_provider     = document.getElementById('cmpTrackingProvider').value || '';
+  return { carrier_id, name, active, tracking_url_template, tracking_provider, methods };
+}
+
+// Rebuild provider <select> options based on current carrier type and key availability
+function _rebuildProviderSelect(selectedValue) {
+  var select = document.getElementById('cmpTrackingProvider');
+  if (!select) return;
+  var isThaipost = _selectedCarrierId === 'thaipost';
+  var options = [{ value: '', label: 'ปิด (ไม่ติดตาม)', ok: true }];
+  options.push(_hasAftershipKey
+    ? { value: 'aftership', label: 'AfterShip', ok: true }
+    : { value: 'aftership', label: 'AfterShip (ต้องตั้งค่า API Key)', ok: false });
+  if (isThaipost) {
+    options.push(_hasThaipostToken
+      ? { value: 'thaipost', label: 'ไปรษณีย์ไทย API', ok: true }
+      : { value: 'thaipost', label: 'ไปรษณีย์ไทย API (ต้องตั้งค่า Token)', ok: false });
+  } else {
+    options.push(_hasEtrackKey
+      ? { value: 'etracking', label: 'ETracking', ok: true }
+      : { value: 'etracking', label: 'ETracking (ต้องตั้งค่า API Key)', ok: false });
+  }
+  select.innerHTML = options.map(function(o) {
+    return '<option value="' + o.value + '"' + (o.ok ? '' : ' disabled') + '>' + escHtml(o.label) + '</option>';
+  }).join('');
+  // Apply selected value; reset to '' if option not available
+  var available = options.filter(function(o){ return o.ok; }).map(function(o){ return o.value; });
+  select.value = available.indexOf(selectedValue) !== -1 ? selectedValue : '';
+  _onProviderChange();
+}
+
+// Visual feedback and locked message when provider changes
+function _onProviderChange() {
+  var select = document.getElementById('cmpTrackingProvider');
+  var card   = document.getElementById('autoTrackingCard');
+  var msg    = document.getElementById('autoTrackingLockedMsg');
+  var msgText= document.getElementById('autoTrackingLockedText');
+  if (!select || !card) return;
+  var val = select.value;
+  var hasLocked = Array.from(select.options).some(function(o){ return o.disabled; });
+  card.style.borderColor = (val && !hasLocked) ? '#111827' : '#e5e7eb';
+  card.style.background  = (val && !hasLocked) ? '#f9fafb' : '#fff';
+  if (msg) {
+    if (hasLocked) {
+      var lockedNames = [];
+      Array.from(select.options).forEach(function(o) {
+        if (o.disabled) {
+          var n = { aftership: 'AfterShip API Key', thaipost: 'Thailand Post Token', etracking: 'ETracking API Key' };
+          lockedNames.push('<strong>' + (n[o.value] || o.value) + '</strong>');
+        }
+      });
+      var txt = lockedNames.length
+        ? lockedNames.join(', ') + ' ยังไม่ได้ตั้งค่า — ตั้งค่าได้ที่ <strong>ตั้งค่าระบบ</strong> หากต้องการใช้'
+        : 'ตัวเลือกบางรายการยังไม่ได้ตั้งค่า API Key';
+      if (msgText) msgText.innerHTML = '<i class="bi bi-info-circle me-1" style="color:#0284c7"></i>' + txt;
+      msg.style.display = 'flex';
+    } else {
+      msg.style.display = 'none';
+    }
+  }
+}
+
+async function _recheckProviderKeys() {
+  var btn = document.querySelector('#autoTrackingLockedMsg button');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
+  try {
+    const [r, s] = await Promise.all([
+      callRpc('getShippingRpc'),
+      _rpc('getShippingProviderStatusRpc').catch(() => ({ ok:false }))
+    ]);
+    _hasAftershipKey  = s && s.hasAftershipKey  === true;
+    _hasThaipostToken = s && s.hasThaipostToken === true;
+    _hasEtrackKey     = s && s.hasEtrackKey    === true;
+    _companies = r.companies || _companies;
+    var current = document.getElementById('cmpTrackingProvider');
+    _rebuildProviderSelect(current ? current.value : '');
+  } catch(_) {}
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>รีเฟรช'; }
+}
+
+/* ==========================================
+   Save
+========================================== */
+async function saveCompany() {
+  if (_shippingBusy) return;
+  const data = _readModal();
+  if (!_selectedCarrierId) {
+    return Swal.fire({ icon:'warning', title:'กรุณาเลือกประเภทขนส่ง', confirmButtonText:'ตกลง', timer:2500 });
+  }
+  if (!data.name) {
+    document.getElementById('cmpName').focus();
+    return Swal.fire({ icon:'warning', title:'กรุณาระบุชื่อบริษัทขนส่ง', confirmButtonText:'ตกลง', timer:2500 });
+  }
+  const methodCheck = _validateMethodNames();
+  if (!methodCheck.ok) {
+    return Swal.fire({
+      icon:'warning',
+      title:'กรุณาระบุชื่อวิธีจัดส่ง',
+      text:'วิธีจัดส่งรายการที่ ' + methodCheck.index + ' ยังไม่มีชื่อ',
+      confirmButtonText:'ตกลง',
+      confirmButtonColor:'#111827',
+      timer:2500
+    });
+  }
+
+  const backupCompanies = _companies.map(c => ({ ...c, methods: (c.methods || []).map(m => ({ ...m, brackets: (m.brackets || []).map(b => ({ ...b })) })) }));
+
+  if (_editId) {
+    // Update existing
+    const idx = _companies.findIndex(x => x.id === _editId);
+    if (idx >= 0) {
+      _companies[idx] = { ..._companies[idx], ...data };
+    }
+  } else {
+    // Add new
+    _companies.push({ id: _uuid(), ...data });
+  }
+
+  // Keep the modal open until RPC succeeds — avoids losing edits if save fails.
+  renderList();
+  showHUD(MSG.loading.save);
+  const token = _beginShippingOp();
+  try {
+    const r = await _rpc('saveShippingRpc', _companies);
+    if (!_isCurrentShippingOp(token)) return;
+    if (r && r.ok === false) throw new Error((r && r.error) || 'save failed');
+    hideHUD('ok', MSG.success.save);
+    _modal.hide();
+    await loadCompanies();
+    if (r && r.deactivatedProducts > 0) {
+      Swal.fire({ icon:'warning', title:'ปิดสินค้าอัตโนมัติ',
+        html:'สินค้า <strong>' + r.deactivatedProducts + ' รายการ</strong> ถูกปิดการขายอัตโนมัติ<br>เนื่องจากวิธีจัดส่งที่กำหนดไว้ไม่พร้อมใช้งานอีกต่อไป',
+        confirmButtonText:'ตกลง', confirmButtonColor:'#111827' });
+    }
+  } catch (err) {
+    if (_isCurrentShippingOp(token)) {
+      _companies = backupCompanies;
+      renderList();
+    }
+    hideHUD('err', translateRpcError(err, MSG.error.save));
+  } finally {
+    _endShippingOp(token);
+  }
+}
+
+/* ==========================================
+   Delete company
+========================================== */
+async function deleteCompany(id) {
+  if (_shippingBusy) return;
+  const c = _companies.find(x => x.id === id);
+  if (!c) return;
+  const { isConfirmed } = await Swal.fire({
+    title: 'ลบบริษัทขนส่ง?',
+    html: `ลบ <b>${escHtml(c.name)}</b> และวิธีการจัดส่งทั้งหมด<br>การเปลี่ยนแปลงนี้ไม่สามารถย้อนกลับได้`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ลบ', cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#dc2626'
+  });
+  if (!isConfirmed) return;
+
+  const backupCompanies = _companies.map(c => ({ ...c, methods: (c.methods || []).map(m => ({ ...m, brackets: (m.brackets || []).map(b => ({ ...b })) })) }));
+  _companies = _companies.filter(x => x.id !== id);
+  renderList();
+  const token = _beginShippingOp();
+  showHUD('กำลังลบ…');
+  try {
+    const r = await _rpc('saveShippingRpc', _companies);
+    if (!_isCurrentShippingOp(token)) return;
+    if (r && r.ok === false) throw new Error((r && r.error) || 'delete failed');
+    hideHUD('ok', '✓ ลบสำเร็จ');
+    await loadCompanies();
+    if (r && r.deactivatedProducts > 0) {
+      Swal.fire({ icon:'warning', title:'ปิดสินค้าอัตโนมัติ',
+        html:'สินค้า <strong>' + r.deactivatedProducts + ' รายการ</strong> ถูกปิดการขายอัตโนมัติ<br>เนื่องจากวิธีจัดส่งที่กำหนดไว้ไม่พร้อมใช้งานอีกต่อไป',
+        confirmButtonText:'ตกลง', confirmButtonColor:'#111827' });
+    }
+  } catch (err) {
+    if (_isCurrentShippingOp(token)) {
+      _companies = backupCompanies;
+      renderList();
+    }
+    hideHUD('err', '✗ ' + (err.message || 'เกิดข้อผิดพลาด'));
+  } finally {
+    _endShippingOp(token);
+  }
+}
+
+/* ==========================================
+   Events
+========================================== */
+document.getElementById('btnAdd').addEventListener('click', openAdd);
+document.getElementById('btnAddMethod').addEventListener('click', () => { addMethodBlock(null); });
+document.getElementById('btnSaveCompany').addEventListener('click', saveCompany);
+document.getElementById('btnRefresh').addEventListener('click', () => {
+  document.getElementById('companyList').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-secondary" style="width:1.5rem;height:1.5rem;border-width:.2rem" role="status"></div></div>';
+  loadCompanies();
+});
+
+/* ==========================================
+   Init
+========================================== */
+(async function init() {
+  _setupAdminPage();
+  const GAS_ENV = window.google && google.script && google.script.run;
+  if (!GAS_ENV) {
+    _dismissPageLoader();
+    document.getElementById('companyList').innerHTML =
+      '<div class="empty-state"><i class="bi bi-plug"></i>ไม่ได้รันใน GAS — เปิดผ่าน Web App URL</div>';
+    return;
+  }
+  try {
+    await _initAuth();
+    await loadCompanies();
+    _dismissPageLoader();
+  } catch (err) {
+    var authErrs = ['NOT_LOGGED_IN','SESSION_INVALID','AUTH_REQUIRED'];
+    if (authErrs.indexOf(err && err.message) !== -1) return; // loader ค้างระหว่าง redirect
+    _dismissPageLoader();
+    document.getElementById('companyList').innerHTML =
+      '<div class="empty-state"><i class="bi bi-exclamation-circle"></i>โหลดข้อมูลไม่สำเร็จ</div>';
+  }
+})();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>เข้าสู่ระบบ • Open Storefront</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    :root { --bg:#f6f7f9; --panel:#fff; --border:#e5e7eb; --accent:#111827; --radius:16px; }
+    *,*::before,*::after { box-sizing:border-box; }
+    html,body { height:100%; margin:0; background:var(--bg);
+      font-family:"Zen Maru Gothic","Noto Sans Thai",ui-sans-serif,system-ui; }
+    body { display:flex; align-items:center; justify-content:center; min-height:100vh; padding:1rem; }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:24px;
+      padding:2.5rem 2rem; width:100%; max-width:420px;
+      box-shadow:0 12px 40px rgba(0,0,0,.08); }
+    .card { text-align:center; }
+    .logo-wrap { display:flex; justify-content:center; margin-bottom:1.25rem; }
+    .logo-wrap img { height:72px; width:72px; object-fit:cover; border-radius:50%; }
+    .logo-avatar-skel { width:72px; height:72px; border-radius:50%; background:linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%); background-size:200% 100%; animation:shimmer 1.2s infinite; }
+    @keyframes shimmer { 100%{ background-position:-200% 0; } }
+    .sub { color:#6b7280; font-size:.875rem; margin-bottom:2rem; }
+    .form-label { display:block; text-align:left; }
+    .form-label { font-size:.8rem; font-weight:600; color:#374151; }
+    .form-control { border-radius:10px; border-color:var(--border); font-size:.9rem; }
+    .form-control:focus { box-shadow:none; border-color:var(--accent); }
+    .btn-primary-dark { background:var(--accent); color:#fff; border:none; border-radius:10px;
+      padding:.65rem 1rem; font-weight:600; font-size:.9rem; width:100%; cursor:pointer; }
+    .btn-primary-dark:hover:not(:disabled) { background:#1f2937; }
+    .btn-primary-dark:disabled { opacity:.6; cursor:not-allowed; }
+    .otp-input { text-align:center; letter-spacing:.4em; font-size:1.6rem; font-weight:700;
+      padding:.5rem; border-radius:10px; }
+    .err-box { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca;
+      border-radius:8px; padding:.5rem .75rem; font-size:.82rem; margin-bottom:1rem; }
+    .back-link { display:block; text-align:center; color:#6b7280; font-size:.82rem;
+      margin-top:.75rem; cursor:pointer; background:none; border:none; width:100%; }
+    .back-link:hover { color:var(--accent); }
+    .spinner-border { width:1rem; height:1rem; border-width:.15em; }
+    .shop-title { font-size:1.05rem; font-weight:700; color:#111827; margin-bottom:.15rem; min-height:1.4rem; }
+    .shop-title:empty { display:none; }
+  </style>
+</head>
+<body>
+<script>window._EXEC_URL = '<?!= execUrl ?>';</script>
+
+<div class="card">
+  <div class="logo-wrap">
+    <img id="shopLogo" src="" alt="Logo" style="display:none">
+    <div class="logo-avatar-skel" id="logoFallback"></div>
+  </div>
+  <div id="shopTitle" class="shop-title"></div>
+  <div class="sub">เข้าสู่ระบบผู้ดูแล</div>
+
+  <!-- Phase 0: first-time setup (shown when users sheet is empty) -->
+  <div id="phaseSetup" style="display:none">
+    <div class="sub" style="margin-bottom:1.25rem">
+      ยังไม่มีผู้ดูแลระบบ — กรุณาสร้างบัญชีแรก
+    </div>
+    <div class="mb-3">
+      <label class="form-label" for="setupEmail">อีเมล</label>
+      <input id="setupEmail" type="email" class="form-control" placeholder="admin@example.com" autocomplete="email">
+    </div>
+    <div class="mb-3">
+      <label class="form-label" for="setupPassword">รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)</label>
+      <input id="setupPassword" type="password" class="form-control" placeholder="••••••••" autocomplete="new-password">
+    </div>
+    <div class="mb-4">
+      <label class="form-label" for="setupPasswordConfirm">ยืนยันรหัสผ่าน</label>
+      <input id="setupPasswordConfirm" type="password" class="form-control" placeholder="••••••••" autocomplete="new-password">
+    </div>
+    <div id="setupErr" class="err-box d-none"></div>
+    <button id="btnSetup" class="btn-primary-dark">สร้างบัญชีผู้ดูแล</button>
+  </div>
+
+  <!-- Phase 1: email + password -->
+  <div id="phasePassword">
+    <div class="mb-3">
+      <label class="form-label" for="inputEmail">อีเมล</label>
+      <input id="inputEmail" type="email" class="form-control" placeholder="admin@example.com" autocomplete="email">
+    </div>
+    <div class="mb-4">
+      <label class="form-label" for="inputPassword">รหัสผ่าน</label>
+      <div class="input-group">
+        <input id="inputPassword" type="password" class="form-control" placeholder="••••••••" autocomplete="current-password">
+        <button class="btn btn-outline-secondary" type="button" id="btnTogglePw" tabindex="-1" style="border-radius:0 10px 10px 0;border-color:var(--border)">
+          <i class="bi bi-eye" id="eyeIcon"></i>
+        </button>
+      </div>
+    </div>
+    <div id="loginErr" class="err-box d-none"></div>
+    <button id="btnLogin" class="btn-primary-dark">เข้าสู่ระบบ</button>
+  </div>
+
+  <!-- Phase 2: OTP -->
+  <div id="phaseOtp" style="display:none">
+    <p style="font-size:.875rem;color:#374151;margin-bottom:1.25rem">
+      ส่งรหัส OTP ไปยัง <strong id="maskedEmail"></strong> แล้ว<br>
+      <span style="font-size:.8rem;color:#6b7280">กรุณาตรวจสอบอีเมลของคุณ</span>
+    </p>
+    <div class="mb-4">
+      <label class="form-label" for="inputOtp">รหัส OTP (6 หลัก)</label>
+      <input id="inputOtp" type="text" inputmode="numeric" maxlength="6"
+        class="form-control otp-input" placeholder="――――――" autocomplete="one-time-code">
+    </div>
+    <div id="otpErr" class="err-box d-none"></div>
+    <button id="btnVerifyOtp" class="btn-primary-dark">ยืนยัน OTP</button>
+    <button class="back-link" id="btnBackToLogin">← กลับ</button>
+  </div>
+</div>
+
+<script>
+  var GAS_ENV = !!(window.google && google.script && google.script.run);
+  var ADMIN_SESSION_KEY = 'ADMIN_SESSION_V1';
+  var _pendingEmail = '';
+  /* Minimal RPC wrapper — the login page runs before authentication, so it
+     intentionally does not include admin-shared.html (that component's page
+     loader/HUD assume an already-authenticated admin page). */
+  function callRpc(method) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function(resolve, reject) {
+      if (!GAS_ENV) { reject(new Error('ต้องเปิดผ่าน GAS Web App')); return; }
+      var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+      runner[method].apply(runner, args);
+    });
+  }
+
+  /* ---- activity log: client context helpers ----
+     collectThirdPartyIpObservation fetches the visitor's public IP from a
+     third-party provider (ipify) ONLY when the owner enabled IP observation.
+     That IP is client-fetched and therefore NOT server-verified. Any failure
+     resolves quietly and never blocks login. */
+  var _LOG_IP_OBS_ENABLED = false;
+  if (GAS_ENV) {
+    callRpc('getLogPublicConfigRpc').then(function(r) {
+      if (r && r.ok) _LOG_IP_OBS_ENABLED = !!r.ipObservation;
+    }).catch(function(){});
+  }
+  function collectThirdPartyIpObservation() {
+    return new Promise(function(resolve) {
+      if (!_LOG_IP_OBS_ENABLED || typeof fetch !== 'function') {
+        resolve({ ok:false, network_source:'unavailable' }); return;
+      }
+      var startedAt = new Date().toISOString();
+      var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 2000);
+      fetch('https://api.ipify.org?format=json', ctrl ? { signal: ctrl.signal } : {})
+        .then(function(res) {
+          var status = res.status;
+          return res.json().then(function(j) {
+            clearTimeout(timer);
+            resolve({ ok:true, provider:'ipify', provider_url:'api.ipify.org',
+              started_at:startedAt, fetched_at:new Date().toISOString(),
+              public_ip:(j && j.ip) ? String(j.ip) : '', http_status:status,
+              trust_level:'third_party_observed_client_fetched' });
+          });
+        }).catch(function() {
+          clearTimeout(timer);
+          resolve({ ok:false, provider:'ipify', network_source:'unavailable' });
+        });
+    });
+  }
+  function collectClientLogContext() {
+    return collectThirdPartyIpObservation().then(function(ipObs) {
+      var clientId = '';
+      try {
+        clientId = localStorage.getItem('os_client_id') || '';
+        if (!clientId) {
+          clientId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+            : ('c-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,12));
+          localStorage.setItem('os_client_id', clientId);
+        }
+      } catch(_) {}
+      var ctx = {
+        client_ts: new Date().toISOString(), client_id: clientId,
+        page_url: location.href, page_path: location.pathname,
+        referrer: document.referrer || '', user_agent: navigator.userAgent || '',
+        language: navigator.language || '', timezone: '',
+        timezone_offset_min: new Date().getTimezoneOffset(),
+        screen_w: (window.screen && screen.width) || null,
+        screen_h: (window.screen && screen.height) || null,
+        dpr: window.devicePixelRatio || null,
+        viewport_w: window.innerWidth || null, viewport_h: window.innerHeight || null,
+        ip_observation: ipObs
+      };
+      try { ctx.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch(_) {}
+      return ctx;
+    });
+  }
+
+  function redirectAfterLogin() {
+    var base = (window._EXEC_URL||'').startsWith('http') ? window._EXEC_URL : null;
+    var url = base ? (base + '/product') : 'product.html';
+    try { window.top.location.href = url; } catch(_) { window.location.href = url; }
+  }
+
+  // Load store brand (name + logo) from site config — with localStorage cache
+  (function() {
+    var BRAND_KEY = 'SHOP_BRAND_CACHE_V1';
+
+    function _apply(data) {
+      if (data.title) {
+        document.title = 'เข้าสู่ระบบ • ' + data.title;
+        var titleEl = document.getElementById('shopTitle');
+        if (titleEl) titleEl.textContent = data.title;
+      }
+      if (data.logo) {
+        var img = document.getElementById('shopLogo');
+        img.onload = function() {
+          img.style.display = '';
+          document.getElementById('logoFallback').style.display = 'none';
+        };
+        img.src = data.logo;
+      }
+    }
+
+    // 1. แสดง cache ทันที (stale)
+    var cached = null;
+    try { cached = JSON.parse(localStorage.getItem(BRAND_KEY) || 'null'); } catch(_) {}
+    if (cached && cached.title) _apply(cached);
+
+    // 2. ดึงเฉพาะ brand fields เงียบ ๆ (revalidate)
+    if (!GAS_ENV) return;
+    google.script.run
+      .withSuccessHandler(function(r) {
+        if (!r || !r.ok) return;
+        var freshTitle = r.siteTitle || '';
+        var freshDriveId = r.logoImageDriveFileId || '';
+        if (!freshDriveId && r.logoImage && r.logoImage.indexOf('drive.google') >= 0) {
+          var _dm = r.logoImage.match(/[?&]id=([^&]+)/);
+          if (_dm) freshDriveId = _dm[1];
+        }
+        var freshFallback = (!freshDriveId && r.logoImage && r.logoImage.indexOf('picsum') < 0 && r.logoImage.indexOf('drive.google') < 0) ? r.logoImage : '';
+        var titleChanged = freshTitle !== ((cached && cached.title) || '');
+        var logoChanged = freshDriveId !== ((cached && cached.logoFid) || '');
+        var urlChanged = !freshDriveId && freshFallback !== ((cached && cached.logo) || '');
+        if (!titleChanged && !logoChanged && !urlChanged) {
+          if (cached) { cached.ts = Date.now(); try { localStorage.setItem(BRAND_KEY, JSON.stringify(cached)); } catch(_) {} }
+          return;
+        }
+        var data = { title: freshTitle, logo: (cached && cached.logo) || '', logoFid: freshDriveId, ts: Date.now() };
+        function finish() {
+          try { localStorage.setItem(BRAND_KEY, JSON.stringify(data)); } catch(_) {}
+          _apply(data);
+        }
+        if (freshDriveId && logoChanged) {
+          google.script.run
+            .withSuccessHandler(function(res) { if (res && res.dataUrl) data.logo = res.dataUrl; finish(); })
+            .withFailureHandler(function() { data.logo = freshFallback; finish(); })
+            .getFileDataUrlRpc(freshDriveId);
+        } else {
+          data.logo = freshFallback || (cached && cached.logo) || '';
+          finish();
+        }
+      })
+      .withFailureHandler(function() {})
+      .getBrandInfoRpc();
+  })();
+
+  // Check if first-time setup is needed
+  (function() {
+    if (!GAS_ENV) return;
+    callRpc('checkSetupNeededRpc').then(function(r) {
+      if (r && r.needed) {
+        // Lock email to GAS owner — backend enforces this; UI reflects it
+        var emailEl = document.getElementById('setupEmail');
+        if (emailEl && r.ownerEmail) {
+          emailEl.value = r.ownerEmail;
+          emailEl.readOnly = true;
+          emailEl.style.cssText += ';background:#f3f4f6;color:#374151;cursor:not-allowed';
+          var lbl = emailEl.previousElementSibling;
+          if (lbl) lbl.insertAdjacentHTML('beforeend',
+            ' <span style="font-size:.75rem;color:#6b7280;font-weight:400">(กำหนดจากเจ้าของ Script)</span>');
+        }
+        document.getElementById('phasePassword').style.display = 'none';
+        document.getElementById('phaseSetup').style.display = 'block';
+      }
+    }).catch(function(err) {
+      // Setup-check failure shouldn't block the regular login form. Log only.
+      try { console.error('[checkSetupNeededRpc]', err); } catch (_) {}
+    });
+  })();
+
+  document.getElementById('btnSetup').addEventListener('click', function() {
+    hideErr('setupErr');
+    var email = document.getElementById('setupEmail').value.trim();
+    var pw    = document.getElementById('setupPassword').value;
+    var pw2   = document.getElementById('setupPasswordConfirm').value;
+    if (!pw) { showErr('setupErr', 'กรุณากรอกรหัสผ่าน'); return; }
+    if (pw !== pw2) { showErr('setupErr', 'รหัสผ่านไม่ตรงกัน'); return; }
+    if (pw.length < 8) { showErr('setupErr', 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร'); return; }
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border"></span> กำลังสร้างบัญชี…';
+    callRpc('setupFirstAdminRpc', email, pw).then(function(r) {
+      if (!r || !r.ok) { showErr('setupErr', r && r.error ? r.error : 'เกิดข้อผิดพลาด'); return; }
+      Swal.fire({ icon:'success', title:'สร้างบัญชีสำเร็จ', text:'กรุณาเข้าสู่ระบบด้วยอีเมลและรหัสผ่านที่ตั้งไว้',
+        confirmButtonText:'เข้าสู่ระบบ', confirmButtonColor:'#111827' }).then(function() {
+        document.getElementById('setupEmail').value = '';
+        document.getElementById('setupPassword').value = '';
+        document.getElementById('setupPasswordConfirm').value = '';
+        document.getElementById('phaseSetup').style.display = 'none';
+        document.getElementById('phasePassword').style.display = 'block';
+        document.getElementById('inputEmail').value = email;
+        document.getElementById('inputEmail').focus();
+      });
+    }).catch(function(err) {
+      showErr('setupErr', String(err && err.message ? err.message : err) || 'เกิดข้อผิดพลาด');
+    }).finally(function() {
+      btn.disabled = false;
+      btn.innerHTML = 'สร้างบัญชีผู้ดูแล';
+    });
+  });
+
+  // Toggle password visibility
+  document.getElementById('btnTogglePw').addEventListener('click', function() {
+    var pw   = document.getElementById('inputPassword');
+    var icon = document.getElementById('eyeIcon');
+    if (pw.type === 'password') { pw.type = 'text';     icon.className = 'bi bi-eye-slash'; }
+    else                        { pw.type = 'password'; icon.className = 'bi bi-eye'; }
+  });
+
+  // Enter key submits
+  document.getElementById('inputPassword').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') document.getElementById('btnLogin').click();
+  });
+  document.getElementById('inputOtp').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') document.getElementById('btnVerifyOtp').click();
+  });
+
+  function showErr(elId, msg) {
+    var el = document.getElementById(elId);
+    el.textContent = msg;
+    el.classList.remove('d-none');
+  }
+  function hideErr(elId) { document.getElementById(elId).classList.add('d-none'); }
+
+  document.getElementById('btnLogin').addEventListener('click', function() {
+    hideErr('loginErr');
+    var email    = document.getElementById('inputEmail').value.trim();
+    var password = document.getElementById('inputPassword').value;
+    if (!email || !password) { showErr('loginErr', 'กรุณากรอกอีเมลและรหัสผ่าน'); return; }
+    if (!GAS_ENV) { showErr('loginErr', 'ต้องเปิดผ่าน GAS Web App'); return; }
+
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border"></span> กำลังตรวจสอบ…';
+
+    collectClientLogContext().then(function(ctx) {
+      return callRpc('loginRpc', email, password, ctx);
+    }).then(function(r) {
+      if (!r || !r.ok) { showErr('loginErr', r && r.error ? r.error : 'เข้าสู่ระบบไม่สำเร็จ'); return; }
+      if (r.otpRequired) {
+        _pendingEmail = email;
+        document.getElementById('maskedEmail').textContent = r.maskedEmail || email;
+        document.getElementById('phasePassword').style.display = 'none';
+        document.getElementById('phaseOtp').style.display = 'block';
+        setTimeout(function() { document.getElementById('inputOtp').focus(); }, 80);
+      } else {
+        localStorage.setItem(ADMIN_SESSION_KEY, r.token);
+        try { sessionStorage.removeItem(ADMIN_SESSION_KEY); } catch(_) {}
+        Swal.fire({
+          icon: 'success',
+          title: 'เข้าสู่ระบบสำเร็จ',
+          html: '<p style="color:#374151;margin:0">ยินดีต้อนรับเข้าสู่ระบบหลังบ้าน<br><span style="font-size:.82rem;color:#6b7280">กรุณาตรวจสอบข้อมูลและดำเนินการตามหน้าที่ของท่าน</span></p>',
+          confirmButtonText: 'เข้าสู่ระบบ',
+          confirmButtonColor: '#111827',
+          allowOutsideClick: false
+        }).then(function() { redirectAfterLogin(); });
+      }
+    }).catch(function(err) {
+      showErr('loginErr', String(err && err.message ? err.message : err) || 'เกิดข้อผิดพลาด');
+    }).finally(function() {
+      btn.disabled = false;
+      btn.innerHTML = 'เข้าสู่ระบบ';
+    });
+  });
+
+  document.getElementById('btnVerifyOtp').addEventListener('click', function() {
+    hideErr('otpErr');
+    var otp = document.getElementById('inputOtp').value.trim();
+    if (!otp || otp.length !== 6) { showErr('otpErr', 'กรุณากรอกรหัส OTP จำนวน 6 หลัก'); return; }
+
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border"></span> กำลังยืนยัน…';
+
+    collectClientLogContext().then(function(ctx) {
+      return callRpc('loginVerifyOtpRpc', _pendingEmail, otp, ctx);
+    }).then(function(r) {
+      if (!r || !r.ok) { showErr('otpErr', r && r.error ? r.error : 'OTP ไม่ถูกต้อง'); return; }
+      localStorage.setItem(ADMIN_SESSION_KEY, r.token);
+      try { sessionStorage.removeItem(ADMIN_SESSION_KEY); } catch(_) {}
+      Swal.fire({
+        icon: 'success',
+        title: 'เข้าสู่ระบบสำเร็จ',
+        html: '<p style="color:#374151;margin:0">ยินดีต้อนรับเข้าสู่ระบบหลังบ้าน<br><span style="font-size:.82rem;color:#6b7280">กรุณาตรวจสอบข้อมูลและดำเนินการตามหน้าที่ของท่าน</span></p>',
+        confirmButtonText: 'เข้าสู่ระบบ &rarr;',
+        confirmButtonColor: '#111827',
+        allowOutsideClick: false
+      }).then(function() { redirectAfterLogin(); });
+    }).catch(function(err) {
+      showErr('otpErr', String(err && err.message ? err.message : err) || 'เกิดข้อผิดพลาด');
+    }).finally(function() {
+      btn.disabled = false;
+      btn.innerHTML = 'ยืนยัน OTP';
+    });
+  });
+
+  document.getElementById('btnBackToLogin').addEventListener('click', function() {
+    document.getElementById('phaseOtp').style.display = 'none';
+    document.getElementById('phasePassword').style.display = 'block';
+    document.getElementById('inputOtp').value = '';
+    hideErr('otpErr');
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,2876 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>คำสั่งซื้อ • Open Storefront</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    .searchbox { border-radius: 999px; }
+
+    .table thead th { font-weight: 700; color: #0f172a; border-bottom-color: var(--border); font-size: .85rem; vertical-align: middle; }
+    .table tbody td { vertical-align: middle; font-size: .88rem; }
+    .table tbody tr { cursor: pointer; transition: background .12s; }
+    .table tbody tr:hover { background: #f8fafc; }
+
+    .table-loading-overlay { position:absolute; inset:0; background:rgba(255,255,255,.6); display:flex; align-items:center; justify-content:center; z-index:10; pointer-events:none; }
+    .table-loading-overlay .spinner-border { width:1.75rem; height:1.75rem; border-width:.2rem; color:#6b7280; }
+    .tbl-wrap-pos { position:relative; }
+    tbody.is-loading { opacity:.5; pointer-events:none; }
+
+
+    .filter-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .filter-tab {
+      padding: .3rem .9rem; border-radius: 999px; font-size: .8rem; font-weight: 600;
+      border: 1.5px solid var(--border); background: #fff; color: #374151; cursor: pointer;
+      transition: all .15s;
+    }
+    .filter-tab:hover { border-color: #9ca3af; background: #f9fafb; }
+    .filter-tab.active { background: #111827; color: #fff; border-color: #111827; }
+
+    .empty-state { text-align: center; padding: 3rem 1rem; color: var(--muted); }
+    .empty-state > i { font-size: 2.5rem; display: block; margin-bottom: .75rem; opacity: .4; }
+    .empty-state-cta { display:inline-flex; align-items:center; }
+    .empty-state-cta i { font-size:.875rem !important; display:inline !important; opacity:1 !important; margin-bottom:0 !important; }
+
+    .odm-content { border-radius: 18px; overflow: hidden; }
+    .odm-header { background: #f8fafc; border-bottom: 1px solid rgba(0,0,0,.07); }
+    .odm-section { margin-bottom: 1.25rem; }
+    .odm-section-title {
+      font-size: .72rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+      color: #6b7280; margin-bottom: .6rem;
+    }
+    .odm-info-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: .35rem .75rem;
+    }
+    .odm-info-row { display: flex; flex-direction: column; }
+    .odm-info-label { font-size: .72rem; color: #9ca3af; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+    .odm-info-value { font-size: .88rem; color: #111827; font-weight: 500; }
+
+    .odm-items-table th, .odm-items-table td { font-size: .82rem; padding: .5rem .6rem; }
+    .odm-items-table thead th { font-weight: 700; color: #374151; background: #f8fafc; }
+
+    .odm-total-section { background: #f8fafc; border: 1px solid var(--border); border-radius: 12px; padding: .85rem 1rem; }
+    .odm-total-line { display: flex; justify-content: space-between; font-size: .88rem; padding: .2rem 0; }
+    .odm-total-grand { font-weight: 800; font-size: 1rem; border-top: 1px solid rgba(0,0,0,.1); padding-top: .5rem; margin-top: .25rem; }
+
+    .odm-status-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+    .odm-status-btn {
+      flex: 1; min-width: 100px; padding: .55rem .75rem;
+      border-radius: 12px; font-weight: 600; font-size: .82rem;
+      border: 2px solid var(--border); background: #fff; color: #374151;
+      cursor: pointer; transition: all .15s; text-align: center;
+    }
+    .odm-status-btn:hover { border-color: #9ca3af; background: #f9fafb; }
+    .odm-status-btn.active-unpaid   { background: #fef3c7; border-color: #f59e0b; color: #92400e; }
+    .odm-status-btn.active-paid     { background: #dbeafe; border-color: #3b82f6; color: #1e40af; }
+    .odm-status-btn.active-approved { background: #dcfce7; border-color: #22c55e; color: #166534; }
+    .odm-status-btn.active-shipped   { background: #e0f2fe; border-color: #0ea5e9; color: #0369a1; }
+    .odm-status-btn.active-delivered { background: #ccfbf1; border-color: #14b8a6; color: #0f766e; }
+    .odm-status-btn.active-rejected  { background: #fee2e2; border-color: #ef4444; color: #991b1b; }
+
+    .odm-history-item { display: flex; gap: .5rem; align-items: flex-start; font-size: .8rem; color: #374151; margin-bottom: .35rem; }
+    .odm-history-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+    .odm-history-dot.unpaid   { background: #f59e0b; }
+    .odm-history-dot.paid     { background: #3b82f6; }
+    .odm-history-dot.approved { background: #22c55e; }
+    .odm-history-dot.shipped    { background: #0ea5e9; }
+    .odm-history-dot.delivered  { background: #14b8a6; }
+    .odm-history-dot.rejected   { background: #ef4444; }
+
+    .modal-content { border-radius: var(--radius); }
+    .pill { border-radius: 999px; }
+    .fw-semibold { font-weight: 600 !important; }
+
+    .odm-edit-input { border-radius: 8px; font-size: .85rem; border-color: rgba(0,0,0,.15); }
+    #odmSlipImgWrap { cursor: zoom-in; }
+    #odmSlipImgWrap img { transition: filter .2s; }
+    #odmSlipImgWrap:hover img { filter: brightness(0.82); }
+
+    .manual-gift-list { display: flex; flex-direction: column; gap: 10px; max-height: 320px; overflow-y: auto; padding-right: 2px; }
+    .manual-gift-card {
+      width: 100%; border: 1px solid var(--border); background: #fff; border-radius: 12px;
+      padding: 10px; display: flex; gap: 10px; align-items: flex-start; text-align: left;
+      transition: border-color .15s, box-shadow .15s, background .15s;
+    }
+    .manual-gift-card:hover { border-color: #9ca3af; background: #f9fafb; }
+    .manual-gift-card.active { border-color: #111827; box-shadow: 0 0 0 2px rgba(17,24,39,.08); }
+    .manual-gift-thumb {
+      width: 56px; height: 56px; border-radius: 10px; overflow: hidden; background: #f3f4f6;
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #9ca3af;
+    }
+    .manual-gift-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .manual-gift-stock {
+      display: inline-flex; align-items: center; gap: 4px; border: 1px solid #e5e7eb;
+      border-radius: 999px; padding: .15rem .5rem; color: #4b5563; font-size: .72rem; font-weight: 600;
+      background: #f9fafb;
+    }
+  </style>
+</head>
+<body>
+<script>window._EXEC_URL = '<?!= execUrl ?>';</script>
+<?!= include('admin-shared') ?>
+
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <img id="brandLogo" alt="logo" style="height:36px;width:36px;object-fit:cover;border-radius:50%;display:none;flex-shrink:0">
+      <div>
+        <div class="fw-bold brand-skeleton" id="brandName"></div>
+        <div class="small text-muted">Dashboard</div>
+      </div>
+    </div>
+    <nav class="side-nav" id="sideNav">
+      <a class="link" data-page="editstore"><i class="bi bi-paint-bucket"></i> ตกแต่งหน้าร้าน</a>
+      <a class="link" data-page="product"><i class="bi bi-boxes"></i> จัดการสินค้า</a>
+      <a class="link active" data-page="order"><i class="bi bi-receipt"></i> คำสั่งซื้อ</a>
+      <a class="link" data-page="print-order"><i class="bi bi-printer"></i> พิมพ์ใบขนส่ง</a>
+      <a class="link" data-page="shipping"><i class="bi bi-truck"></i> ขนส่ง</a>
+      <a class="link" data-page="payment"><i class="bi bi-qr-code"></i> ตั้งค่าการชำระเงิน</a>
+      <a class="link" data-page="promotion"><i class="bi bi-tag"></i> โปรโมชั่น</a>
+      <a class="link" data-page="gift"><i class="bi bi-gift"></i> ของแถม</a>
+      <a class="link" data-page="user"><i class="bi bi-people"></i> ผู้ดูแลระบบ</a>
+      <a class="link" data-page="legal"><i class="bi bi-file-earmark-text"></i> ข้อมูลทางกฎหมาย</a>
+      <a class="link" data-page="system"><i class="bi bi-shield-check"></i> ตั้งค่าระบบ</a>
+    </nav>
+    <div class="sidebar-footer">
+      <button id="btnLogout" class="btn-logout">
+        <i class="bi bi-box-arrow-right"></i> ออกจากระบบ
+      </button>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <div class="wrap">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <span class="fw-bold">คำสั่งซื้อ</span>
+          <span class="text-muted">•</span>
+          <span class="text-muted small">จัดการและติดตามคำสั่งซื้อทั้งหมด</span>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+          <button class="btn btn-danger btn-sm pill d-none" id="btnDeleteSelected" onclick="deleteSelectedOrders()">
+            <i class="bi bi-trash me-1"></i>ลบที่เลือก (<span id="selectedCount">0</span>)
+          </button>
+          <button class="btn btn-outline-secondary btn-sm pill" id="btnStockMgr" onclick="openStockPanel()">
+            <i class="bi bi-boxes me-1"></i>คลังสินค้า
+          </button>
+          <button class="btn btn-outline-secondary btn-sm pill" id="btnProdSummary" onclick="openProductionSummary()">
+            <i class="bi bi-clipboard-data me-1"></i>สรุปการผลิต
+          </button>
+          <button class="btn btn-outline-secondary btn-sm pill" id="btnRefresh">
+            <i class="bi bi-arrow-clockwise me-1"></i>รีเฟรช
+          </button>
+          <span class="badge bg-secondary pill" id="totalBadge">0</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="rotateLockBanner" class="alert alert-warning d-flex align-items-center gap-2 mb-0 rounded-0 border-0 border-bottom" style="display:none!important;font-size:.85rem;padding:10px 16px">
+      <div class="spinner-border text-warning flex-shrink-0" style="width:.9rem;height:.9rem;border-width:.15rem" role="status"></div>
+      <span><strong>ระบบกำลัง rotate Encryption Key</strong> — ข้อมูล orders ชั่วคราวไม่สามารถเข้าถึงได้ กรุณารอสักครู่</span>
+    </div>
+
+    <div class="container py-4">
+      <div class="panel p-3 p-md-4" id="tablePanel">
+        <div class="d-flex flex-wrap gap-3 align-items-center mb-3">
+          <input type="search" class="form-control searchbox" id="searchInput"
+            placeholder="ค้นหาเลขคำสั่งซื้อ, ชื่อลูกค้า, เบอร์โทร…" style="max-width:320px">
+          <div class="filter-tabs" id="filterTabs">
+            <button class="filter-tab active" data-status="all">ทั้งหมด</button>
+            <button class="filter-tab" data-status="unpaid">
+              <i class="bi bi-clock me-1"></i>ยังไม่ชำระ
+            </button>
+            <button class="filter-tab" data-status="paid">
+              <i class="bi bi-cash-coin me-1"></i>ชำระแล้ว
+            </button>
+            <button class="filter-tab" data-status="approved">
+              <i class="bi bi-check-circle me-1"></i>อนุมัติแล้ว
+            </button>
+            <button class="filter-tab" data-status="shipped">
+              <i class="bi bi-truck me-1"></i>จัดส่งแล้ว
+            </button>
+            <button class="filter-tab" data-status="delivered">
+              <i class="bi bi-check-circle-fill me-1"></i>ส่งสำเร็จ
+            </button>
+            <button class="filter-tab" data-status="rejected">
+              <i class="bi bi-x-circle me-1"></i>ปฏิเสธ
+            </button>
+          </div>
+        </div>
+        <div id="orderPgBar" style="display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border)">
+          <div style="font-size:.8rem;color:#6b7280" id="pgInfo"></div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:.8rem;color:#6b7280">แสดง</span>
+            <select class="form-select form-select-sm" style="width:auto;border-radius:999px" id="pgSize">
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+            <span style="font-size:.8rem;color:#6b7280">รายการ</span>
+            <div class="btn-group btn-group-sm" style="margin-left:8px">
+              <button class="btn btn-outline-secondary" id="pgPrev">‹</button>
+              <button class="btn btn-outline-secondary" id="pgNext">›</button>
+            </div>
+          </div>
+        </div>
+        <div class="table-responsive tbl-wrap-pos">
+          <table class="table admin-list-table align-middle mb-0" id="ordersTable">
+            <thead>
+              <tr>
+                <th style="width:36px"><input type="checkbox" id="chkSelectAll" onclick="toggleSelectAll(this)"></th>
+                <th style="width:150px">เลขคำสั่งซื้อ</th>
+                <th>ลูกค้า</th>
+                <th style="width:120px">รายการ</th>
+                <th style="width:110px" class="admin-cell-center">ยอดรวม</th>
+                <th style="width:120px" class="admin-cell-center">สถานะ</th>
+                <th style="width:130px" class="admin-cell-center">วันที่สั่ง</th>
+                <th style="width:60px"></th>
+              </tr>
+            </thead>
+            <tbody id="ordersBody">
+              <tr id="skeletonRow">
+                <td colspan="8" class="text-center py-5">
+                  <div class="spinner-border text-secondary" style="width:1.5rem;height:1.5rem;border-width:.2rem" role="status"></div>
+                  <div class="text-muted small mt-2">กำลังโหลด…</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="emptyState" class="empty-state d-none">
+          <i class="bi bi-inbox"></i>
+          <div class="fw-semibold" id="emptyStateMsg">ไม่พบคำสั่งซื้อ</div>
+          <div class="text-muted small mt-1" id="emptyStateDesc"></div>
+        </div>      </div>
+    </div>
+  </main>
+</div>
+
+
+<div class="modal fade" id="orderDetailModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content odm-content">
+      <div class="modal-header odm-header">
+        <div>
+          <h5 class="modal-title fw-bold mb-0" id="odmOrderId">—</h5>
+          <div class="text-muted small" id="odmOrderDate"></div>
+          <div id="odmExpiryBadge" style="display:none;margin-top:.25rem;font-size:.75rem;font-weight:500"></div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+      </div>
+      <div class="modal-body">
+
+        <div class="odm-section">
+          <div class="odm-section-title"><i class="bi bi-lightning-fill me-1"></i>สถานะคำสั่งซื้อ</div>
+          <div class="odm-status-btns">
+            <button class="odm-status-btn" data-set-status="unpaid" onclick="setOrderStatus('unpaid')">
+              <i class="bi bi-clock me-1"></i>ยังไม่ชำระ
+            </button>
+            <button class="odm-status-btn" data-set-status="paid" onclick="setOrderStatus('paid')">
+              <i class="bi bi-cash-coin me-1"></i>ชำระแล้ว
+            </button>
+            <button class="odm-status-btn" data-set-status="approved" onclick="setOrderStatus('approved')">
+              <i class="bi bi-check-circle me-1"></i>อนุมัติ
+            </button>
+            <button class="odm-status-btn" data-set-status="rejected" onclick="setOrderStatusWithNote('rejected')">
+              <i class="bi bi-x-circle me-1"></i>ปฏิเสธ
+            </button>
+            <button class="odm-status-btn" data-set-status="shipped" onclick="openShipForm()">
+              <i class="bi bi-truck me-1"></i>จัดส่งแล้ว
+            </button>
+            <button class="odm-status-btn" data-set-status="delivered" id="btnSetDelivered"
+              onclick="setOrderStatus('delivered')" style="display:none">
+              <i class="bi bi-check-circle-fill me-1"></i>ส่งสำเร็จ
+            </button>
+          </div>
+
+          <div id="odmSlipSection" class="d-none" style="margin-top:.75rem">
+            <div class="odm-section-title"><i class="bi bi-image me-1"></i>สลิปชำระเงิน</div>
+            <div id="odmSlipImgWrap" style="position:relative;display:inline-block;border-radius:10px;overflow:hidden;min-height:80px;min-width:160px;background:#f3f4f6;max-width:100%">
+              <div id="odmSlipShimmer" style="display:none;position:absolute;inset:0;z-index:1;background:linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 37%,#f0f0f0 63%);background-size:800px 100%;animation:shimmer 1.4s ease-in-out infinite;border-radius:10px"></div>
+              <img id="odmSlipImg" src="" alt="สลิป"
+                style="max-width:100%;max-height:300px;border-radius:10px;border:1px solid #e5e7eb;display:block;visibility:hidden"
+                onclick="openOdmSlipLightbox(this)">
+            </div>
+          </div>
+        </div>
+
+        <div class="odm-section">
+          <div class="odm-section-title"><i class="bi bi-person me-1"></i>ข้อมูลผู้สั่งซื้อ</div>
+          <div class="odm-info-grid">
+            <div class="odm-info-row">
+              <span class="odm-info-label">ชื่อ-นามสกุล</span>
+              <span class="odm-info-value" id="odmCustomerName">—</span>
+            </div>
+            <div class="odm-info-row">
+              <span class="odm-info-label">เบอร์โทรศัพท์</span>
+              <span class="odm-info-value" id="odmPhone">—</span>
+            </div>
+            <div class="odm-info-row" style="grid-column:1/-1">
+              <span class="odm-info-label"><i id="odmContactIcon" class="bi bi-person-circle me-1"></i><span id="odmContactPlatformLabel">ช่องทางติดต่อ</span></span>
+              <span class="odm-info-value" id="odmContact">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="odm-section">
+          <div class="odm-section-title"><i class="bi bi-truck me-1"></i>ที่อยู่จัดส่ง</div>
+          <div class="odm-info-grid">
+            <div class="odm-info-row">
+              <span class="odm-info-label">ชื่อผู้รับ</span>
+              <span class="odm-info-value" id="odmShippingName">—</span>
+            </div>
+            <div class="odm-info-row">
+              <span class="odm-info-label">รหัสไปรษณีย์</span>
+              <span class="odm-info-value" id="odmPostalCode">—</span>
+            </div>
+            <div class="odm-info-row" style="grid-column:1/-1">
+              <span class="odm-info-label">ที่อยู่</span>
+              <span class="odm-info-value" id="odmAddress">—</span>
+            </div>
+            <div class="odm-info-row">
+              <span class="odm-info-label">แขวง/ตำบล</span>
+              <span class="odm-info-value" id="odmDistrict">—</span>
+            </div>
+            <div class="odm-info-row">
+              <span class="odm-info-label">เขต/อำเภอ</span>
+              <span class="odm-info-value" id="odmAmphoe">—</span>
+            </div>
+            <div class="odm-info-row" style="grid-column:1/-1">
+              <span class="odm-info-label">จังหวัด</span>
+              <span class="odm-info-value" id="odmProvince">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="odm-section">
+          <div class="odm-section-title"><i class="bi bi-bag me-1"></i>รายการสินค้า</div>
+          <div class="table-responsive">
+            <table class="table table-sm odm-items-table mb-0">
+              <thead>
+                <tr>
+                  <th style="width:56px"></th>
+                  <th>สินค้า</th>
+                  <th class="text-center" style="width:60px">จำนวน</th>
+                  <th class="text-end" style="width:100px">ราคา/ชิ้น</th>
+                  <th class="text-end" style="width:110px">รวม</th>
+                </tr>
+              </thead>
+              <tbody id="odmItemsBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="odm-section">
+          <div class="odm-section-title d-flex align-items-center justify-content-between">
+            <span><i class="bi bi-gift me-1"></i>ของแถมในคำสั่งซื้อ</span>
+            <button class="btn btn-sm btn-outline-dark pill" id="btnAddManualGift" type="button">
+              <i class="bi bi-plus-lg"></i> เพิ่มของแถม
+            </button>
+          </div>
+          <div id="odmGiftsList" class="d-flex flex-column gap-2 mt-2">
+            <div class="text-muted small">— ไม่มีของแถม —</div>
+          </div>
+        </div>
+
+        <div class="odm-section" id="odmShippingInfoSection">
+          <div class="odm-section-title"><i class="bi bi-send me-1"></i>วิธีการจัดส่ง</div>
+          <div id="odmShippingInfoList" class="d-flex flex-column gap-2"></div>
+        </div>
+
+        <!-- Tracking section: ship form (approved) or tracking info (shipped) -->
+        <div class="odm-section" id="odmTrackingSection" style="display:none">
+          <!-- Carrier display row -->
+          <div class="odm-section-title"><i class="bi bi-truck me-1"></i>ข้อมูลการจัดส่ง</div>
+          <div id="odmCarrierDisplay" class="d-flex align-items-center gap-2 " style="display:none">
+            <div id="odmCarrierLogo"></div>
+            <div>
+              <div id="odmCarrierName" class="fw-bold small"></div>
+              <div id="odmShippedAt" class="text-muted" style="font-size:.75rem"></div>
+            </div>
+          </div>
+          <!-- Ship form (shown when approved) -->
+          <div id="odmShipForm" style="display:none">
+           
+            <div class="mb-2">
+              <label class="form-label small fw-semibold mb-1">หมายเลขพัสดุ <span id="odmTrackingInputHint" class="text-muted fw-normal">(ไม่บังคับ)</span></label>
+              <input type="text" class="form-control form-control-sm font-monospace" id="odmTrackingInput" placeholder="เช่น TH123456789">
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold mb-1">หมายเหตุ <span class="text-muted fw-normal">(ไม่บังคับ)</span></label>
+              <input type="text" class="form-control form-control-sm" id="odmShipNoteInput" placeholder="">
+            </div>
+            <button class="btn btn-dark btn-sm pill w-100" id="odmConfirmShipBtn" onclick="confirmShip()">
+              <i class="bi bi-truck me-1"></i>ยืนยันจัดส่ง
+            </button>
+          </div>
+          <!-- Tracking info (shown when shipped) -->
+          <div id="odmTrackingInfo" style="display:none">
+            <!-- Tracking number -->
+            <div class="p-3 rounded-3 mb-3" style="background:#f8fafc;border:1px solid #e5e7eb">
+              <div class="text-muted small mb-1">หมายเลขพัสดุ</div>
+              <div id="odmTrackingNumber" class="fw-bold font-monospace" style="letter-spacing:.04em;font-size:.95rem;color:#111827">—</div>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+              <a id="odmTrackingLink" href="#" target="_blank" class="btn btn-sm btn-outline-secondary pill" style="display:none">
+                <i class="bi bi-box-arrow-up-right me-1"></i>ติดตามพัสดุ
+              </a>
+              <button id="odmEditShipBtn" class="btn btn-sm btn-outline-secondary pill" onclick="openShipForm()">
+                <i class="bi bi-pencil me-1"></i>แก้ไข
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="odm-section">
+          <div class="odm-total-section">
+            <div class="odm-total-line">
+              <span>ค่าสินค้า</span>
+              <span id="odmSubtotal">฿0</span>
+            </div>
+            <div class="odm-total-line align-items-center">
+              <span>ค่าจัดส่ง</span>
+              <div class="d-flex align-items-center gap-2">
+                <input type="number" class="form-control odm-edit-input" id="odmShippingFeeInput"
+                  min="0" step="1" style="width:100px;text-align:right" placeholder="0">
+                <button class="btn btn-sm btn-outline-secondary pill" onclick="saveShippingFee()" id="btnSaveShipping">
+                  บันทึก
+                </button>
+              </div>
+            </div>
+            <div class="odm-total-line odm-total-grand">
+              <span>ยอดรวม</span>
+              <span id="odmTotal">฿0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="odm-section" id="odmNotesSection">
+          <div class="odm-section-title"><i class="bi bi-chat-left-text me-1"></i>หมายเหตุ</div>
+          <div class="bg-light rounded p-2 small" id="odmNotes" style="white-space:pre-wrap;min-height:2rem"></div>
+        </div>
+
+        <div class="odm-section">
+          <div class="odm-section-title"><i class="bi bi-clock-history me-1"></i>ประวัติสถานะ</div>
+          <div id="odmHistoryList"></div>
+        </div>
+
+      </div>
+      <div class="modal-footer d-flex gap-2 flex-wrap align-items-center">
+        <button id="btnViewOrderPage" class="btn btn-outline-secondary btn-sm" onclick="openOrderViewPage()" style="margin-right:auto">
+          <i class="bi bi-box-arrow-up-right me-1"></i>หน้าลูกค้า
+        </button>
+        <button id="btnReceiptDownload" class="btn btn-outline-dark btn-sm" onclick="_downloadOrderReceipt(currentOrder)">
+          <i class="bi bi-download me-1"></i>ใบเสร็จ
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิด</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Manual Gift Modal -->
+<div class="modal fade" id="manualGiftModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border-radius:16px;overflow:hidden">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title fw-bold mb-0"><i class="bi bi-gift me-2"></i>เพิ่มของแถม</h5>
+          <div class="text-muted small">เลือกของแถม จำนวน และหมายเหตุสำหรับคำสั่งซื้อนี้</div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="mgLoading" class="text-center py-4">
+          <div class="spinner-border text-secondary" style="width:1.5rem;height:1.5rem;border-width:.2rem" role="status"></div>
+          <div class="text-muted small mt-2">กำลังโหลดของแถม…</div>
+        </div>
+        <div id="mgEmpty" class="empty-state d-none py-4">
+          <i class="bi bi-gift"></i>
+          ไม่มีของแถมที่ใช้งานได้
+        </div>
+        <div id="mgForm" class="d-none">
+          <label class="form-label fw-semibold small">ของแถม</label>
+          <div id="mgGiftList" class="manual-gift-list mb-3"></div>
+          <div class="row g-2">
+            <div class="col-5">
+              <label class="form-label fw-semibold small">จำนวน</label>
+              <input type="number" id="mgQty" class="form-control" min="1" value="1">
+            </div>
+            <div class="col-7">
+              <label class="form-label fw-semibold small">หมายเหตุ</label>
+              <input type="text" id="mgNote" class="form-control" placeholder="ไม่บังคับ">
+            </div>
+          </div>
+          <div id="mgError" class="text-danger small mt-2 d-none"></div>
+        </div>
+      </div>
+      <div class="modal-footer" style="background:#f8fafc">
+        <button type="button" class="btn btn-outline-secondary btn-sm pill" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-dark btn-sm pill px-4" id="btnConfirmManualGift">
+          <span class="spinner-border spinner-border-sm me-1 d-none" id="mgSaveSpinner"></span>
+          เพิ่ม
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Production Summary Modal -->
+<div class="modal fade" id="productionSummaryModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+    <div class="modal-content" style="border-radius:16px;overflow:hidden">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title fw-bold mb-0"><i class="bi bi-clipboard-data me-2"></i>สรุปการผลิต</h5>
+          <div class="text-muted small">ยอดสั่งซื้อรวมของสินค้าและของแถม สำหรับวางแผนการผลิต/จัดเตรียม</div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="prodSummaryBody"></div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary btn-sm pill" data-bs-dismiss="modal">ปิด</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Stock Management Modal -->
+<div class="modal fade" id="stockModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+    <div class="modal-content" style="border-radius:16px;overflow:hidden">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold"><i class="bi bi-boxes me-2"></i>จัดการคลังสินค้า</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <div class="p-3 border-bottom" style="background:#fff">
+          <input type="search" class="form-control form-control-sm" id="stockSearch"
+                 placeholder="ค้นหาชื่อสินค้า…" style="border-radius:999px"
+                 oninput="filterStockList(this.value)">
+        </div>
+        <div id="stockList" class="p-3 d-flex flex-column gap-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-dark btn-sm pill px-4" onclick="saveAllStock()">
+          <i class="bi bi-floppy me-1"></i>บันทึกทั้งหมด
+        </button>
+        <button class="btn btn-outline-secondary btn-sm pill" data-bs-dismiss="modal">ปิด</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* ===== Image cache (Drive fileId → base64 dataURL) — IndexedDB ===== */
+  var _imgMem = {};
+  var _driveInFlight = {};
+  var _idb = (function() {
+    var _dbP = null;
+    var DB = 'OpenStorefrontImgCache', ST = 'imgs';
+    function open() {
+      if (!_dbP) _dbP = new Promise(function(ok, fail) {
+        var r = indexedDB.open(DB, 1);
+        r.onupgradeneeded = function(e) { e.target.result.createObjectStore(ST); };
+        r.onsuccess = function(e) { ok(e.target.result); };
+        r.onerror = function() { fail(r.error); };
+      }).catch(function() { return null; });
+      return _dbP;
+    }
+    return {
+      get: function(k) {
+        return open().then(function(db) {
+          if (!db) return null;
+          return new Promise(function(ok) {
+            var req = db.transaction(ST).objectStore(ST).get(k);
+            req.onsuccess = function() { ok(req.result || null); };
+            req.onerror = function() { ok(null); };
+          });
+        }).catch(function() { return null; });
+      },
+      set: function(k, v) {
+        open().then(function(db) {
+          if (!db) return;
+          db.transaction(ST, 'readwrite').objectStore(ST).put(v, k);
+        }).catch(function() {});
+      }
+    };
+  })();
+  function driveFileToDataUrl(fileId) {
+    if (!fileId) return Promise.resolve(null);
+    if (_imgMem[fileId]) return Promise.resolve(_imgMem[fileId]);
+    if (_driveInFlight[fileId]) return _driveInFlight[fileId];
+    var p = _idb.get(fileId).then(function(cached) {
+      if (cached) { _imgMem[fileId] = cached; return cached; }
+      return callRpc('getAdminFileDataUrlRpc', _getAdminToken(), fileId).then(function(r) {
+        if (r && r.dataUrl) { _imgMem[fileId] = r.dataUrl; _idb.set(fileId, r.dataUrl); return r.dataUrl; }
+        return null;
+      });
+    }).catch(function() { return null; }).then(function(v) {
+      delete _driveInFlight[fileId]; return v;
+    });
+    _driveInFlight[fileId] = p;
+    return p;
+  }
+
+  function money(n) {
+    return '฿' + Number(n || 0).toLocaleString();
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  var STATUS_LABEL = {
+    unpaid: 'ยังไม่ชำระ',
+    paid: 'ชำระแล้ว',
+    approved: 'อนุมัติแล้ว',
+    shipped: 'จัดส่งแล้ว',
+    delivered: 'จัดส่งสำเร็จ',
+    rejected: 'ปฏิเสธ'
+  };
+
+  var STATUS_ICON = {
+    unpaid: 'bi-clock',
+    paid: 'bi-cash-coin',
+    approved: 'bi-check-circle',
+    shipped: 'bi-truck',
+    delivered: 'bi-check-circle-fill',
+    rejected: 'bi-x-circle'
+  };
+
+  function _buildProviderTag(provider) {
+    var PROVIDER_LABELS = {
+      aftership: { icon: 'bi-radar',         text: 'AfterShip' },
+      thaipost:  { icon: 'bi-envelope-fill', text: 'ไปรษณีย์ไทย' },
+      etracking: { icon: 'bi-truck',         text: 'ETracking' }
+    };
+    var info = PROVIDER_LABELS[provider];
+    if (info) {
+      return '<span style="display:inline-flex;align-items:center;gap:3px;padding:.22rem .6rem;'
+        + 'border-radius:999px;background:#111827;color:#fff;font-size:.67rem;font-weight:700;'
+        + 'letter-spacing:.02em;flex-shrink:0;white-space:nowrap">'
+        + '<i class="bi ' + info.icon + '" style="font-size:.65rem"></i>' + info.text + '</span>';
+    }
+    return '<span style="display:inline-flex;align-items:center;gap:3px;padding:.22rem .6rem;'
+      + 'border-radius:999px;background:#f3f4f6;color:#9ca3af;font-size:.67rem;font-weight:600;'
+      + 'border:1px solid #e5e7eb;flex-shrink:0;white-space:nowrap">'
+      + '<i class="bi bi-slash-circle" style="font-size:.65rem"></i>ไม่ติดตาม</span>';
+  }
+
+  function _orderCarrierBadge(initial, color) {
+    return '<span style="width:28px;height:28px;border-radius:6px;background:' + color
+      + ';display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:.7rem;color:#fff;flex-shrink:0">'
+      + initial + '</span>';
+  }
+  function _onOrderCarrierImgErr(img, initial, color) {
+    var span = document.createElement('span');
+    span.style.cssText = 'width:28px;height:28px;border-radius:6px;background:' + color
+      + ';display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:.7rem;color:#fff;flex-shrink:0';
+    span.textContent = initial;
+    img.replaceWith(span);
+  }
+
+  var BUILTIN_CARRIERS = [
+    { id:'thaipost', name:'ไปรษณีย์ไทย',  color:'#c0392b',
+      logo:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRtVrfzXaY_QcVy-PYKB38d-O_1h3IJ04l3zQ&s',
+      tpl:'https://track.thailandpost.com/?barcode={T}' },
+    { id:'kerry',    name:'Kerry Express', color:'#e8301b',
+      logo:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT2K2DO_WitDPVy1-72gU1HkkAqmpwnRWOJUw&s',
+      tpl:'https://th.kerryexpress.com/th/track/?track={T}' },
+    { id:'flash',    name:'Flash Express', color:'#ffc72c',
+      logo:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQmMEeqn2zGivwfEO0AmQc-UJVVAc_IXTkyHQ&s',
+      tpl:'https://www.flashexpress.co.th/fle/tracking?se={T}' },
+    { id:'jt',       name:'J&T Express',   color:'#e31837',
+      logo:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRnWpriQiCPuIybtcqUlb7usGTkKsMIA4VnYw&s',
+      tpl:'https://jtexpress.co.th/service/track?billcode={T}' },
+    { id:'best',     name:'BEST Express',  color:'#e8401a',
+      logo:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS2yvPRqh-w4AJUVbnuV1v_b2dZpF3vsnBpiw&s',
+      tpl:'https://www.best-inc.co.th/track?bills={T}' },
+    { id:'dhl',      name:'DHL Express',   color:'#d4a800',
+      logo:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ9F5_FQny-SB3uuat0cGe1-2az5dxEjGp17A&s',
+      tpl:'https://www.dhl.com/th-th/home/tracking.html?tracking-id={T}&submit=1' },
+    { id:'other',    name:'อื่น ๆ',        color:'#6b7280', logo:null, tpl:'' }
+  ];
+
+  var _allShippingCompanies = []; // loaded from getShippingRpc on init
+
+  var CONTACT_META = {
+    facebook:  { label: 'Facebook',    icon: 'bi-facebook',       color: '#1877f2' },
+    twitter:   { label: 'Twitter / X', icon: 'bi-twitter-x',      color: '#000' },
+    instagram: { label: 'Instagram',   icon: 'bi-instagram',      color: '#e1306c' },
+    line:      { label: 'LINE',        icon: 'bi-chat-dots-fill', color: '#06c755' },
+    tiktok:    { label: 'TikTok',      icon: 'bi-tiktok',         color: '#000' },
+    other:     { label: 'อื่นๆ',       icon: 'bi-person-circle',  color: '#6b7280' }
+  };
+
+  function statusBadge(status) {
+    var lbl = STATUS_LABEL[status] || status;
+    var icon = STATUS_ICON[status] || 'bi-circle';
+    return '<span class="admin-status ' + escapeHtml(status) + '">' +
+      '<i class="bi ' + escapeHtml(icon) + '"></i>' + escapeHtml(lbl) +
+      '</span>';
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    try {
+      return new Date(iso).toLocaleString('th-TH', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (e) {
+      return iso;
+    }
+  }
+
+  var allOrders = [];   // master: ALL orders as lite summary rows, newest first
+  var _pgPage = 1, _pgSize = 20, _pgTotal = 0, _pgLoading = false, _firstLoad = true;
+  var _searchDebounce = null;
+
+  // Full-order detail cache (orderId → full order). The list carries only lite
+  // summary rows; full data (items/address/slip/history) lives here so a detail
+  // modal opens instantly and the same order is never fetched twice.
+  var _detailCache = {};
+  var _detailReqId = 0; // guards against a stale orderGetRpc resolving last
+
+  // items_json may now mix product and gift lines. Splitter used by every reader.
+  function _splitOrderLines(items){
+    var prods=[], gifts=[];
+    (items||[]).forEach(function(it){
+      var t = (it && it.line_type) ? it.line_type : 'product';
+      if (t === 'gift') gifts.push(it); else prods.push(it);
+    });
+    return { products: prods, gifts: gifts };
+  }
+  function _orderProductLines(o){ return _splitOrderLines((o||{}).items).products; }
+  function _orderGiftLines(o){    return _splitOrderLines((o||{}).items).gifts; }
+  var currentFilter = 'all';
+  var searchQ = '';
+  var currentOrder = null;
+  var _odmSlipGen = 0; // generation counter — ป้องกัน stale async callback ของ slip เก่าทับ order ใหม่
+
+  function _setOrderPgControlsDisabled(disabled) {
+    ['pgPrev','pgNext','pgSize'].forEach(function(id){ var el = document.getElementById(id); if (el) el.disabled = !!disabled; });
+  }
+
+  function _showOrderSkeletonRows(n) {
+    var tbody = document.getElementById('ordersBody');
+    var rows = '';
+    for (var i=0; i<n; i++) {
+      rows += '<tr>'
+        + '<td><div class="skel" style="width:18px;height:18px;border-radius:4px"></div></td>'
+        + '<td><div class="skel" style="width:120px"></div></td>'
+        + '<td><div class="skel lg" style="width:60%"></div></td>'
+        + '<td><div class="skel" style="width:70px"></div></td>'
+        + '<td class="text-center"><div class="skel" style="width:70px"></div></td>'
+        + '<td class="text-center"><div class="skel pill" style="width:80px"></div></td>'
+        + '<td class="text-center"><div class="skel" style="width:90px"></div></td>'
+        + '<td class="text-end"><div class="skel pill" style="width:36px"></div></td>'
+        + '</tr>';
+    }
+    tbody.innerHTML = rows;
+  }
+
+  function _showOrderOverlay() {
+    var tb = document.getElementById('ordersBody');
+    var wrap = tb ? tb.closest('.table-responsive') : null;
+    if (tb) tb.classList.add('is-loading');
+    if (wrap && !wrap.querySelector('.table-loading-overlay')) {
+      wrap.classList.add('tbl-wrap-pos');
+      var ov = document.createElement('div');
+      ov.className = 'table-loading-overlay';
+      ov.innerHTML = '<div class="spinner-border" role="status"></div>';
+      wrap.appendChild(ov);
+    }
+  }
+  function _hideOrderOverlay() {
+    var tb = document.getElementById('ordersBody');
+    if (tb) tb.classList.remove('is-loading');
+    var wrap = tb ? tb.closest('.table-responsive') : null;
+    var ov = wrap ? wrap.querySelector('.table-loading-overlay') : null;
+    if (ov) ov.remove();
+  }
+
+  async function loadOrders(opts) {
+    opts = opts || {};
+    var silent = !!opts.silent;
+    if (_pgLoading) return;
+    _pgLoading = true;
+    _setOrderPgControlsDisabled(true);
+    if (!silent) {
+      if (_firstLoad) _showOrderSkeletonRows(_pgSize); else _showOrderOverlay();
+    }
+    try {
+      if (!GAS_ENV) {
+        allOrders = []; _pgTotal = 0;
+        renderTable();
+        return;
+      }
+
+      // One call: lite summary rows for ALL orders. Filtering, search, sorting
+      // and pagination are then done entirely client-side — no further RPC.
+      var r = await _rpc('orderListRpc', { lite: true });
+      if (r && r.ok) {
+        allOrders = r.items || [];
+        _detailCache = {}; // fresh master list ⇒ stale detail cache
+        _firstLoad = false;
+        renderTable();
+
+        // Keep an open detail modal in sync with the refreshed data.
+        var _modal = document.getElementById('orderDetailModal');
+        if (_modal && _modal.classList.contains('show') && currentOrder) {
+          _refreshOpenDetail(currentOrder.order_id);
+        }
+      } else if (r && r.error === 'ROTATE_LOCK') {
+        if (!silent) hideHUD('err', 'ระบบกำลังปรับปรุงความปลอดภัย กรุณารอสักครู่');
+        var banner = document.getElementById('rotateLockBanner');
+        if (banner) { banner.style.removeProperty('display'); banner.style.display = 'flex'; }
+        _startLockBannerPoll();
+      } else {
+        throw new Error((r && r.error) || 'ไม่สามารถโหลดข้อมูลได้');
+      }
+    } catch (err) {
+      var _msg = translateRpcError(err, MSG.error.fetch);
+      if (silent) {
+        try { console.warn('[orders background refresh failed]', err); } catch (_) {}
+        return;
+      }
+      hideHUD('err', _msg);
+      document.getElementById('ordersBody').innerHTML =
+        '<tr><td colspan="8" class="text-center text-danger py-4">' +
+        '<i class="bi bi-exclamation-circle me-2"></i>' + escapeHtml(_msg) +
+        '</td></tr>';
+      _firstLoad = true;
+    } finally {
+      _pgLoading = false;
+      _setOrderPgControlsDisabled(false);
+      _hideOrderOverlay();
+    }
+  }
+
+  // Filtered (status + search) view of the master list — pure client-side.
+  function _getFilteredOrders() {
+    var list = allOrders;
+    if (currentFilter && currentFilter !== 'all') {
+      list = list.filter(function(o){ return o.status === currentFilter; });
+    }
+    var q = (searchQ || '').toLowerCase().trim();
+    if (q) {
+      list = list.filter(function(o){
+        return [o.order_id, o.customer_name, o.customer_phone, o.shipping_name]
+          .some(function(s){ return String(s||'').toLowerCase().indexOf(q) >= 0; });
+      });
+    }
+    return list;
+  }
+
+  // Warm _detailCache for the orders visible on the current page so opening any
+  // of them is instant. Best-effort — failures fall back to an on-demand fetch.
+  function _prefetchVisiblePage(pageList) {
+    if (!GAS_ENV || !pageList || !pageList.length) return;
+    var ids = pageList
+      .map(function(o){ return o.order_id; })
+      .filter(function(id){ return id && !_detailCache[id]; });
+    if (!ids.length) return;
+    _rpc('orderListByIdsRpc', ids).then(function(r){
+      if (!r || !r.ok || !Array.isArray(r.items)) return;
+      r.items.forEach(function(full){
+        if (full && full.order_id && !_detailCache[full.order_id]) {
+          _detailCache[full.order_id] = full;
+        }
+      });
+    }).catch(function(){});
+  }
+
+  function _pgUpdateOrderBar() {
+    var bar  = document.getElementById('orderPgBar');
+    var info = document.getElementById('pgInfo');
+    var prev = document.getElementById('pgPrev');
+    var next = document.getElementById('pgNext');
+    if (!bar) return;
+    var total = _pgTotal;
+    if (!total) { bar.style.display = 'none'; return; }
+    var totalPages = Math.max(1, Math.ceil(total / _pgSize));
+    _pgPage = Math.max(1, Math.min(_pgPage, totalPages));
+    var start = (_pgPage - 1) * _pgSize;
+    var from = start + 1;
+    var to = Math.min(start + _pgSize, total);
+    bar.style.display = 'flex';
+    if (info) info.textContent = 'แสดง ' + from + '–' + to + ' จาก ' + total + ' รายการ';
+    if (prev) prev.disabled = _pgPage <= 1 || _pgLoading;
+    if (next) next.disabled = _pgPage >= totalPages || _pgLoading;
+  }
+
+  function renderTable() {
+    // Filter + paginate the master list entirely client-side — no backend call.
+    var filtered = _getFilteredOrders();
+    _pgTotal = filtered.length;
+    var totalPages = Math.max(1, Math.ceil(_pgTotal / _pgSize));
+    _pgPage = Math.max(1, Math.min(_pgPage, totalPages));
+    var start = (_pgPage - 1) * _pgSize;
+    var pageList = filtered.slice(start, start + _pgSize);
+
+    var tbody = document.getElementById('ordersBody');
+    var empty = document.getElementById('emptyState');
+    document.getElementById('totalBadge').textContent = _pgTotal;
+
+    if (!pageList.length) {
+      tbody.innerHTML = '';
+      empty.classList.remove('d-none');
+      var _isFiltered = (searchQ && searchQ.trim()) || (currentFilter && currentFilter !== 'all');
+      var _msgEl = document.getElementById('emptyStateMsg');
+      var _descEl = document.getElementById('emptyStateDesc');
+      if (_msgEl) _msgEl.textContent = _isFiltered ? 'ไม่พบคำสั่งซื้อที่ตรงเงื่อนไข' : 'ยังไม่มีคำสั่งซื้อ';
+      if (_descEl) _descEl.textContent = _isFiltered ? 'ลองค้นหาด้วยคำค้นอื่น หรือเปลี่ยนตัวกรอง' : '';
+      _pgUpdateOrderBar();
+      return;
+    }
+
+    empty.classList.add('d-none');
+
+    var html = '';
+    pageList.forEach(function(o) {
+      html += ''
+        + '<tr data-id="' + escapeHtml(o.order_id) + '">'
+        +   '<td onclick="event.stopPropagation()">'
+        +     '<input type="checkbox" class="row-chk" value="' + escapeHtml(o.order_id) + '" onchange="updateDeleteBar()">'
+        +   '</td>'
+        +   '<td><div class="admin-main-text">' + escapeHtml(o.order_id) + '</div></td>'
+        +   '<td>'
+        +     '<div class="admin-main-text">' + escapeHtml(o.customer_name || '—') + '</div>'
+        +     '<div class="admin-sub-text">' + escapeHtml(o.customer_phone || '') + '</div>'
+        +   '</td>'
+        +   '<td><span class="admin-sub-text">' + ((o.item_count != null) ? o.item_count : _orderProductLines(o).length) + ' รายการ</span></td>'
+        +   '<td class="admin-cell-center"><span class="admin-main-text">' + money(o.total) + '</span></td>'
+        +   '<td class="admin-cell-center">' + statusBadge(o.status) + '</td>'
+        +   '<td class="admin-cell-center"><span class="admin-sub-text">' + escapeHtml(fmtDate(o.created_at)) + '</span></td>'
+        +   '<td class="text-end">'
+        +     '<button class="admin-action-btn btn-open-detail" data-id="' + escapeHtml(o.order_id) + '" title="ดูรายละเอียด">'
+        +       '<i class="bi bi-eye"></i>'
+        +     '</button>'
+        +   '</td>'
+        + '</tr>';
+    });
+
+    tbody.innerHTML = html;
+    _pgUpdateOrderBar();
+    _prefetchVisiblePage(pageList);
+
+    tbody.querySelectorAll('tr[data-id]').forEach(function(tr) {
+      tr.addEventListener('click', function() {
+        openDetail(tr.getAttribute('data-id'));
+      });
+    });
+
+    tbody.querySelectorAll('.btn-open-detail').forEach(function(btn) {
+      btn.addEventListener('click', function(event) {
+        event.stopPropagation();
+        openDetail(btn.getAttribute('data-id'));
+      });
+    });
+  }
+
+  // Modal-scoped loading overlay — covers the detail modal only, never the page
+  // or the order list (which stays visible and interactive).
+  function _setDetailModalLoading(on, msg) {
+    var content = document.querySelector('#orderDetailModal .odm-content');
+    if (!content) return;
+    var ov = document.getElementById('odmLoadingOverlay');
+    if (on) {
+      if (!ov) {
+        content.style.position = 'relative';
+        ov = document.createElement('div');
+        ov.id = 'odmLoadingOverlay';
+        ov.style.cssText = 'position:absolute;inset:0;z-index:30;background:rgba(255,255,255,.94);'
+          + 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:18px';
+        content.appendChild(ov);
+      }
+      ov.innerHTML = '<div class="spinner-border text-secondary" style="width:1.75rem;height:1.75rem;border-width:.2rem"></div>'
+        + '<div class="text-muted small">' + escapeHtml(msg || 'กำลังเปิดคำสั่งซื้อ…') + '</div>';
+      ov.style.display = 'flex';
+    } else if (ov) {
+      ov.remove();
+    }
+  }
+
+  // Resolve a full order for the detail modal — from _detailCache, else fetch
+  // once via orderGetRpc and cache it (so the same order never loads twice).
+  function _getFullOrder(orderId) {
+    if (_detailCache[orderId]) return Promise.resolve(_detailCache[orderId]);
+    return _rpc('orderGetRpc', orderId).then(function(r) {
+      if (!r || !r.ok || !r.record) return null;
+      _detailCache[orderId] = r.record;
+      return r.record;
+    });
+  }
+
+  function _showOrderDetail(full) {
+    _cleanupGiftPendingFromServer(full);
+    currentOrder = _applyGiftPendingToOrder(full);
+    _setDetailModalLoading(false);
+    fillDetail(currentOrder);
+    _loadOrderGifts(currentOrder);
+  }
+
+  function openDetail(orderId) {
+    if (!orderId) return;
+    var modalEl = document.getElementById('orderDetailModal');
+    var reqId = ++_detailReqId;
+
+    // Cached (prefetched or seen before) → open instantly, no loader, no RPC.
+    var cached = _detailCache[orderId];
+    if (cached) {
+      _showOrderDetail(cached);
+      bootstrap.Modal.getOrCreateInstance(modalEl).show();
+      return;
+    }
+
+    if (!GAS_ENV) return;
+    // Not warmed yet — open the modal at once with a modal-scoped loader; the
+    // order list behind it stays fully visible and interactive.
+    _setDetailModalLoading(true, 'กำลังเปิดคำสั่งซื้อ…');
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    _getFullOrder(orderId).then(function(full) {
+      if (reqId !== _detailReqId) return;              // user opened another order
+      if (!modalEl.classList.contains('show')) return; // modal already closed
+      if (!full) { _setDetailModalLoading(true, 'ไม่พบคำสั่งซื้อ'); return; }
+      _showOrderDetail(full);
+    }).catch(function(err) {
+      if (reqId !== _detailReqId) return;
+      _setDetailModalLoading(true, translateRpcError(err, MSG.error.fetch));
+    });
+  }
+
+  // Re-render the open detail modal with the latest data for an order
+  // (used after a background list refresh).
+  function _refreshOpenDetail(orderId) {
+    if (!orderId) return;
+    var _modal = document.getElementById('orderDetailModal');
+    if (!_modal || !_modal.classList.contains('show')) return;
+    if (!currentOrder || currentOrder.order_id !== orderId) return;
+    _getFullOrder(orderId).then(function(full) {
+      if (!full) return;
+      if (!_modal.classList.contains('show')) return;
+      if (!currentOrder || currentOrder.order_id !== orderId) return;
+      // Evict stale memory cache for a newly-appeared slip so fillDetail re-fetches
+      var _newSlip = full.slip_drive_file_id;
+      var _oldSlip = currentOrder.slip_drive_file_id;
+      if (_newSlip && _newSlip !== _oldSlip) { delete _imgMem[_newSlip]; }
+      _showOrderDetail(full);
+    }).catch(function(){});
+  }
+
+  function _cloneOrderForGiftUi(o) {
+    try { return JSON.parse(JSON.stringify(o || {})); }
+    catch (_) { return Object.assign({}, o || {}, { items: ((o && o.items) || []).slice() }); }
+  }
+
+  function _replaceOrderInClientCache(order) {
+    if (!order || !order.order_id) return;
+    _detailCache[order.order_id] = order; // keep the detail cache fresh
+    var idx = allOrders.findIndex(function(o){ return String(o.order_id) === String(order.order_id); });
+    if (idx >= 0) allOrders[idx] = order;
+    if (currentOrder && String(currentOrder.order_id) === String(order.order_id)) {
+      currentOrder = order;
+      _loadOrderGifts(currentOrder);
+    }
+  }
+
+  var _giftPendingByOrder = {};
+
+  function _giftPendingState(orderId) {
+    orderId = String(orderId || '');
+    if (!_giftPendingByOrder[orderId]) _giftPendingByOrder[orderId] = { adds: {}, removes: {} };
+    return _giftPendingByOrder[orderId];
+  }
+
+  function _hasGiftPendingState(orderId) {
+    var st = _giftPendingByOrder[String(orderId || '')];
+    return !!(st && (Object.keys(st.adds).length || Object.keys(st.removes).length));
+  }
+
+  function _dropGiftPendingStateIfEmpty(orderId) {
+    var key = String(orderId || '');
+    var st = _giftPendingByOrder[key];
+    if (st && !Object.keys(st.adds).length && !Object.keys(st.removes).length) delete _giftPendingByOrder[key];
+  }
+
+  function _findGiftLineBySnapshot(order, snapId) {
+    var gifts = _orderGiftLines(order);
+    for (var i = 0; i < gifts.length; i++) {
+      if (String(gifts[i].gift_snapshot_id) === String(snapId)) return _cloneOrderForGiftUi(gifts[i]);
+    }
+    return null;
+  }
+
+  function _registerGiftAdd(orderId, line) {
+    var st = _giftPendingState(orderId);
+    st.adds[String(line.gift_snapshot_id)] = { line: _cloneOrderForGiftUi(line), confirmed: false };
+  }
+
+  function _registerGiftRemove(orderId, snapId, backupLine) {
+    var st = _giftPendingState(orderId);
+    delete st.adds[String(snapId)];
+    st.removes[String(snapId)] = { backup: backupLine ? _cloneOrderForGiftUi(backupLine) : null, confirmed: false };
+  }
+
+  function _serverActiveGiftIds(order) {
+    var ids = {};
+    _orderGiftLines(order).forEach(function(g){
+      if (g && g.status !== 'removed') ids[String(g.gift_snapshot_id)] = true;
+    });
+    return ids;
+  }
+
+  function _cleanupGiftPendingFromServer(order) {
+    if (!order || !order.order_id || !_hasGiftPendingState(order.order_id)) return;
+    var st = _giftPendingState(order.order_id);
+    var activeIds = _serverActiveGiftIds(order);
+    Object.keys(st.adds).forEach(function(id){
+      if (st.adds[id].confirmed && activeIds[id]) delete st.adds[id];
+    });
+    Object.keys(st.removes).forEach(function(id){
+      if (st.removes[id].confirmed && !activeIds[id]) delete st.removes[id];
+    });
+    _dropGiftPendingStateIfEmpty(order.order_id);
+  }
+
+  function _applyGiftPendingToOrder(order) {
+    if (!order || !order.order_id || !_hasGiftPendingState(order.order_id)) return order;
+    var st = _giftPendingState(order.order_id);
+    var next = _cloneOrderForGiftUi(order);
+    next.items = Array.isArray(next.items) ? next.items : [];
+    var removeIds = {};
+    Object.keys(st.removes).forEach(function(id){ removeIds[id] = true; });
+    next.items = next.items.filter(function(it){
+      return !(it && it.line_type === 'gift' && removeIds[String(it.gift_snapshot_id)]);
+    });
+    var existing = {};
+    next.items.forEach(function(it){
+      if (it && it.line_type === 'gift') existing[String(it.gift_snapshot_id)] = true;
+    });
+    Object.keys(st.adds).forEach(function(id){
+      var op = st.adds[id];
+      if (removeIds[String(id)]) return;
+      if (op && op.line && !existing[String(op.line.gift_snapshot_id)]) next.items.push(_cloneOrderForGiftUi(op.line));
+    });
+    return next;
+  }
+
+  function _mutateCurrentOrderGifts(mutator) {
+    if (!currentOrder) return null;
+    var before = _cloneOrderForGiftUi(currentOrder);
+    var next = _cloneOrderForGiftUi(currentOrder);
+    next.items = Array.isArray(next.items) ? next.items : [];
+    var result = mutator(next.items, next);
+    _replaceOrderInClientCache(next);
+    return { before: before, next: next, result: result };
+  }
+
+  function _restoreOrderGiftUi(snapshot) {
+    if (!snapshot) return;
+    _replaceOrderInClientCache(snapshot);
+  }
+
+  function _refreshOrdersInBackground() {
+    return loadOrders({ silent: true }).catch(function(err){
+      try { console.warn('[orders background refresh failed]', err); } catch (_) {}
+    });
+  }
+
+  function _makeTempGiftSnapshotId() {
+    return 'tmp_gift_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+  }
+
+  function _buildOptimisticManualGiftLine(gift, qty, note) {
+    return {
+      line_type: 'gift',
+      gift_snapshot_id: _makeTempGiftSnapshotId(),
+      gift_id: gift.gift_id,
+      gift_name: gift.name || '',
+      gift_description: gift.description || '',
+      gift_image_url: gift.image_url || '',
+      gift_image_drive_file_id: gift.image_drive_file_id || _driveIdFromGiftImage(gift) || '',
+      gift_qty: Number(qty || 1),
+      source: 'manual',
+      rule_id: '',
+      rule_name: '',
+      source_product_id: '',
+      added_by: 'admin',
+      added_at: new Date().toISOString(),
+      note: note || '',
+      status: 'active',
+      _optimistic: true,
+      _pendingAction: 'add'
+    };
+  }
+
+  function _confirmOptimisticGiftLine(orderId, tempSnapshotId, realSnapshotId) {
+    if (!orderId || !tempSnapshotId) return;
+    var st = _giftPendingState(orderId);
+    var tempKey = String(tempSnapshotId);
+    var realKey = String(realSnapshotId || tempSnapshotId);
+    var op = st.adds[tempKey];
+    if (op) {
+      delete st.adds[tempKey];
+      op.confirmed = true;
+      op.line.gift_snapshot_id = realKey;
+      delete op.line._optimistic;
+      delete op.line._pendingAction;
+      st.adds[realKey] = op;
+    }
+    if (!currentOrder || String(currentOrder.order_id) !== String(orderId)) return;
+    _mutateCurrentOrderGifts(function(items){
+      items.forEach(function(it){
+        if (it && it.line_type === 'gift' && String(it.gift_snapshot_id) === String(tempSnapshotId)) {
+          it.gift_snapshot_id = realKey;
+          delete it._optimistic;
+          delete it._pendingAction;
+        }
+      });
+    });
+  }
+
+  function _confirmGiftRemove(orderId, snapId) {
+    var st = _giftPendingState(orderId);
+    if (st.removes[String(snapId)]) st.removes[String(snapId)].confirmed = true;
+  }
+
+  function _rollbackGiftAdd(orderId, snapId) {
+    var st = _giftPendingState(orderId);
+    delete st.adds[String(snapId)];
+    _dropGiftPendingStateIfEmpty(orderId);
+    if (!currentOrder || String(currentOrder.order_id) !== String(orderId)) return;
+    _mutateCurrentOrderGifts(function(items){
+      for (var i = items.length - 1; i >= 0; i--) {
+        if (items[i] && items[i].line_type === 'gift' && String(items[i].gift_snapshot_id) === String(snapId)) {
+          items.splice(i, 1);
+        }
+      }
+    });
+  }
+
+  function _rollbackGiftRemove(orderId, snapId) {
+    var st = _giftPendingState(orderId);
+    var op = st.removes[String(snapId)];
+    delete st.removes[String(snapId)];
+    _dropGiftPendingStateIfEmpty(orderId);
+    if (!op || !op.backup || op.backup.line_type !== 'gift' || !currentOrder || String(currentOrder.order_id) !== String(orderId)) return;
+    _mutateCurrentOrderGifts(function(items){
+      var found = false;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i] && items[i].line_type === 'gift' && String(items[i].gift_snapshot_id) === String(snapId)) {
+          items[i] = _cloneOrderForGiftUi(op.backup);
+          found = true;
+          break;
+        }
+      }
+      if (!found) items.push(_cloneOrderForGiftUi(op.backup));
+    });
+  }
+
+  function _selectedManualGiftItem() {
+    return (_manualGiftItems || []).filter(function(g){
+      return String(g.gift_id) === String(_manualGiftSelectedId);
+    })[0] || null;
+  }
+
+  function _validateManualGiftQty() {
+    var gift = _selectedManualGiftItem();
+    var qtyEl = document.getElementById('mgQty');
+    var errEl = document.getElementById('mgError');
+    var btn = document.getElementById('btnConfirmManualGift');
+    if (!qtyEl || !btn) return false;
+
+    var msg = '';
+    var qty = Number(qtyEl.value || 1);
+    if (!gift) {
+      msg = 'กรุณาเลือกของแถม';
+    } else {
+      var stock = Number(gift.stock);
+      if (stock === -1) qtyEl.removeAttribute('max');
+      else qtyEl.max = String(Math.max(0, stock));
+
+      if (isNaN(qty) || qty < 1) {
+        msg = 'จำนวนต้องอย่างน้อย 1';
+      } else if (stock !== -1 && qty > stock) {
+        msg = 'ของแถมในสต็อกไม่พอ (เหลือ ' + stock.toLocaleString() + ' ชิ้น)';
+      }
+    }
+
+    btn.disabled = !!msg;
+    if (errEl) {
+      errEl.textContent = msg;
+      errEl.classList.toggle('d-none', !msg);
+    }
+    return !msg;
+  }
+
+  // Read gifts directly from the order's items_json (no separate RPC).
+  function _loadOrderGifts(o){
+    var listEl = document.getElementById('odmGiftsList');
+    if (!listEl) return;
+    var gifts = _orderGiftLines(o).filter(function(g){ return g.status !== 'removed'; });
+    if (!gifts.length) { listEl.innerHTML = '<div class="text-muted small">— ไม่มีของแถม —</div>'; return; }
+    listEl.innerHTML = gifts.map(function(g, idx){
+      var pending = !!(g._optimistic || g._pendingAction);
+      var srcLabel = g.source === 'manual' ? '<span class="badge text-bg-secondary" style="font-size:.7rem">เพิ่มโดยแอดมิน</span>' : '<span class="badge text-bg-info" style="font-size:.7rem">ระบบอัตโนมัติ</span>';
+      var info = g.source === 'manual' ? (g.note ? ('หมายเหตุ: '+escHtml(g.note)) : '') : (g.rule_name ? ('เงื่อนไข: '+escHtml(g.rule_name)) : '');
+      if (pending) info = (info ? info + ' • ' : '') + '<span class="text-muted"><span class="spinner-border spinner-border-sm me-1" style="width:.75rem;height:.75rem"></span>กำลังบันทึก</span>';
+      var imgId = 'odmGiftThumb_' + idx;
+      var imgEl = '<div style="width:48px;height:48px;border-radius:8px;overflow:hidden;background:#f3f4f6;flex-shrink:0">'
+        + '<img id="'+imgId+'" alt="" data-drive-id="'+escHtml(g.gift_image_drive_file_id||'')+'" data-url="'+escHtml(g.gift_image_url||'')+'" style="width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .2s">'
+        + '</div>';
+      return '<div class="d-flex align-items-center gap-2 p-2" style="border:1px solid '+(pending?'#d1d5db':'#e5e7eb')+';border-radius:10px;'+(pending?'background:#f9fafb;':'')+'">'
+        + imgEl
+        + '<div class="flex-grow-1"><div class="fw-semibold small">'+escHtml(g.gift_name)+' × '+g.gift_qty+'</div><div class="small text-muted">'+srcLabel+' '+info+'</div></div>'
+        + '<button class="btn btn-sm btn-outline-danger" data-rm-gift-snap="'+escHtml(g.gift_snapshot_id)+'" '+(pending?'disabled':'')+'><i class="bi bi-trash"></i></button>'
+        + '</div>';
+    }).join('');
+    // Lazy-load gift thumbnails via the admin Drive→base64 helper if available.
+    gifts.forEach(function(_g, idx){
+      var img = document.getElementById('odmGiftThumb_' + idx);
+      if (!img) return;
+      var driveId = img.getAttribute('data-drive-id') || '';
+      var fallback = img.getAttribute('data-url') || '';
+      function applyGiftThumb(src) {
+        if (!src) return;
+        img.onload = function(){ img.style.opacity = '1'; };
+        img.src = src;
+      }
+      if (driveId && typeof driveFileToDataUrl === 'function') {
+        driveFileToDataUrl(driveId).then(function(dataUrl){
+          applyGiftThumb(dataUrl || fallback);
+        }).catch(function(){ applyGiftThumb(fallback); });
+      } else {
+        applyGiftThumb(fallback);
+      }
+    });
+  }
+  function escHtml(s){ return String(s||'').replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+  document.addEventListener('click', function(e){
+    var rm = e.target.closest('[data-rm-gift-snap]');
+    if (rm && currentOrder) {
+      var snapId = rm.dataset.rmGiftSnap;
+      Swal.fire({
+        icon:'warning',
+        title:'ลบของแถม?',
+        showCancelButton:true,
+        confirmButtonText:'ลบ',
+        cancelButtonText:'ยกเลิก',
+        confirmButtonColor:'#dc2626',
+        cancelButtonColor:'#6b7280'
+      }).then(function(r){
+        if (!r.isConfirmed) return;
+        var orderId = currentOrder.order_id;
+        var backupLine = _findGiftLineBySnapshot(currentOrder, snapId);
+        _registerGiftRemove(orderId, snapId, backupLine);
+        _mutateCurrentOrderGifts(function(items){
+          items.forEach(function(it){
+            if (it && it.line_type === 'gift' && String(it.gift_snapshot_id) === String(snapId)) {
+              it.status = 'removed';
+              it._pendingAction = 'remove';
+            }
+          });
+        });
+        showHUD('ลบของแถมแล้ว กำลังบันทึก…');
+        _rpc('removeGiftLineFromOrderRpc', orderId, snapId)
+          .then(function(res){
+            if (res && res.ok === false) {
+              _rollbackGiftRemove(orderId, snapId);
+              hideHUD('err', translateRpcError(res, MSG.error.delete));
+              return;
+            }
+            _confirmGiftRemove(orderId, snapId);
+            hideHUD('ok', MSG.success.delete);
+            _refreshOrdersInBackground();
+          })
+          .catch(function(err){
+            _rollbackGiftRemove(orderId, snapId);
+            hideHUD('err', translateRpcError(err, MSG.error.delete));
+          });
+      });
+    }
+    if (e.target.closest('#btnAddManualGift') && currentOrder) {
+      _openManualGiftModal();
+    }
+  });
+
+  var _manualGiftModal = null;
+  var _manualGiftItems = [];
+  var _manualGiftSelectedId = '';
+
+  function _setManualGiftButtonLoading(isLoading) {
+    var btn = document.getElementById('btnAddManualGift');
+    if (!btn) return;
+    btn.disabled = !!isLoading;
+    btn.innerHTML = isLoading
+      ? '<span class="spinner-border spinner-border-sm me-1"></span>กำลังโหลด…'
+      : '<i class="bi bi-plus-lg"></i> เพิ่มของแถม';
+  }
+
+  function _setManualGiftModalState(state, msg) {
+    var loading = document.getElementById('mgLoading');
+    var empty = document.getElementById('mgEmpty');
+    var form = document.getElementById('mgForm');
+    var save = document.getElementById('btnConfirmManualGift');
+    var err = document.getElementById('mgError');
+    if (empty) {
+      empty.innerHTML = msg
+        ? '<i class="bi bi-exclamation-circle"></i>' + escHtml(msg)
+        : '<i class="bi bi-gift"></i>ไม่มีของแถมที่ใช้งานได้';
+    }
+    if (loading) loading.classList.toggle('d-none', state !== 'loading');
+    if (empty) empty.classList.toggle('d-none', state !== 'empty');
+    if (form) form.classList.toggle('d-none', state !== 'ready');
+    if (save) save.disabled = state !== 'ready';
+    if (err) {
+      err.textContent = msg || '';
+      err.classList.toggle('d-none', !msg);
+    }
+  }
+
+  function _giftStockLabel(g) {
+    return Number(g.stock) === -1 ? 'ไม่จำกัด' : Number(g.stock || 0).toLocaleString();
+  }
+
+  function _driveIdFromGiftImage(g) {
+    var driveId = String((g && g.image_drive_file_id) || '').trim();
+    var url = String((g && g.image_url) || '');
+    if (!driveId && url.indexOf('drive.google') >= 0) {
+      var m = url.match(/[?&]id=([^&]+)/) || url.match(/\/file\/d\/([^/]+)/);
+      if (m) driveId = m[1];
+    }
+    return driveId;
+  }
+
+  function _renderManualGiftChoices() {
+    var list = document.getElementById('mgGiftList');
+    if (!list) return;
+    list.innerHTML = _manualGiftItems.map(function(g, idx) {
+      var active = String(g.gift_id) === String(_manualGiftSelectedId) ? ' active' : '';
+      var thumbId = 'mgGiftThumb_' + idx;
+      var fallbackIcon = '<i class="bi bi-image"></i>';
+      var desc = g.description ? escHtml(g.description) : '<span class="text-muted">ไม่มีรายละเอียด</span>';
+      var driveId = _driveIdFromGiftImage(g);
+      var useDirectUrl = g.image_url && !driveId;
+      var img = useDirectUrl
+        ? '<img id="' + thumbId + '" src="' + escHtml(g.image_url) + '" alt="">'
+        : '<span id="' + thumbId + '" data-drive-id="' + escHtml(driveId) + '">' + fallbackIcon + '</span>';
+      return '<button type="button" class="manual-gift-card' + active + '" data-pick-manual-gift="' + escHtml(g.gift_id) + '">'
+        + '<span class="manual-gift-thumb">' + img + '</span>'
+        + '<span class="flex-grow-1">'
+        + '<span class="d-flex align-items-start justify-content-between gap-2">'
+        + '<span class="fw-semibold text-dark">' + escHtml(g.name) + '</span>'
+        + '<span class="manual-gift-stock"><i class="bi bi-box-seam"></i>' + _giftStockLabel(g) + '</span>'
+        + '</span>'
+        + '<span class="d-block small text-muted mt-1" style="line-height:1.45">' + desc + '</span>'
+        + '</span>'
+        + '</button>';
+    }).join('');
+
+    _manualGiftItems.forEach(function(g, idx) {
+      var driveId = _driveIdFromGiftImage(g);
+      if (!driveId || typeof driveFileToDataUrl !== 'function') return;
+      var holder = document.getElementById('mgGiftThumb_' + idx);
+      if (!holder) return;
+      driveFileToDataUrl(driveId).then(function(dataUrl) {
+        if (!dataUrl) return;
+        holder.outerHTML = '<img id="mgGiftThumb_' + idx + '" src="' + escHtml(dataUrl) + '" alt="">';
+      }).catch(function(){});
+    });
+  }
+
+  function _openManualGiftModal(){
+    if (!currentOrder) return;
+    _manualGiftModal = _manualGiftModal || bootstrap.Modal.getOrCreateInstance(document.getElementById('manualGiftModal'));
+    _manualGiftItems = [];
+    _manualGiftSelectedId = '';
+    document.getElementById('mgQty').value = '1';
+    document.getElementById('mgNote').value = '';
+    document.getElementById('mgGiftList').innerHTML = '';
+    _setManualGiftModalState('loading');
+    _manualGiftModal.show();
+    _setManualGiftButtonLoading(true);
+
+    _rpc('listGiftItemsRpc').then(function(res){
+      if (!res || !res.ok) {
+        _setManualGiftModalState('empty', translateRpcError(res, 'ไม่สามารถโหลดรายการของแถมได้'));
+        return;
+      }
+      _manualGiftItems = (res.items||[]).filter(function(g){ return g.enabled && (Number(g.stock) === -1 || Number(g.stock) > 0); });
+      if (!_manualGiftItems.length) {
+        _setManualGiftModalState('empty');
+        return;
+      }
+      _manualGiftSelectedId = _manualGiftItems[0].gift_id;
+      _renderManualGiftChoices();
+      _setManualGiftModalState('ready');
+      _validateManualGiftQty();
+    }).catch(function(err) {
+      if (err && err.message === 'AUTH_REQUIRED') return;
+      _setManualGiftModalState('empty', translateRpcError(err, 'ไม่สามารถโหลดรายการของแถมได้'));
+    }).finally(function() {
+      _setManualGiftButtonLoading(false);
+    });
+  }
+
+  document.getElementById('mgGiftList').addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-pick-manual-gift]');
+    if (!btn) return;
+    _manualGiftSelectedId = btn.dataset.pickManualGift;
+    _renderManualGiftChoices();
+    _validateManualGiftQty();
+  });
+
+  document.getElementById('mgQty').addEventListener('input', function() {
+    _validateManualGiftQty();
+  });
+
+  document.getElementById('btnConfirmManualGift').addEventListener('click', function() {
+    if (!currentOrder || !_manualGiftSelectedId) return;
+    var qty = Number(document.getElementById('mgQty').value || 1);
+    var note = document.getElementById('mgNote').value;
+    var gift = _selectedManualGiftItem();
+    if (!_validateManualGiftQty()) return;
+
+    var btn = document.getElementById('btnConfirmManualGift');
+    var sp = document.getElementById('mgSaveSpinner');
+    var orderId = currentOrder.order_id;
+    var optimisticLine = _buildOptimisticManualGiftLine(gift, qty, note);
+    _registerGiftAdd(orderId, optimisticLine);
+    _mutateCurrentOrderGifts(function(items){
+      items.push(optimisticLine);
+    });
+    btn.disabled = true;
+    sp.classList.remove('d-none');
+    if (_manualGiftModal) _manualGiftModal.hide();
+    showHUD('เพิ่มของแถมแล้ว กำลังบันทึก…');
+
+    _rpc('addManualGiftToOrderRpc', orderId, {
+      gift_id: _manualGiftSelectedId,
+      qty: qty,
+      note: note
+    }).then(function(res) {
+      if (!res || !res.ok) throw new Error((res && res.error) || 'เพิ่มของแถมไม่สำเร็จ');
+      _confirmOptimisticGiftLine(orderId, optimisticLine.gift_snapshot_id, res.gift_snapshot_id || res.order_gift_id);
+      hideHUD('ok', 'เพิ่มของแถมสำเร็จ');
+      return _refreshOrdersInBackground();
+    }).catch(function(err) {
+      _rollbackGiftAdd(orderId, optimisticLine.gift_snapshot_id);
+      if (err && err.message === 'AUTH_REQUIRED') return;
+      var msg = translateRpcError(err, 'ไม่สามารถเพิ่มของแถมได้ กรุณาลองใหม่อีกครั้ง');
+      hideHUD('err', msg);
+      var errEl = document.getElementById('mgError');
+      errEl.textContent = msg;
+      errEl.classList.remove('d-none');
+    }).finally(function() {
+      btn.disabled = false;
+      sp.classList.add('d-none');
+    });
+  });
+
+  // Lazy thumbnail loader — shared by the detail-modal item table.
+  var _odmThumbObserver = null;
+  function _loadOdmThumb(img) {
+    if (!img || img._thumbLoaded) return;
+    img._thumbLoaded = true;
+    var driveId = img.getAttribute('data-drive-id') || '';
+    var imgUrl  = img.getAttribute('data-img-url') || '';
+    if (driveId) {
+      driveFileToDataUrl(driveId).then(function(dataUrl) {
+        img.src = dataUrl || imgUrl || '';
+        if (img.src) img.style.opacity = '1';
+      });
+    } else if (imgUrl) {
+      img.src = imgUrl;
+      img.style.opacity = '1';
+    }
+  }
+
+  function fillDetail(o) {
+    document.getElementById('odmOrderId').textContent = o.order_id;
+    document.getElementById('odmOrderDate').textContent =
+      'สั่งเมื่อ ' + fmtDate(o.created_at) +
+      (o.updated_at !== o.created_at ? ' • อัปเดต ' + fmtDate(o.updated_at) : '');
+
+    var expiryBadge = document.getElementById('odmExpiryBadge');
+    if (expiryBadge) {
+      var exp = o.token_expires_at;
+      if (!exp) {
+        expiryBadge.style.display = 'none';
+      } else {
+        var expMs    = new Date(exp).getTime();
+        var daysLeft = Math.ceil((expMs - Date.now()) / 86400000);
+        var fmtExp   = new Date(exp).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+        expiryBadge.style.display = '';
+        if (daysLeft <= 0) {
+          expiryBadge.style.cssText = 'display:;margin-top:.25rem;font-size:.75rem;font-weight:500;color:#991b1b';
+          expiryBadge.innerHTML = '<i class="bi bi-lock-fill me-1"></i>ลิงก์คำสั่งซื้อหมดอายุแล้ว (' + fmtExp + ')';
+        } else if (daysLeft <= 7) {
+          expiryBadge.style.cssText = 'display:;margin-top:.25rem;font-size:.75rem;font-weight:500;color:#b45309';
+          expiryBadge.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>ลิงก์คำสั่งซื้อหมดอายุใน ' + daysLeft + ' วัน (' + fmtExp + ')';
+        } else {
+          expiryBadge.style.cssText = 'display:;margin-top:.25rem;font-size:.75rem;font-weight:500;color:#6b7280';
+          expiryBadge.innerHTML = '<i class="bi bi-clock me-1"></i>ลิงก์คำสั่งซื้อหมดอายุ ' + fmtExp;
+        }
+      }
+    }
+
+    document.getElementById('odmCustomerName').textContent = o.customer_name || '—';
+    document.getElementById('odmPhone').textContent = o.customer_phone || '—';
+
+    var platform = o.customer_contact_platform || 'other';
+    var meta = CONTACT_META[platform] || CONTACT_META.other;
+    var iconEl = document.getElementById('odmContactIcon');
+    var labelEl = document.getElementById('odmContactPlatformLabel');
+    var contactEl = document.getElementById('odmContact');
+
+    if (iconEl) {
+      iconEl.className = 'bi ' + meta.icon + ' me-1';
+      iconEl.style.color = meta.color;
+    }
+    if (labelEl) labelEl.textContent = meta.label;
+
+    if (contactEl) {
+      var contact = o.customer_contact || '';
+      if (String(contact).indexOf('http') === 0) {
+        contactEl.innerHTML =
+          '<a href="' + escapeHtml(contact) + '" target="_blank" rel="noopener" style="word-break:break-all">' +
+          escapeHtml(contact) + '</a>';
+      } else {
+        contactEl.textContent = contact || '—';
+      }
+    }
+
+    document.getElementById('odmShippingName').textContent = o.shipping_name || '—';
+    document.getElementById('odmAddress').textContent = o.shipping_address || '—';
+    document.getElementById('odmDistrict').textContent = o.shipping_district || '—';
+    document.getElementById('odmAmphoe').textContent = o.shipping_amphoe || '—';
+    document.getElementById('odmProvince').textContent = o.shipping_province || '—';
+    document.getElementById('odmPostalCode').textContent = o.shipping_postal_code || '—';
+
+    var itemsBody = document.getElementById('odmItemsBody');
+    var items = _orderProductLines(o); // exclude gift lines from the products table
+    if (items.length) {
+      var itemsHtml = '';
+      items.forEach(function(item, idx) {
+        // Snapshot pricing with fallback for legacy orders
+        var basePrice  = (item.unit_base_price != null) ? item.unit_base_price : (item.unit_price || 0);
+        var finalPrice = (item.unit_final_price != null) ? item.unit_final_price : (item.unit_price || 0);
+        var hasPromo   = !!item.promotion;
+        itemsHtml += '<tr>';
+        itemsHtml += '<td class="pe-1" style="width:56px">'
+          + '<div style="width:48px;height:48px;border-radius:8px;overflow:hidden;background:#f3f4f6;flex-shrink:0">'
+          + '<img id="odm-item-thumb-' + idx + '" alt=""'
+          + ' data-drive-id="' + escapeHtml(item.image_drive_file_id || '') + '"'
+          + ' data-img-url="' + escapeHtml(item.image_url || '') + '"'
+          + ' style="width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .2s">'
+          + '</div></td>';
+        itemsHtml += '<td>';
+        itemsHtml += '<div class="fw-semibold">' + escapeHtml(item.title || '—') + '</div>';
+        if (item.variant_info) {
+          itemsHtml += '<div class="text-muted" style="font-size:.75rem">' + escapeHtml(item.variant_info) + '</div>';
+        }
+        if (hasPromo) {
+          itemsHtml += '<div class="text-muted" style="font-size:.7rem;color:#c2410c !important;margin-top:2px">'
+            + '<i class="bi bi-tag-fill"></i> ' + escapeHtml(item.promotion.name || 'โปรโมชั่น') + '</div>';
+        }
+        itemsHtml += '</td>';
+        itemsHtml += '<td class="text-center">' + escapeHtml(item.qty || 0) + '</td>';
+        itemsHtml += '<td class="text-end">';
+        if (hasPromo && basePrice !== finalPrice) {
+          itemsHtml += '<div>' + money(finalPrice) + '</div>'
+            + '<div class="text-muted small text-decoration-line-through">' + money(basePrice) + '</div>';
+        } else {
+          itemsHtml += money(finalPrice);
+        }
+        itemsHtml += '</td>';
+        itemsHtml += '<td class="text-end fw-semibold">' + money(item.subtotal) + '</td>';
+        itemsHtml += '</tr>';
+      });
+      itemsBody.innerHTML = itemsHtml;
+      // Lazy-load item thumbnails: only rows scrolled into view fetch their image,
+      // so a large order does not fire N image RPCs the moment the modal opens.
+      if (_odmThumbObserver) { _odmThumbObserver.disconnect(); }
+      var thumbs = itemsBody.querySelectorAll('img[id^="odm-item-thumb-"]');
+      if ('IntersectionObserver' in window) {
+        _odmThumbObserver = new IntersectionObserver(function(entries) {
+          entries.forEach(function(en) {
+            if (!en.isIntersecting) return;
+            _odmThumbObserver.unobserve(en.target);
+            _loadOdmThumb(en.target);
+          });
+        }, { rootMargin: '200px' });
+        thumbs.forEach(function(img) { _odmThumbObserver.observe(img); });
+      } else {
+        thumbs.forEach(_loadOdmThumb);
+      }
+    } else {
+      itemsBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted small">ไม่มีรายการ</td></tr>';
+    }
+
+    var shipInfoList = document.getElementById('odmShippingInfoList');
+    var shipSection = document.getElementById('odmShippingInfoSection');
+    var shipInfo = o.shipping_info || [];
+
+    if (shipInfo.length > 0) {
+      shipSection.style.display = '';
+      var shipHtml = '';
+      shipInfo.forEach(function(s) {
+        var matchedCo = _allShippingCompanies.find(function(c){ return c.id === s.company_id; });
+        var carrierId       = matchedCo ? (matchedCo.carrier_id || 'other') : 'other';
+        var trackingProvider = matchedCo ? (matchedCo.tracking_provider || (matchedCo.auto_tracking === true ? 'aftership' : '')) : '';
+        var bc = BUILTIN_CARRIERS.find(function(x){ return x.id === carrierId; });
+        var logoColor = (bc && bc.color) || '#6b7280';
+        var logoUrl   = (bc && bc.logo)  || null;
+        var initials  = (s.company_name || '?').charAt(0).toUpperCase();
+        var logoHtml = logoUrl
+          ? '<img src="' + escapeHtml(logoUrl) + '" style="width:32px;height:32px;object-fit:contain;border-radius:6px;flex-shrink:0" onerror="_onOrderCarrierImgErr(this,' + JSON.stringify(initials) + ',' + JSON.stringify(logoColor) + ')">'
+          : _orderCarrierBadge(initials, logoColor);
+        shipHtml += ''
+          + '<div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem .75rem;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px">'
+          +   '<div style="display:flex;align-items:center;gap:10px">'
+          +     logoHtml
+          +     '<div>'
+          +       '<div style="font-weight:700;font-size:.85rem">' + escapeHtml(s.company_name || '—') + '</div>'
+          +       '<div style="font-size:.75rem;color:#6b7280">' + escapeHtml(s.method_name || '—') + '</div>'
+          +     '</div>'
+          +     _buildProviderTag(trackingProvider)
+          +   '</div>'
+          +   '<span style="font-weight:700;font-size:.88rem;flex-shrink:0;margin-left:8px">' + money(s.fee || 0) + '</span>'
+          + '</div>';
+      });
+      shipInfoList.innerHTML = shipHtml;
+    } else {
+      shipSection.style.display = 'none';
+      shipInfoList.innerHTML = '';
+    }
+
+    var slipSection = document.getElementById('odmSlipSection');
+    // Restore odmSlipImgWrap to original structure in case a previous async callback destroyed it
+    var slipWrap = document.getElementById('odmSlipImgWrap');
+    if (!document.getElementById('odmSlipImg')) {
+      slipWrap.innerHTML = '<div id="odmSlipShimmer" style="display:none;position:absolute;inset:0;background:linear-gradient(90deg,#f3f4f6 25%,#e5e7eb 50%,#f3f4f6 75%);background-size:200% 100%;animation:shimmer 1.2s infinite"></div>'
+        + '<img id="odmSlipImg" src="" alt="สลิป" style="max-width:100%;max-height:300px;border-radius:10px;border:1px solid #e5e7eb;display:block;visibility:hidden" onclick="openOdmSlipLightbox(this)">';
+    }
+    // Reset state from any previous order's error display
+    var slipImg = document.getElementById('odmSlipImg');
+    slipImg.style.display = 'block';
+    var _prevNotFound = slipWrap.querySelector('.slip-not-found');
+    if (_prevNotFound) _prevNotFound.remove();
+    var slipShimmer = document.getElementById('odmSlipShimmer');
+
+    if (o.slip_drive_file_id) {
+      slipSection.classList.remove('d-none');
+      slipImg.src = '';
+      slipImg.style.visibility = 'hidden';
+      slipImg.style.cursor = 'default';
+      slipShimmer.style.display = '';
+      var _slipDriveId = o.slip_drive_file_id;
+      var _myGen = ++_odmSlipGen; // snapshot generation ณ เวลาที่เปิด order นี้
+      driveFileToDataUrl(_slipDriveId).then(function(dataUrl) {
+        // ถ้า user เปิด order อื่นไปแล้ว (gen เปลี่ยน) ให้ทิ้ง callback นี้ทันที
+        if (_myGen !== _odmSlipGen) return;
+        var img = document.getElementById('odmSlipImg');
+        var shimmer = document.getElementById('odmSlipShimmer');
+        var wrap = document.getElementById('odmSlipImgWrap');
+        if (!img) return;
+        if (dataUrl) {
+          img.onload = function() {
+            if (_myGen !== _odmSlipGen) return;
+            if (shimmer) shimmer.style.display = 'none';
+            img.style.visibility = '';
+            img.style.cursor = 'zoom-in';
+          };
+          img.onerror = function() {
+            if (_myGen !== _odmSlipGen) return;
+            if (shimmer) shimmer.style.display = 'none';
+            img.style.display = 'none';
+            if (wrap && !wrap.querySelector('.slip-not-found')) {
+              var msg = document.createElement('div');
+              msg.className = 'slip-not-found';
+              msg.style.cssText = 'display:flex;align-items:center;justify-content:center;height:80px;color:#9ca3af;font-size:.82rem';
+              msg.innerHTML = '<i class="bi bi-image me-2"></i>ไม่พบไฟล์สลิป';
+              wrap.appendChild(msg);
+            }
+          };
+          img.src = dataUrl;
+        } else {
+          if (shimmer) shimmer.style.display = 'none';
+          img.style.display = 'none';
+          if (wrap && !wrap.querySelector('.slip-not-found')) {
+            var msg = document.createElement('div');
+            msg.className = 'slip-not-found';
+            msg.style.cssText = 'display:flex;align-items:center;justify-content:center;height:80px;color:#9ca3af;font-size:.82rem';
+            msg.innerHTML = '<i class="bi bi-image me-2"></i>ไม่พบไฟล์สลิป';
+            wrap.appendChild(msg);
+          }
+        }
+      });
+    } else {
+      slipSection.classList.add('d-none');
+      slipImg.src = '';
+      slipImg.style.visibility = 'hidden';
+    }
+
+    document.getElementById('odmSubtotal').textContent = money(o.subtotal);
+    document.getElementById('odmShippingFeeInput').value = o.shipping_fee || 0;
+    document.getElementById('odmTotal').textContent = money(o.total);
+
+    var locked = ['paid','approved','shipped','rejected'].indexOf(o.status) !== -1;
+    document.getElementById('odmShippingFeeInput').disabled = locked;
+    document.getElementById('btnSaveShipping').disabled = locked;
+
+    // Tracking section
+    var trackSect = document.getElementById('odmTrackingSection');
+    var shipForm  = document.getElementById('odmShipForm');
+    var trackInfo = document.getElementById('odmTrackingInfo');
+    var _hasAutoTracking = !!(o.tracking && (o.tracking.tracking_provider || o.tracking.auto_tracking));
+    document.getElementById('btnSetDelivered').style.display = (o.status === 'shipped') ? '' : 'none';
+
+    if (o.status === 'approved' || o.status === 'shipped' || o.status === 'delivered') {
+      trackSect.style.display = '';
+      // Find company from shipping_info
+      var shipInfoCompanyId = (o.shipping_info && o.shipping_info[0]) ? o.shipping_info[0].company_id : null;
+      var matchedCompany = _allShippingCompanies.find(function(c){ return c.id === shipInfoCompanyId; });
+      var carrierId = matchedCompany ? (matchedCompany.carrier_id || 'other') : 'other';
+      var carrierName = matchedCompany ? matchedCompany.name : ((o.shipping_info && o.shipping_info[0]) ? (o.shipping_info[0].company_name || 'ขนส่ง') : 'ขนส่ง');
+      var trackingTpl = matchedCompany ? (matchedCompany.tracking_url_template || '') : '';
+      var bc = BUILTIN_CARRIERS.find(function(x){ return x.id === carrierId; });
+      if (!trackingTpl && bc && bc.tpl) trackingTpl = bc.tpl;
+
+      // Build carrier logo HTML
+      var logoColor = (bc && bc.color) || '#6b7280';
+      var logoUrl   = (bc && bc.logo) || null;
+      var initials  = carrierName.charAt(0).toUpperCase();
+      var logoHtml = logoUrl
+        ? '<img src="' + escapeHtml(logoUrl) + '" style="width:28px;height:28px;object-fit:contain;border-radius:4px;flex-shrink:0" onerror="_onOrderCarrierImgErr(this,' + JSON.stringify(initials) + ',' + JSON.stringify(logoColor) + ')">'
+        : _orderCarrierBadge(initials, logoColor);
+
+      var trackingProvider = matchedCompany ? (matchedCompany.tracking_provider || (matchedCompany.auto_tracking === true ? 'aftership' : '')) : '';
+      var carrierLeftHtml = '<div class="d-flex align-items-center gap-2">' + logoHtml
+        + '<div><div class="fw-bold small">' + escapeHtml(carrierName) + '</div>'
+        + '<div class="text-muted" style="font-size:.72rem">' + escapeHtml(carrierId !== 'other' ? (bc ? bc.name : carrierId) : 'กำหนดเอง') + '</div></div></div>';
+
+      if (o.status === 'approved') {
+        // ซ่อน ship form ไว้ก่อน — แสดงเมื่อกดปุ่ม "จัดส่งแล้ว" เท่านั้น
+        trackSect.style.display = 'none';
+        shipForm.style.display  = 'none';
+        trackInfo.style.display = 'none';
+       
+        document.getElementById('odmTrackingInput').value  = '';
+        document.getElementById('odmShipNoteInput').value  = '';
+        // Store for confirmShip
+        window._odmShipData = { carrierId: carrierId, carrierName: carrierName, trackingTpl: trackingTpl,
+          tracking_provider: trackingProvider };
+      } else { // shipped or delivered
+        shipForm.style.display  = 'none';
+        trackInfo.style.display = '';
+        var td = o.tracking || {};
+        var tdProvider = td.tracking_provider || (td.auto_tracking === true ? 'aftership' : '');
+
+        // Carrier row + provider badge (tracking view)
+        var carrierInfoEl = document.getElementById('odmTrackingCarrierInfo');
+        var aftershipTagEl = document.getElementById('odmAftershipTag');
+        if (carrierInfoEl) carrierInfoEl.innerHTML = logoHtml
+          + '<div><div class="fw-bold small">' + escapeHtml(carrierName) + '</div>'
+          + '<div class="text-muted" style="font-size:.72rem">' + escapeHtml(carrierId !== 'other' ? (bc ? bc.name : carrierId) : 'กำหนดเอง') + '</div></div>';
+        if (aftershipTagEl) aftershipTagEl.innerHTML = _buildProviderTag(tdProvider);
+
+        document.getElementById('odmTrackingNumber').textContent = td.tracking_number || '—';
+        var link = document.getElementById('odmTrackingLink');
+        if (td.tracking_url) {
+          link.href = td.tracking_url;
+          link.style.display = '';
+        } else {
+          link.style.display = 'none';
+        }
+        // ซ่อนปุ่มแก้ไขสำหรับ delivered และ orders ที่ใช้ auto-tracking
+        var editShipBtn = document.getElementById('odmEditShipBtn');
+        if (editShipBtn) editShipBtn.style.display = (o.status === 'delivered' || !!tdProvider) ? 'none' : '';
+        // For edit: pre-fill carrier data
+        window._odmShipData = { carrierId: carrierId, carrierName: carrierName, trackingTpl: trackingTpl,
+          tracking_provider: trackingProvider };
+        
+        document.getElementById('odmTrackingInput').value = td.tracking_number || '';
+        document.getElementById('odmShipNoteInput').value = td.note || '';
+      }
+    } else {
+      trackSect.style.display = 'none';
+      shipForm.style.display  = 'none';
+      trackInfo.style.display = 'none';
+      document.getElementById('odmTrackingInput').value = '';
+      document.getElementById('odmShipNoteInput').value = '';
+      window._odmShipData = null;
+    }
+
+    var notesEl = document.getElementById('odmNotes');
+    var noteSect = document.getElementById('odmNotesSection');
+    if (o.customer_notes) {
+      notesEl.textContent = o.customer_notes;
+      noteSect.classList.remove('d-none');
+    } else {
+      notesEl.textContent = '';
+      noteSect.classList.add('d-none');
+    }
+
+    document.querySelectorAll('.odm-status-btn').forEach(function(btn) {
+      var s = btn.getAttribute('data-set-status');
+      btn.className = 'odm-status-btn' + (s === o.status ? ' active-' + s : '');
+    });
+
+    var histEl = document.getElementById('odmHistoryList');
+    var hist = (o.status_history || []).slice().reverse();
+
+    if (hist.length) {
+      var histHtml = '';
+      hist.forEach(function(h) {
+        histHtml += ''
+          + '<div class="odm-history-item">'
+          +   '<span class="odm-history-dot ' + escapeHtml(h.status) + '"></span>'
+          +   '<div>'
+          +     '<span class="fw-semibold">' + escapeHtml(STATUS_LABEL[h.status] || h.status) + '</span>'
+          +     '<span class="text-muted ms-2">' + escapeHtml(fmtDate(h.timestamp)) + '</span>'
+          +   '</div>'
+          + '</div>';
+      });
+      histEl.innerHTML = histHtml;
+    } else {
+      histEl.innerHTML = '<div class="text-muted small">ยังไม่มีประวัติ</div>';
+    }
+  }
+
+  async function setOrderStatus(newStatus, note) {
+    if (!currentOrder) return;
+    if (currentOrder.status === newStatus) return;
+
+    var label = STATUS_LABEL[newStatus] || newStatus;
+    var autoTrack = !!(currentOrder.tracking &&
+      (currentOrder.tracking.tracking_provider || currentOrder.tracking.auto_tracking));
+
+    if (newStatus === 'delivered' && autoTrack) {
+      var warn = await Swal.fire({
+        icon: 'warning',
+        title: 'ยืนยันการกำหนดสถานะด้วยตนเอง',
+        html: 'คำสั่งซื้อนี้อยู่ภายใต้ <b>ระบบติดตามพัสดุอัตโนมัติ</b><br><br>' +
+              'หากดำเนินการต่อ ระบบจะ<b>หยุดติดตามสถานะพัสดุโดยอัตโนมัติ</b> ' +
+              'และสถานะ <b>"ส่งสำเร็จ"</b> จะถูกบันทึกด้วยตนเองแทน<br><br>' +
+              '<small class="text-muted">ใช้เฉพาะกรณีที่ API ของผู้ให้บริการหมดอายุ ' +
+              'หรือระบบติดตามอัตโนมัติไม่สามารถใช้งานได้</small>',
+        showCancelButton: true,
+        confirmButtonText: 'ยืนยัน — หยุดติดตามและบันทึกส่งสำเร็จ',
+        cancelButtonText: 'ยกเลิก',
+        confirmButtonColor: '#d97706',
+        cancelButtonColor: '#6b7280'
+      });
+      if (!warn.isConfirmed) return;
+    } else {
+      var confirmed = await Swal.fire({
+        title: 'เปลี่ยนสถานะเป็น "' + label + '"?',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'ยืนยัน',
+        cancelButtonText: 'ยกเลิก',
+        confirmButtonColor: '#111827'
+      });
+      if (!confirmed.isConfirmed) return;
+    }
+
+    showHUD('กำลังอัปเดตสถานะ…');
+    try {
+      if (!GAS_ENV) throw new Error('GAS not available');
+
+      var r = await _rpc('orderUpdateStatusRpc', currentOrder.order_id, newStatus, note || '');
+      if (!r || !r.ok) throw new Error((r && r.error) || 'ไม่สามารถอัปเดตได้');
+
+      currentOrder.status = newStatus;
+      currentOrder.updated_at = r.updated_at || new Date().toISOString();
+      if (newStatus === 'unpaid') currentOrder.slip_drive_file_id = '';
+
+      if (!currentOrder.status_history) currentOrder.status_history = [];
+      var entry = { status: newStatus, timestamp: currentOrder.updated_at };
+      if (note) entry.note = note;
+      currentOrder.status_history.push(entry);
+
+      var idx = allOrders.findIndex(function(o) {
+        return o.order_id === currentOrder.order_id;
+      });
+      if (idx >= 0) allOrders[idx] = currentOrder;
+      _detailCache[currentOrder.order_id] = currentOrder;
+
+      fillDetail(currentOrder);
+      renderTable();
+      hideHUD('ok', MSG.success.update);
+    } catch (err) {
+      hideHUD('err', translateRpcError(err, 'ไม่สามารถปรับปรุงสถานะคำสั่งซื้อได้'));
+    }
+  }
+
+  async function setOrderStatusWithNote(newStatus) {
+    if (!currentOrder) return;
+
+    var label = STATUS_LABEL[newStatus] || newStatus;
+
+    // Bootstrap modal's focus trap prevents typing in Swal textarea — disable it temporarily
+    var modalEl = document.getElementById('orderDetailModal');
+    var bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal && bsModal._focustrap) bsModal._focustrap.deactivate();
+
+    var result = await Swal.fire({
+      title: label + ' — กรอกหมายเหตุ (ถ้ามี)',
+      input: 'textarea',
+      inputPlaceholder: 'เช่น สลิปไม่ถูกต้อง, ยอดโอนไม่ตรง…',
+      showCancelButton: true,
+      confirmButtonText: 'ยืนยัน',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#111827',
+      didOpen: function() { Swal.getInput().focus(); }
+    });
+
+    // Re-enable Bootstrap focus trap
+    if (bsModal && bsModal._focustrap) bsModal._focustrap.activate();
+
+    if (!result.isConfirmed) return;
+    await setOrderStatus(newStatus, result.value || '');
+  }
+
+  async function saveShippingFee() {
+    if (!currentOrder) return;
+
+    var fee = Number(document.getElementById('odmShippingFeeInput').value || 0);
+    var total = Number(currentOrder.subtotal || 0) + fee;
+
+    showHUD('กำลังบันทึกค่าจัดส่ง…');
+    try {
+      if (!GAS_ENV) throw new Error('GAS not available');
+
+      var r = await _rpc('orderUpdateFieldsRpc', currentOrder.order_id, {
+        shipping_fee: fee,
+        total: total
+      });
+
+      if (!r || !r.ok) throw new Error((r && r.error) || 'บันทึกไม่สำเร็จ');
+
+      currentOrder.shipping_fee = fee;
+      currentOrder.total = total;
+
+      var idx = allOrders.findIndex(function(o) {
+        return o.order_id === currentOrder.order_id;
+      });
+      if (idx >= 0) allOrders[idx] = currentOrder;
+      _detailCache[currentOrder.order_id] = currentOrder;
+
+      document.getElementById('odmTotal').textContent = money(total);
+      renderTable();
+      hideHUD('ok', MSG.success.save);
+    } catch (err) {
+      hideHUD('err', translateRpcError(err, MSG.error.save));
+    }
+  }
+
+  function openShipForm() {
+    if (!currentOrder) return;
+    var trackSect = document.getElementById('odmTrackingSection');
+    var shipForm  = document.getElementById('odmShipForm');
+    var trackInfo = document.getElementById('odmTrackingInfo');
+    trackSect.style.display = '';
+    shipForm.style.display  = '';
+    trackInfo.style.display = 'none';
+    // อัปเดต label ตามผู้ให้บริการ tracking
+    var trackingProvider = (window._odmShipData && window._odmShipData.tracking_provider) || '';
+    var hint = document.getElementById('odmTrackingInputHint');
+    var inp  = document.getElementById('odmTrackingInput');
+    if (hint) hint.textContent = trackingProvider ? '(จำเป็น — ใช้ติดตามพัสดุอัตโนมัติ)' : '(ไม่บังคับ)';
+    if (hint) hint.style.color = trackingProvider ? '#dc2626' : '';
+    if (inp)  inp.required = !!trackingProvider;
+    setTimeout(function() {
+      trackSect.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      if (inp) inp.focus();
+    }, 80);
+  }
+
+  async function confirmShip() {
+    if (!currentOrder) return;
+    var trackingNumber = document.getElementById('odmTrackingInput').value.trim();
+    var note = document.getElementById('odmShipNoteInput').value.trim();
+    var sd = window._odmShipData || {};
+    if (sd.tracking_provider && !trackingNumber) {
+      var inp = document.getElementById('odmTrackingInput');
+      if (inp) { inp.focus(); inp.classList.add('is-invalid'); setTimeout(function(){ inp.classList.remove('is-invalid'); }, 2000); }
+      hideHUD('err', 'กรุณากรอกหมายเลขพัสดุสำหรับติดตามพัสดุอัตโนมัติ');
+      return;
+    }
+    var trackingUrl = '';
+    if (trackingNumber && sd.trackingTpl) {
+      trackingUrl = sd.trackingTpl.replace('{T}', encodeURIComponent(trackingNumber));
+    }
+    var trackingData = {
+      tracking_number: trackingNumber,
+      carrier_id:      sd.carrierId || 'other',
+      carrier_name:    sd.carrierName || '',
+      tracking_url:    trackingUrl,
+      note:            note,
+      tracking_provider: sd.tracking_provider || ''
+    };
+
+    showHUD('กำลังบันทึกการจัดส่ง…');
+    try {
+      if (!GAS_ENV) throw new Error('GAS not available');
+      console.log(trackingData)
+      var r = await _rpc('orderMarkShippedRpc', currentOrder.order_id, trackingData);
+      if (!r || !r.ok) {
+        var errCode = (r && r.error) || '';
+        if (errCode === 'ORDER_NOT_APPROVED') {
+          hideHUD('err', 'ไม่สามารถบันทึกการจัดส่งได้');
+          Swal.fire({
+            icon: 'warning',
+            title: 'สถานะคำสั่งซื้อไม่ถูกต้อง',
+            html: 'คำสั่งซื้อนี้ยังไม่ได้รับการ <b>อนุมัติ</b><br>กรุณาเปลี่ยนสถานะเป็น <b>"อนุมัติ"</b> ก่อน แล้วจึงยืนยันการจัดส่ง',
+            confirmButtonText: 'รับทราบ',
+            confirmButtonColor: '#111827'
+          });
+          return;
+        }
+        throw new Error(errCode || 'บันทึกไม่สำเร็จ');
+      }
+
+      if (r.record) {
+        currentOrder = r.record;
+      } else {
+        currentOrder.status = 'shipped';
+        currentOrder.tracking = trackingData;
+      }
+      var _shipIdx = allOrders.findIndex(function(o){ return o.order_id === currentOrder.order_id; });
+      if (_shipIdx >= 0) allOrders[_shipIdx] = currentOrder;
+      _detailCache[currentOrder.order_id] = currentOrder;
+
+      fillDetail(currentOrder);
+      renderTable();
+
+      // แสดงผล provider registration / validation
+      var as = r.aftership;
+      var silentNoKey = (as && as.source === 'no_key' && (!as.provider || as.provider === 'aftership'));
+      if (!as || as.source === 'skipped' || as.source === 'unsupported' || silentNoKey) {
+        hideHUD('ok', '✓ บันทึกการจัดส่งสำเร็จ');
+      } else if (as.ok) {
+        var successSuffix = (as.source === 'already_exists') ? 'AfterShip: มีอยู่แล้ว'
+                          : (as.source === 'created')         ? 'AfterShip: ลงทะเบียนแล้ว'
+                          : '';
+        hideHUD('ok', '✓ บันทึกการจัดส่งสำเร็จ' + (successSuffix ? ' · ' + successSuffix : ''));
+      } else {
+        // บันทึกสำเร็จแต่ provider มีปัญหา — แสดง popup พร้อม error detail
+        hideHUD('ok', '✓ บันทึกสำเร็จ');
+        var pName = (as.provider === 'thaipost' || (as.source||'').startsWith('thaipost'))
+                      ? 'ไปรษณีย์ไทย'
+                    : (as.provider === 'etracking' || (as.source||'').startsWith('etracking'))
+                      ? 'ETracking'
+                    : 'AfterShip';
+        var actionDesc = (pName === 'AfterShip')
+          ? 'การ register tracking กับ AfterShip'
+          : 'การตรวจสอบ tracking กับ ' + pName;
+        var errCode = as.errorCode || as.httpCode || (as.source === 'no_key' ? 'NO_KEY' : '');
+        var errMsg  = as.message ||
+          (as.source === 'no_key' ? 'ยังไม่ได้ตั้งค่า API Key / Token สำหรับผู้ให้บริการนี้' : '');
+        Swal.fire({
+          icon: 'warning',
+          title: pName + ' แจ้งข้อผิดพลาด',
+          html: '<b>บันทึกการจัดส่งสำเร็จแล้ว</b> แต่' + actionDesc + 'ล้มเหลว<br><br>' +
+                (errCode ? '<code>Error: ' + escapeHtml(String(errCode)) + '</code><br>' : '') +
+                (errMsg  ? '<small>' + escapeHtml(errMsg) + '</small>' : ''),
+          confirmButtonText: 'รับทราบ'
+        });
+      }
+    } catch (err) {
+      hideHUD('err', translateRpcError(err, 'ไม่สามารถบันทึกการจัดส่งได้'));
+    }
+  }
+
+  function toggleSelectAll(chk) {
+    document.querySelectorAll('.row-chk').forEach(function(c) { c.checked = chk.checked; });
+    updateDeleteBar();
+  }
+
+  function updateDeleteBar() {
+    var selected = document.querySelectorAll('.row-chk:checked');
+    var btn = document.getElementById('btnDeleteSelected');
+    var chkAll = document.getElementById('chkSelectAll');
+    document.getElementById('selectedCount').textContent = selected.length;
+    if (selected.length > 0) {
+      btn.classList.remove('d-none');
+    } else {
+      btn.classList.add('d-none');
+    }
+    var all = document.querySelectorAll('.row-chk');
+    chkAll.checked = all.length > 0 && selected.length === all.length;
+    chkAll.indeterminate = selected.length > 0 && selected.length < all.length;
+  }
+
+  async function deleteSelectedOrders() {
+    var selected = Array.from(document.querySelectorAll('.row-chk:checked')).map(function(c) { return c.value; });
+    if (!selected.length) return;
+
+    var confirmed = await Swal.fire({
+      title: 'ลบคำสั่งซื้อ ' + selected.length + ' รายการ?',
+      text: 'การดำเนินการนี้ไม่สามารถย้อนกลับได้',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'ลบ',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#dc3545'
+    });
+
+    if (!confirmed.isConfirmed) return;
+
+    showHUD('กำลังลบคำสั่งซื้อ…');
+    try {
+      if (!GAS_ENV) throw new Error('GAS not available');
+      var r = await _rpc('orderDeleteRpc', selected);
+      if (!r || !r.ok) throw new Error((r && r.error) || 'ลบไม่สำเร็จ');
+      selected.forEach(function(id){ delete _detailCache[id]; });
+      allOrders = allOrders.filter(function(o) { return selected.indexOf(o.order_id) === -1; });
+      renderTable();
+      updateDeleteBar();
+      hideHUD('ok', 'ลบคำสั่งซื้อเรียบร้อยแล้ว ' + r.deleted + ' รายการ');
+    } catch (err) {
+      hideHUD('err', translateRpcError(err, MSG.error.delete));
+    }
+  }
+
+  // ====== ORDER VIEW PAGE LINK ======
+  function openOrderViewPage() {
+    if (!currentOrder || !currentOrder.token) {
+      Swal.fire({ icon: 'info', title: 'ไม่มี Token', text: 'Order นี้ไม่มี token สำหรับหน้าลูกค้า', confirmButtonColor: '#111827' });
+      return;
+    }
+    var execUrl = window._EXEC_URL || '';
+    if (!execUrl || execUrl.indexOf('http') !== 0) {
+      Swal.fire({ icon: 'info', title: 'ไม่พร้อมใช้งาน', text: 'ฟีเจอร์นี้ต้องการ GAS Web App URL', confirmButtonColor: '#111827' });
+      return;
+    }
+    window.open(execUrl + '?page=order-view&token=' + encodeURIComponent(currentOrder.token), '_blank');
+  }
+
+  // ====== RECEIPT PDF ======
+  function _buildReceiptHtml(opts) {
+    var shopName = opts.shopName || '';
+    var orderId  = opts.orderId  || '';
+    var createdAt = opts.createdAt || '';
+    var items    = opts.items    || [];
+    var subtotal = opts.subtotal || 0;
+    var shippingFee = opts.shippingFee || 0;
+    var total    = opts.total    || 0;
+    var shippingInfo = opts.shippingInfo || [];
+    var orderViewUrl = opts.orderViewUrl || '';
+    var shippingName = opts.shippingName || '';
+    var shippingAddress = opts.shippingAddress || '';
+    var shippingDistrict = opts.shippingDistrict || '';
+    var shippingAmphoe = opts.shippingAmphoe || '';
+    var shippingProvince = opts.shippingProvince || '';
+    var shippingPostal = opts.shippingPostal || '';
+    var customerNotes = opts.customerNotes || '';
+    var isLastPage = opts.isLast !== false;
+    var pageText = opts.pageCount > 1 ? ('หน้า ' + opts.pageNo + '/' + opts.pageCount) : '';
+    function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function fmtMoney(n) { return '\u0e3f' + Number(n||0).toLocaleString('th-TH'); }
+    function fmtDate(iso) { try { return new Date(iso).toLocaleString('th-TH', {dateStyle:'medium',timeStyle:'short'}); } catch(e) { return iso||''; } }
+    var itemRows = items.map(function(item, i) {
+      var imgHtml = item.imgDataUrl
+        ? '<img src="' + item.imgDataUrl + '" class="ri" alt="">'
+        : (item.imgUrl ? '<img src="' + esc(item.imgUrl) + '" class="ri" alt="">' : '<span class="ri"></span>');
+      var hasPromo = !!item.promotion && item.basePrice && item.basePrice !== item.unitPrice;
+      var priceLine = hasPromo
+        ? (fmtMoney(item.unitPrice) + ' <span style="color:#9ca3af;text-decoration:line-through;font-size:.8em">' + fmtMoney(item.basePrice) + '</span>')
+        : fmtMoney(item.unitPrice);
+      var promoTag = item.promotion
+        ? '<div class="riv" style="color:#c2410c">' + esc(item.promotion.name || '\u0e42\u0e1b\u0e23\u0e42\u0e21\u0e0a\u0e31\u0e48\u0e19') + '</div>'
+        : '';
+      return '<tr' + (i === items.length - 1 ? ' class="last"' : '') + '>'
+        + '<td style="width:64px;padding-right:12px">' + imgHtml + '</td>'
+        + '<td><div class="rit">' + esc(item.title) + '</div>'
+        + (item.variantInfo ? '<div class="riv">' + esc(item.variantInfo) + '</div>' : '')
+        + promoTag
+        + '<div class="riq">\u00d7' + item.qty + '\u00a0\u00a0' + priceLine + '/\u0e0a\u0e34\u0e49\u0e19</div>'
+        + '</td><td class="ris">' + fmtMoney(item.unitPrice * item.qty) + '</td></tr>';
+    }).join('');
+    var TRUCK_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:3px;flex-shrink:0"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>';
+    var shippingRows = shippingInfo.length
+      ? shippingInfo.map(function(s) {
+          var label = [s.company_name, s.method_name].filter(Boolean).join(' ');
+          return '<div class="rtr"><span>' + TRUCK_SVG + '\u0e04\u0e48\u0e32\u0e08\u0e31\u0e14\u0e2a\u0e48\u0e07' + (label ? ' (' + esc(label) + ')' : '') + '</span><span>' + fmtMoney(s.fee != null ? s.fee : shippingFee) + '</span></div>';
+        }).join('')
+      : '<div class="rtr"><span>' + TRUCK_SVG + '\u0e04\u0e48\u0e32\u0e08\u0e31\u0e14\u0e2a\u0e48\u0e07</span><span>' + fmtMoney(shippingFee) + '</span></div>';
+    var PIN_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:3px;flex-shrink:0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+    var addrParts = [shippingAddress, shippingDistrict, shippingAmphoe, shippingProvince, shippingPostal].filter(Boolean);
+    var addrHtml = (shippingName || addrParts.length)
+      ? '<div class="ra"><div class="rat">' + PIN_SVG + '\u0e08\u0e31\u0e14\u0e2a\u0e48\u0e07\u0e44\u0e1b\u0e17\u0e35\u0e48</div>'
+        + (shippingName ? '<div style="font-weight:600">' + esc(shippingName) + '</div>' : '')
+        + (addrParts.length ? '<div style="color:#374151">' + addrParts.map(esc).join(' ') + '</div>' : '')
+        + (customerNotes ? '<div style="margin-top:4px;color:#6b7280">\u0e2b\u0e21\u0e32\u0e22\u0e40\u0e2b\u0e15\u0e38: ' + esc(customerNotes) + '</div>' : '')
+        + '</div>'
+      : '';
+    var linkHtml = orderViewUrl
+      ? '<div class="rl"><a href="' + esc(orderViewUrl) + '" style="color:#374151;font-size:11px;text-decoration:none">\u0e14\u0e39\u0e23\u0e32\u0e22\u0e25\u0e30\u0e40\u0e2d\u0e35\u0e22\u0e14\u0e41\u0e25\u0e30\u0e0a\u0e33\u0e23\u0e30\u0e40\u0e07\u0e34\u0e19 &rarr;</a></div>'
+      : '';
+    var totalsHtml = isLastPage
+      ? '<hr class="rdiv">'
+        + '<div class="rtots">'
+        + '<div class="rtr"><span>\u0e23\u0e32\u0e04\u0e32\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32</span><span>' + fmtMoney(subtotal) + '</span></div>'
+        + shippingRows
+        + '<div class="rgrand"><span>\u0e23\u0e27\u0e21\u0e17\u0e31\u0e49\u0e07\u0e2a\u0e34\u0e49\u0e19</span><span>' + fmtMoney(total) + '</span></div>'
+        + '</div>'
+        + addrHtml
+        + linkHtml
+      : '<div class="rmore">รายการต่อในหน้าถัดไป</div>';
+    return '<style>'
+      + '.rw{font-family:\'Noto Sans Thai\',\'Zen Maru Gothic\',Sarabun,sans-serif;background:#fff;padding:40px 48px;color:#111827;line-height:1.5;width:760px}'
+      + '.rhdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}'
+      + '.rshop{font-size:22px;font-weight:800;color:#111827}'
+      + '.rsub{font-size:11px;color:#9ca3af;letter-spacing:.08em;text-transform:uppercase;margin-top:2px}'
+      + '.rmeta{font-size:12px;color:#6b7280;text-align:right}'
+      + '.rmid{font-weight:700;color:#111827;font-size:13px}'
+      + '.rpage{margin-top:4px;font-size:11px;color:#9ca3af}'
+      + '.rdiv{border:none;border-top:1px solid #e5e7eb;margin:14px 0}'
+      + '.rlbl{font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.07em;font-weight:600;margin-bottom:8px}'
+      + '.rtbl{width:100%;border-collapse:collapse}'
+      + '.rtbl td{padding:9px 0;border-bottom:1px solid #f3f4f6;vertical-align:middle}'
+      + '.rtbl tr.last td{border-bottom:none}'
+      + '.ri{width:52px;height:52px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;background:#f3f4f6;display:block}'
+      + '.rit{font-size:13px;font-weight:600;color:#111827}'
+      + '.riv{font-size:11px;color:#6b7280;margin-top:2px}'
+      + '.riq{font-size:11px;color:#9ca3af;margin-top:2px}'
+      + '.ris{font-size:13px;font-weight:700;text-align:right;white-space:nowrap;padding-left:12px;color:#111827}'
+      + '.rtots{background:#f9fafb;border-radius:8px;padding:12px 16px;margin-top:4px}'
+      + '.rtr{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;gap:16px;color:#374151}'
+      + '.rtr span:last-child{font-weight:600}'
+      + '.rgrand{display:flex;justify-content:space-between;font-size:15px;font-weight:800;color:#111827;border-top:2px solid #111827;padding-top:10px;margin-top:8px}'
+      + '.ra{margin-top:16px;background:#f9fafb;border:1px solid #e5e7eb;padding:12px 14px;border-radius:8px;font-size:12px;line-height:1.8;color:#374151}'
+      + '.rat{font-size:11px;font-weight:700;color:#374151;margin-bottom:4px}'
+      + '.rl{margin-top:20px;padding-top:16px;border-top:1px solid #f3f4f6;text-align:center}'
+      + '.rmore{margin-top:16px;padding:10px 14px;border:1px dashed #d1d5db;border-radius:8px;text-align:center;font-size:12px;color:#6b7280}'
+      + '</style>'
+      + '<div class="rw">'
+      + '<div class="rhdr">'
+      + '<div><div class="rshop">' + esc(shopName) + '</div><div class="rsub">\u0e43\u0e1a\u0e40\u0e2a\u0e23\u0e47\u0e08\u0e23\u0e31\u0e1a\u0e40\u0e07\u0e34\u0e19</div></div>'
+      + '<div class="rmeta"><div class="rmid">' + esc(orderId) + '</div><div>' + fmtDate(createdAt) + '</div>'
+      + (pageText ? '<div class="rpage">' + esc(pageText) + '</div>' : '') + '</div>'
+      + '</div>'
+      + '<hr class="rdiv">'
+      + '<div class="rlbl">\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32</div>'
+      + '<table class="rtbl"><tbody>' + itemRows + '</tbody></table>'
+      + totalsHtml
+      + '</div>';
+  }
+
+  function _buildReceiptPages(order, normalizedItems) {
+    var pages = [];
+    var maxItems = 8;
+    var items = normalizedItems || [];
+    var pageCount = Math.max(1, Math.ceil(items.length / maxItems));
+    for (var p = 0; p < pageCount; p++) {
+      pages.push({
+        order: order,
+        items: items.slice(p * maxItems, (p + 1) * maxItems),
+        pageNo: p + 1,
+        pageCount: pageCount,
+        isLast: p === pageCount - 1
+      });
+    }
+    return pages;
+  }
+
+  async function _exportReceiptPagesPdf(pages, contentFn, filename) {
+    var container = document.createElement('div');
+    container.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:760px;background:#fff';
+    document.body.appendChild(container);
+    try {
+      var jsPDF = window.jspdf.jsPDF;
+      var pdf = new jsPDF({ unit: 'px', format: 'a4', orientation: 'portrait' });
+      var hasContent = false;
+      for (var i = 0; i < pages.length; i++) {
+        container.innerHTML = contentFn(pages[i]);
+        await Promise.all(Array.from(container.querySelectorAll('img')).map(function(img) {
+          if (img.complete && img.naturalWidth) return Promise.resolve();
+          return new Promise(function(res) { img.onload = res; img.onerror = res; setTimeout(res, 3000); });
+        }));
+        var canvas = await html2canvas(container, { scale: 2, useCORS: false, backgroundColor: '#fff', logging: false });
+        var imgData = canvas.toDataURL('image/png');
+        var pdfW = pdf.internal.pageSize.getWidth();
+        var pdfH = (canvas.height / canvas.width) * pdfW;
+        var pageH = pdf.internal.pageSize.getHeight();
+        var firstPage = hasContent ? pdf.getNumberOfPages() + 1 : pdf.getNumberOfPages();
+        var y = 0;
+        while (y < pdfH || y === 0) {
+          if (hasContent) pdf.addPage();
+          hasContent = true;
+          pdf.addImage(imgData, 'PNG', 0, -y, pdfW, pdfH);
+          y += pageH;
+        }
+        var linkEl = container.querySelector('.rl a');
+        if (linkEl) {
+          var sc = pdfW / 760;
+          var cRect = container.getBoundingClientRect();
+          var lRect = linkEl.getBoundingClientRect();
+          var ly = (lRect.top - cRect.top) * sc;
+          var pg = Math.floor(ly / pageH);
+          pdf.setPage(firstPage + pg);
+          pdf.link(
+            (lRect.left - cRect.left) * sc,
+            ly - pg * pageH,
+            (linkEl.offsetWidth || 200) * sc,
+            Math.max(linkEl.offsetHeight || 16, 16) * sc,
+            { url: linkEl.href }
+          );
+        }
+      }
+      pdf.save(filename);
+    } finally {
+      if (container && container.parentNode) container.parentNode.removeChild(container);
+    }
+  }
+
+  async function _downloadOrderReceipt(order) {
+    if (!order || !order.order_id) return;
+    var btn = document.getElementById('btnReceiptDownload');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>กำลังสร้าง…'; }
+    var container;
+    try {
+      var items = _orderProductLines(order); // receipt lists products only
+      var imgDataUrls = await Promise.all(items.map(function(item) {
+        return item.image_drive_file_id
+          ? driveFileToDataUrl(item.image_drive_file_id).catch(function() { return ''; })
+          : Promise.resolve('');
+      }));
+      var execUrl = window._EXEC_URL || '';
+      var orderViewUrl = (execUrl && execUrl.indexOf('http') === 0 && order.token)
+        ? execUrl + '?page=order-view&token=' + encodeURIComponent(order.token) : '';
+      var cfg = {};
+      try { var cfgEl = document.getElementById('server-cfg'); if (cfgEl) cfg = JSON.parse(cfgEl.textContent || '{}'); } catch(_) {}
+      var normalizedItems = items.map(function(item, i) {
+        var basePrice  = (item.unit_base_price != null) ? item.unit_base_price : (item.unit_price || 0);
+        var finalPrice = (item.unit_final_price != null) ? item.unit_final_price : (item.unit_price || 0);
+        return { title: item.title||'', qty: item.qty||1,
+                 unitPrice: finalPrice, basePrice: basePrice,
+                 promotion: item.promotion || null,
+                 variantInfo: item.variant_info||'', imgDataUrl: imgDataUrls[i]||'', imgUrl: item.image_url||'' };
+      });
+      var pages = _buildReceiptPages(order, normalizedItems);
+      await _exportReceiptPagesPdf(pages, function(page) {
+        return _buildReceiptHtml({
+          shopName:         cfg.siteTitle || '',
+          orderId:          order.order_id,
+          createdAt:        order.created_at,
+          items:            page.items,
+          subtotal:         order.subtotal || 0,
+          shippingFee:      order.shipping_fee || 0,
+          total:            order.total || 0,
+          shippingInfo:     order.shipping_info || [],
+          orderViewUrl:     orderViewUrl,
+          shippingName:     order.shipping_name || '',
+          shippingAddress:  order.shipping_address || '',
+          shippingDistrict: order.shipping_district || '',
+          shippingAmphoe:   order.shipping_amphoe || '',
+          shippingProvince: order.shipping_province || '',
+          shippingPostal:   order.shipping_postal_code || '',
+          customerNotes:    order.customer_notes || '',
+          pageNo:           page.pageNo,
+          pageCount:        page.pageCount,
+          isLast:           page.isLast
+        });
+      }, 'receipt-' + order.order_id.replace(/[^a-zA-Z0-9-]/g, '-') + '.pdf');
+    } finally {
+      if (container && container.parentNode) container.parentNode.removeChild(container);
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-download me-1"></i>ใบเสร็จ'; }
+    }
+  }
+
+  // Refresh is the only list action that hits the backend.
+  document.getElementById('btnRefresh').addEventListener('click', function() { loadOrders(); });
+
+  // Filter / search / pagination re-render the already-loaded master list —
+  // instant, no backend call.
+  document.getElementById('searchInput').addEventListener('input', function(e) {
+    searchQ = e.target.value.trim();
+    if (_searchDebounce) clearTimeout(_searchDebounce);
+    _searchDebounce = setTimeout(function(){ _pgPage = 1; renderTable(); }, 200);
+  });
+
+  document.getElementById('filterTabs').addEventListener('click', function(e) {
+    var tab = e.target.closest('.filter-tab');
+    if (!tab) return;
+
+    currentFilter = tab.getAttribute('data-status');
+    document.querySelectorAll('.filter-tab').forEach(function(t) {
+      t.classList.toggle('active', t === tab);
+    });
+    _pgPage = 1;
+    renderTable();
+  });
+
+  document.getElementById('pgPrev').addEventListener('click', function() { if (_pgPage > 1) { _pgPage--; renderTable(); } });
+  document.getElementById('pgNext').addEventListener('click', function() { var _tp = Math.max(1, Math.ceil(_pgTotal / _pgSize)); if (_pgPage < _tp) { _pgPage++; renderTable(); } });
+  document.getElementById('pgSize').addEventListener('change', function() { _pgSize = parseInt(this.value, 10) || 20; _pgPage = 1; renderTable(); });
+
+  document.getElementById('orderDetailModal').addEventListener('hidden.bs.modal', function() { _setDetailModalLoading(false); });
+
+  var _lockBannerPollTimer = null;
+  function _startLockBannerPoll() {
+    clearInterval(_lockBannerPollTimer);
+    _lockBannerPollTimer = setInterval(function() {
+      callRpc('getRotateLockStatusRpc').then(function(r) {
+        var banner = document.getElementById('rotateLockBanner');
+        if (!banner) return;
+        if (r && r.locked) {
+          banner.style.removeProperty('display'); banner.style.display = 'flex';
+        } else {
+          banner.style.display = 'none';
+          clearInterval(_lockBannerPollTimer);
+          loadOrders(); // reload เมื่อ unlock
+        }
+      }).catch(function() {});
+    }, 3000);
+  }
+
+  (async function() {
+    _setupAdminPage();
+    if (!GAS_ENV) { _dismissPageLoader(); loadOrders(); return; }
+    try {
+      await _initAuth(); // ถ้าไม่มี session → redirect, loader ค้าง
+      // เช็ค lock ก่อน load
+      try {
+        var lockStatus = await callRpc('getRotateLockStatusRpc');
+        if (lockStatus && lockStatus.locked) {
+          var banner = document.getElementById('rotateLockBanner');
+          if (banner) { banner.style.removeProperty('display'); banner.style.display = 'flex'; }
+          _startLockBannerPoll();
+        }
+      } catch(_) {}
+      // Load shipping companies for carrier lookup
+      try {
+        var sr = await callRpc('getShippingRpc');
+        if (sr && sr.ok) _allShippingCompanies = sr.companies || [];
+      } catch(_) {}
+      await loadOrders();
+      _dismissPageLoader(); // dismiss เฉพาะเมื่อผ่าน auth
+    }
+    catch(err) {
+      var authErrs = ['AUTH_REQUIRED','NOT_LOGGED_IN','SESSION_INVALID'];
+      if (authErrs.indexOf(err.message) === -1) {
+        _dismissPageLoader();
+        hideHUD('err', err.message || 'เกิดข้อผิดพลาด');
+      }
+      // auth error: loader ค้างไว้ระหว่าง redirect
+    }
+  })();
+
+  /* ===== Production Summary ===== */
+  // Thumbnail cell — placeholder icon shown until the (lazy-loaded) image arrives.
+  function _psThumbCell(driveId, imgUrl, isGift) {
+    var icon = isGift ? 'bi-gift' : 'bi-image';
+    return '<div style="width:40px;height:40px;border-radius:8px;background:#f3f4f6;overflow:hidden;position:relative;flex-shrink:0">'
+      + '<span class="ps-thumb-ph" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#cbd5e1">'
+      + '<i class="bi ' + icon + '"></i></span>'
+      + '<img data-ps-thumb data-drive-id="' + escapeHtml(driveId || '') + '" data-img-url="' + escapeHtml(imgUrl || '') + '"'
+      + ' alt="" style="width:100%;height:100%;object-fit:cover;display:block;position:relative;opacity:0;transition:opacity .2s">'
+      + '</div>';
+  }
+
+  // Lazy thumbnail loader — reuses the shared driveFileToDataUrl cache helper.
+  function _loadProdSummaryThumb(img) {
+    if (!img || img._psLoaded) return;
+    img._psLoaded = true;
+    var driveId = img.getAttribute('data-drive-id') || '';
+    var imgUrl  = img.getAttribute('data-img-url') || '';
+    function show(src) {
+      if (!src) return; // no image → placeholder stays
+      img.onload = function() {
+        img.style.opacity = '1';
+        var ph = img.parentNode && img.parentNode.querySelector('.ps-thumb-ph');
+        if (ph) ph.style.display = 'none';
+      };
+      img.src = src;
+    }
+    if (driveId && typeof driveFileToDataUrl === 'function') {
+      driveFileToDataUrl(driveId).then(function(d) { show(d || imgUrl); }).catch(function() { show(imgUrl); });
+    } else if (imgUrl) {
+      show(imgUrl);
+    }
+  }
+
+  var _psThumbObserver = null;
+  function _initProdSummaryThumbs() {
+    var root = document.getElementById('prodSummaryBody');
+    if (!root) return;
+    var thumbs = root.querySelectorAll('img[data-ps-thumb]');
+    if (_psThumbObserver) _psThumbObserver.disconnect();
+    if ('IntersectionObserver' in window) {
+      _psThumbObserver = new IntersectionObserver(function(entries) {
+        entries.forEach(function(en) {
+          if (!en.isIntersecting) return;
+          _psThumbObserver.unobserve(en.target);
+          _loadProdSummaryThumb(en.target);
+        });
+      }, { root: root, rootMargin: '200px' });
+      thumbs.forEach(function(t) { _psThumbObserver.observe(t); });
+    } else {
+      thumbs.forEach(_loadProdSummaryThumb);
+    }
+  }
+
+  function _renderProductionSummary(r) {
+    var products = r.products || [];
+    var gifts = r.gifts || [];
+    var html = '';
+
+    html += '<div class="d-flex flex-wrap gap-2 mb-3">'
+      + '<div class="flex-fill border rounded-3 p-2 px-3" style="min-width:130px">'
+      +   '<div class="text-muted small">ออร์เดอร์ที่นับ</div>'
+      +   '<div class="fw-bold" style="font-size:1.1rem">' + (Number(r.orderCount)||0).toLocaleString() + '</div>'
+      + '</div>'
+      + '<div class="flex-fill border rounded-3 p-2 px-3" style="min-width:130px">'
+      +   '<div class="text-muted small">สินค้ารวม (ชิ้น)</div>'
+      +   '<div class="fw-bold" style="font-size:1.1rem">' + (Number(r.totalProductUnits)||0).toLocaleString() + '</div>'
+      + '</div>'
+      + '<div class="flex-fill border rounded-3 p-2 px-3" style="min-width:130px">'
+      +   '<div class="text-muted small">ของแถมรวม (ชิ้น)</div>'
+      +   '<div class="fw-bold" style="font-size:1.1rem">' + (Number(r.totalGiftUnits)||0).toLocaleString() + '</div>'
+      + '</div>'
+      + '</div>';
+
+    html += '<div class="odm-section-title mt-1"><i class="bi bi-bag me-1"></i>สินค้า (' + products.length + ' รายการ)</div>';
+    if (!products.length) {
+      html += '<div class="text-muted small mb-3">— ยังไม่มีสินค้าที่ถูกสั่งซื้อ —</div>';
+    } else {
+      html += '<div class="table-responsive mb-3"><table class="table table-sm align-middle mb-0">'
+        + '<thead><tr><th style="width:36px">#</th><th style="width:52px"></th><th>สินค้า</th><th>ตัวเลือก / SKU</th>'
+        + '<th class="text-end" style="width:100px">จำนวนรวม</th></tr></thead><tbody>';
+      products.forEach(function(p, i) {
+        html += '<tr>'
+          + '<td class="text-muted small">' + (i + 1) + '</td>'
+          + '<td>' + _psThumbCell(p.image_drive_file_id, p.image_url, false) + '</td>'
+          + '<td><div class="fw-semibold">' + escapeHtml(p.title || '—') + '</div></td>'
+          + '<td><span class="text-muted small">' + (p.variant_info ? escapeHtml(p.variant_info) : '—') + '</span></td>'
+          + '<td class="text-end fw-bold">' + (Number(p.qty) || 0).toLocaleString() + '</td>'
+          + '</tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+
+    html += '<div class="odm-section-title mt-2"><i class="bi bi-gift me-1"></i>ของแถม (' + gifts.length + ' รายการ)</div>';
+    if (!gifts.length) {
+      html += '<div class="text-muted small">— ยังไม่มีของแถมในคำสั่งซื้อ —</div>';
+    } else {
+      html += '<div class="table-responsive"><table class="table table-sm align-middle mb-0">'
+        + '<thead><tr><th style="width:36px">#</th><th style="width:52px"></th><th>ของแถม</th>'
+        + '<th class="text-end" style="width:100px">จำนวนรวม</th></tr></thead><tbody>';
+      gifts.forEach(function(g, i) {
+        html += '<tr>'
+          + '<td class="text-muted small">' + (i + 1) + '</td>'
+          + '<td>' + _psThumbCell(g.image_drive_file_id, g.image_url, true) + '</td>'
+          + '<td><div class="fw-semibold">' + escapeHtml(g.gift_name || '—') + '</div></td>'
+          + '<td class="text-end fw-bold">' + (Number(g.qty) || 0).toLocaleString() + '</td>'
+          + '</tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+    return html;
+  }
+
+  async function openProductionSummary() {
+    var modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('productionSummaryModal'));
+    var body = document.getElementById('prodSummaryBody');
+    body.innerHTML = '<div class="text-center py-5">'
+      + '<div class="spinner-border text-secondary" style="width:1.5rem;height:1.5rem;border-width:.2rem" role="status"></div>'
+      + '<div class="text-muted small mt-2">กำลังรวมข้อมูลคำสั่งซื้อ…</div></div>';
+    modal.show();
+    try {
+      if (!GAS_ENV) { body.innerHTML = '<div class="text-muted small text-center py-4">ต้องเปิดผ่าน GAS Web App</div>'; return; }
+      var r = await _rpc('orderProductionSummaryRpc');
+      if (!r || !r.ok) {
+        body.innerHTML = '<div class="text-danger small text-center py-4"><i class="bi bi-exclamation-circle me-1"></i>'
+          + escapeHtml(translateRpcError(r, MSG.error.fetch)) + '</div>';
+        return;
+      }
+      body.innerHTML = _renderProductionSummary(r);
+      _initProdSummaryThumbs(); // lazy-load thumbnails after the rows are in the DOM
+    } catch (err) {
+      body.innerHTML = '<div class="text-danger small text-center py-4"><i class="bi bi-exclamation-circle me-1"></i>'
+        + escapeHtml(translateRpcError(err, MSG.error.fetch)) + '</div>';
+    }
+  }
+
+  /* ===== Stock Management ===== */
+  var _stockData = [];
+
+  async function openStockPanel() {
+    showHUD(MSG.loading.fetch);
+    try {
+      var r = await callRpc('getStockSummaryRpc', _getAdminToken());
+      if (!r || !r.ok) { hideHUD('err', translateRpcError(r, MSG.error.fetch)); return; }
+      _stockData = r.products || [];
+      document.getElementById('stockSearch').value = '';
+      renderStockList(_stockData);
+      _loadStockThumbs();
+      hideHUD('ok', MSG.success.fetch);
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('stockModal')).show();
+    } catch(err) { hideHUD('err', translateRpcError(err, MSG.error.fetch)); }
+  }
+
+  function renderStockList(products) {
+    var list = document.getElementById('stockList');
+    if (!products.length) { list.innerHTML = '<div class="text-muted text-center py-4 small">ไม่พบสินค้า</div>'; return; }
+    list.innerHTML = products.map(function(p) {
+      var thumb = (p.image_drive_file_id || p.image_url)
+        ? '<img data-stock-drive="' + (p.image_drive_file_id||'') + '" data-stock-url="' + (p.image_url||'') + '" style="width:64px;height:64px;object-fit:cover;border-radius:10px;flex-shrink:0;background:#f3f4f6">'
+        : '<div style="width:64px;height:64px;border-radius:10px;background:#f3f4f6;flex-shrink:0"></div>';
+      var prodStock = (p.stock !== undefined && p.stock !== null) ? p.stock : -1;
+      var stockVal = prodStock === -1 ? '' : prodStock;
+      var hasVariants = (p.variants || []).some(function(g) { return g.options && g.options.length; });
+      var variantTotal = 0; var variantHasInfinite = false;
+      var variantsHtml = '';
+      (p.variants || []).forEach(function(g) {
+        if (!(g.options && g.options.length)) return;
+        variantsHtml += '<div class="mt-2 ps-2 border-start border-2" style="border-color:#e5e7eb!important">';
+        variantsHtml += '<div class="text-muted small mb-1" style="font-size:.72rem">' + g.name + '</div>';
+        variantsHtml += '<div class="d-flex flex-wrap gap-2">';
+        g.options.forEach(function(o) {
+          var oStock = (o.stock !== undefined && o.stock !== null) ? Number(o.stock) : -1;
+          var oVal = oStock === -1 ? '' : oStock;
+          if (oStock === -1) variantHasInfinite = true; else variantTotal += oStock;
+          variantsHtml += '<div class="d-flex align-items-center gap-1" style="font-size:.8rem">';
+          variantsHtml += '<span style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + o.label + '</span>';
+          variantsHtml += '<div class="input-group input-group-sm" style="width:90px">';
+          variantsHtml += '<input type="number" min="-1" step="1" placeholder="∞" class="form-control form-control-sm" value="' + oVal + '" data-pid="' + p.id + '" data-field="variant" data-label="' + o.label.replace(/"/g,'&quot;') + '">';
+          variantsHtml += '<span class="input-group-text" style="font-size:.7rem;padding:2px 5px">ชิ้น</span>';
+          variantsHtml += '</div></div>';
+        });
+        variantsHtml += '</div></div>';
+      });
+      var mainStockHtml;
+      if (hasVariants) {
+        var totalText = variantHasInfinite ? '∞' : String(variantTotal);
+        mainStockHtml =
+          '<span class="text-muted small" style="flex-shrink:0">สินค้าหลัก:</span>' +
+          '<div class="input-group input-group-sm" style="width:110px">' +
+          '<input type="text" class="form-control form-control-sm" value="' + totalText + '" data-pid="' + p.id + '" data-field="product" readonly disabled style="background:#f3f4f6;color:#6b7280;cursor:default">' +
+          '<span class="input-group-text" style="font-size:.7rem;padding:2px 5px">ชิ้น</span>' +
+          '</div>' +
+          '<span class="text-muted" style="font-size:.65rem">(ผลรวม variant)</span>';
+      } else {
+        mainStockHtml =
+          '<span class="text-muted small" style="flex-shrink:0">สินค้าหลัก:</span>' +
+          '<div class="input-group input-group-sm" style="width:110px">' +
+          '<input type="number" min="-1" step="1" placeholder="∞" class="form-control form-control-sm" value="' + stockVal + '" data-pid="' + p.id + '" data-field="product">' +
+          '<span class="input-group-text" style="font-size:.7rem;padding:2px 5px">ชิ้น</span>' +
+          '</div>' +
+          '<span class="text-muted" style="font-size:.65rem">(-1 หรือว่าง = ไม่จำกัด)</span>';
+      }
+      return '<div class="border rounded-3 p-3" style="background:#fff">' +
+        '<div class="d-flex align-items-center gap-3">' +
+        thumb +
+        '<div class="flex-grow-1 min-width-0">' +
+        '<div class="fw-semibold" style="font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + p.title + '</div>' +
+        '<div class="d-flex align-items-center gap-2 mt-1">' +
+        mainStockHtml +
+        '</div>' +
+        variantsHtml +
+        '</div></div></div>';
+    }).join('');
+  }
+
+  function _loadStockThumbs() {
+    document.querySelectorAll('#stockList img[data-stock-drive], #stockList img[data-stock-url]').forEach(function(img) {
+      var driveId = img.dataset.stockDrive;
+      var fallback = img.dataset.stockUrl;
+      if (driveId) {
+        driveFileToDataUrl(driveId).then(function(dataUrl) {
+          if (dataUrl) { img.src = dataUrl; }
+          else if (fallback) { img.src = fallback; }
+        }).catch(function() { if (fallback) img.src = fallback; });
+      } else if (fallback) {
+        img.src = fallback;
+      }
+    });
+  }
+
+  function filterStockList(q) {
+    var qq = (q || '').toLowerCase().trim();
+    if (!qq) { renderStockList(_stockData); _loadStockThumbs(); return; }
+    renderStockList(_stockData.filter(function(p) { return p.title.toLowerCase().indexOf(qq) >= 0; }));
+    _loadStockThumbs();
+  }
+
+  async function saveAllStock() {
+    var inputs = document.querySelectorAll('#stockList input[data-pid]');
+    var updatesMap = {};
+    inputs.forEach(function(inp) {
+      if (inp.disabled) return; // skip readonly product totals (variant products)
+      var pid = inp.dataset.pid;
+      if (!updatesMap[pid]) updatesMap[pid] = { productId: pid, variantStocks: {} };
+      var val = inp.value !== '' ? Number(inp.value) : -1;
+      if (inp.dataset.field === 'product') {
+        updatesMap[pid].stock = val;
+      } else if (inp.dataset.field === 'variant') {
+        updatesMap[pid].variantStocks[inp.dataset.label] = val;
+      }
+    });
+    var updates = Object.values(updatesMap);
+    if (!updates.length) { hideHUD('ok', 'ไม่มีการเปลี่ยนแปลง'); return; }
+    showHUD(MSG.loading.save);
+    try {
+      var r = await callRpc('updateStockRpc', _getAdminToken(), updates);
+      if (r && r.ok) {
+        hideHUD('ok', MSG.success.save);
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('stockModal')).hide();
+      } else {
+        hideHUD('err', translateRpcError(r, MSG.error.save));
+      }
+    } catch(err) { hideHUD('err', translateRpcError(err, MSG.error.save)); }
+  }
+</script>
+
+
+<!-- Slip Lightbox -->
+<div id="odmSlipLightbox" onclick="closeOdmSlipLightbox()"
+  style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.88);align-items:center;justify-content:center;cursor:zoom-out;padding:16px">
+  <img id="odmSlipLightboxImg" src="" alt="สลิป"
+    style="max-width:90vw;max-height:90vh;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.5);object-fit:contain"
+    onclick="event.stopPropagation()">
+  <button onclick="closeOdmSlipLightbox()" aria-label="ปิด"
+    style="position:fixed;top:16px;right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;width:40px;height:40px;border-radius:50%;font-size:1.3rem;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)">✕</button>
+</div>
+<script>
+  function openOdmSlipLightbox(imgEl) {
+    if (!imgEl || !imgEl.src || imgEl.style.visibility === 'hidden') return;
+    document.getElementById('odmSlipLightboxImg').src = imgEl.src;
+    document.getElementById('odmSlipLightbox').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+  function closeOdmSlipLightbox() {
+    document.getElementById('odmSlipLightbox').style.display = 'none';
+    document.body.style.overflow = '';
+  }
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeOdmSlipLightbox();
+  });
+</script>
+</body>
+</html>

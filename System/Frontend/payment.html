@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ตั้งค่าการชำระเงิน • Open Storefront</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    .upload-zone{border:2px dashed #d1d5db;border-radius:12px;padding:1.5rem 1rem;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+    .upload-zone:hover,.upload-zone.drag-over{border-color:#6366f1;background:#f5f3ff}
+    .upload-zone input[type="file"]{display:none}
+    .preview-wrap{position:relative;border-radius:12px;overflow:hidden;background:#f1f5f9;min-height:200px;cursor:crosshair;user-select:none}
+    .preview-wrap.empty{border:2px dashed #d1d5db;display:flex;align-items:center;justify-content:center}
+    .preview-wrap img.bg-img{display:block;width:100%}
+    .preview-wrap .qr-drag{position:absolute;transform:translate(-50%,-50%);cursor:move;border:2px dashed rgba(255,255,255,.85);border-radius:6px;box-shadow:0 0 0 1.5px rgba(0,0,0,.25)}
+    .preview-wrap .qr-drag img{width:100%;height:100%;display:block;border-radius:4px}
+    .pill{border-radius:999px}
+    .fw-semibold{font-weight:600!important}
+    .section-label{font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#6b7280;margin-bottom:.6rem}
+    @keyframes shimmer-preview {
+      0%   { background-position: -800px 0; }
+      100% { background-position:  800px 0; }
+    }
+    .preview-shimmer-bg {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 37%, #f0f0f0 63%);
+      background-size: 800px 100%;
+      animation: shimmer-preview 1.4s ease-in-out infinite;
+      border-radius: 12px;
+    }
+  </style>
+</head>
+<body>
+<script>window._EXEC_URL = '<?!= execUrl ?>';</script>
+<?!= include('admin-shared') ?>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <img id="brandLogo" alt="logo" style="height:36px;width:36px;object-fit:cover;border-radius:50%;display:none;flex-shrink:0">
+      <div>
+        <div class="fw-bold brand-skeleton" id="brandName"></div>
+        <div class="small text-muted">Dashboard</div>
+      </div>
+    </div>
+    <nav class="side-nav" id="sideNav">
+      <a class="link" data-page="editstore"><i class="bi bi-paint-bucket"></i> ตกแต่งหน้าร้าน</a>
+      <a class="link" data-page="product"><i class="bi bi-boxes"></i> จัดการสินค้า</a>
+      <a class="link" data-page="order"><i class="bi bi-receipt"></i> คำสั่งซื้อ</a>
+      <a class="link" data-page="print-order"><i class="bi bi-printer"></i> พิมพ์ใบขนส่ง</a>
+      <a class="link" data-page="shipping"><i class="bi bi-truck"></i> ขนส่ง</a>
+      <a class="link active" data-page="payment"><i class="bi bi-qr-code"></i> ตั้งค่าการชำระเงิน</a>
+      <a class="link" data-page="promotion"><i class="bi bi-tag"></i> โปรโมชั่น</a>
+      <a class="link" data-page="gift"><i class="bi bi-gift"></i> ของแถม</a>
+      <a class="link" data-page="user"><i class="bi bi-people"></i> ผู้ดูแลระบบ</a>
+      <a class="link" data-page="legal"><i class="bi bi-file-earmark-text"></i> ข้อมูลทางกฎหมาย</a>
+      <a class="link" data-page="system"><i class="bi bi-shield-check"></i> ตั้งค่าระบบ</a>
+    </nav>
+    <div class="sidebar-footer">
+      <button id="btnLogout" class="btn-logout">
+        <i class="bi bi-box-arrow-right"></i> ออกจากระบบ
+      </button>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <div class="wrap">
+        <div class="d-flex align-items-center gap-2">
+          <span class="fw-bold">ตั้งค่าการชำระเงิน</span>
+          <span class="text-muted">•</span>
+          <span class="text-muted small">กำหนดหมายเลข PromptPay และรูปภาพสำหรับหน้าชำระเงิน</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="p-3">
+
+      <!-- Owner-only banner (hidden for owner, shown for non-owner) -->
+      <div id="ownerOnlyBanner" class="alert alert-warning d-flex align-items-center gap-2 mb-3" style="display:none!important">
+        <i class="bi bi-lock-fill fs-5 flex-shrink-0"></i>
+        <span>การแก้ไขตั้งค่าการชำระเงินจำกัดเฉพาะ <strong>เจ้าของระบบ</strong> เท่านั้น</span>
+      </div>
+
+      <div class="row g-3 align-items-start">
+
+        <!-- ===== Left: Form ===== -->
+        <div class="col-lg-5">
+          <div class="panel p-3 mb-3">
+            <div class="section-label mb-3"><i class="bi bi-credit-card me-1"></i>PromptPay</div>
+
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">เบอร์โทร / เลขบัตรประชาชน</label>
+              <input type="text" class="form-control" id="ppNumber" placeholder="0812345678"
+                oninput="onPpNumberChange()">
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">ชื่อบัญชี (แสดงให้ลูกค้าเห็น)</label>
+              <input type="text" class="form-control" id="ppName" placeholder="ชื่อ นามสกุล">
+            </div>
+
+            <!-- QR verify panel -->
+            <div id="ppVerifyPanel" class="d-none mb-3 p-3" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;text-align:center">
+              <div class="section-label mb-2"><i class="bi bi-qr-code me-1"></i>ตรวจสอบ QR PromptPay</div>
+              <div id="ppVerifyQr" style="width:160px;height:160px;display:block;margin:0 auto;overflow:hidden;border-radius:8px;border:1px solid #e5e7eb"></div>
+              <div class="mt-2 small text-muted"><i class="bi bi-phone me-1"></i>สแกนด้วยแอปธนาคารเพื่อตรวจสอบชื่อบัญชีก่อนบันทึก</div>
+            </div>
+
+            <hr class="my-3">
+            <div class="section-label mb-2"><i class="bi bi-image me-1"></i>รูปภาพพื้นหลังการชำระเงิน</div>
+            <p class="text-muted small mb-2">รูปที่แสดงในหน้า "ดูรายละเอียดคำสั่งซื้อ" ของลูกค้า พร้อม QR วางซ้อนอยู่</p>
+
+            <div class="upload-zone mb-2" id="bgUploadZone" onclick="document.getElementById('bgFileInput').click()">
+              <input type="file" id="bgFileInput" accept="image/*" onchange="onBgFileSelected(this)">
+              <i class="bi bi-cloud-arrow-up" style="font-size:2rem;color:#9ca3af;display:block;margin-bottom:.5rem"></i>
+              <div style="font-size:.85rem;color:var(--muted)">คลิกหรือลากไฟล์มาวาง</div>
+              <div style="font-size:.75rem;color:#9ca3af;margin-top:.2rem">PNG, JPG • แนะนำอัตราส่วน 4:3 หรือ 1:1</div>
+            </div>
+
+            <div id="bgCurrentRow" class="d-none d-flex align-items-center gap-2 mb-2 p-2 bg-light rounded">
+              <div style="width:48px;height:48px;border-radius:6px;border:1px solid var(--border);overflow:hidden;flex-shrink:0;position:relative;background:#f0f0f0">
+                <div id="bgThumbShimmer" class="preview-shimmer-bg" style="display:none"></div>
+                <img id="bgCurrentThumb" src="" style="width:100%;height:100%;object-fit:cover;display:block">
+              </div>
+              <div class="flex-grow-1 small">
+                <div class="fw-semibold" id="bgCurrentName">รูปปัจจุบัน</div>
+                <div class="text-muted" id="bgCurrentSub"></div>
+              </div>
+              <button class="btn btn-sm btn-outline-danger" style="border-radius:8px;font-size:.75rem" onclick="removeBgImage()">
+                <i class="bi bi-trash3"></i>
+              </button>
+            </div>
+
+            <hr class="my-3">
+            <div class="section-label mb-2"><i class="bi bi-arrows-move me-1"></i>ขนาด QR Code</div>
+            <div class="d-flex align-items-center gap-3 mb-1">
+              <input type="range" class="form-range flex-grow-1" id="qrSizeSlider" min="8" max="60" value="25"
+                oninput="onSizeChange(this.value)">
+              <span class="fw-semibold" id="qrSizeLabel" style="min-width:40px;text-align:right">25%</span>
+            </div>
+            <div class="text-muted small mb-3">ขนาดเป็น % ของความกว้างรูป</div>
+
+            <div class="d-flex gap-3 small text-muted mb-3 p-2 bg-light rounded">
+              <span><i class="bi bi-hand-index-thumb me-1"></i>คลิกหรือลากบนรูปตัวอย่าง เพื่อตั้งตำแหน่ง QR</span>
+            </div>
+            <div class="d-flex gap-3 mb-3">
+              <div class="flex-grow-1">
+                <div class="text-muted" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em">ตำแหน่ง X</div>
+                <div class="fw-semibold" id="qrXDisplay">50%</div>
+              </div>
+              <div class="flex-grow-1">
+                <div class="text-muted" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em">ตำแหน่ง Y</div>
+                <div class="fw-semibold" id="qrYDisplay">50%</div>
+              </div>
+            </div>
+
+            <button class="btn btn-dark w-100 py-2 fw-semibold pill" id="btnSave" onclick="savePaymentConfig()">
+              <i class="bi bi-floppy me-1"></i>บันทึกการตั้งค่า
+            </button>
+          </div>
+
+        </div>
+
+        <!-- ===== Right: Preview ===== -->
+        <div class="col-lg-7">
+          <div class="panel p-3">
+            <div class="section-label mb-3"><i class="bi bi-eye me-1"></i>ตัวอย่าง (คลิกบนรูปเพื่อตั้งตำแหน่ง QR)</div>
+            <div id="previewWrap" class="preview-wrap empty">
+              <div id="previewLoadShimmer" class="preview-shimmer-bg" style="display:none"></div>
+              <img id="previewBgImg" class="bg-img d-none" src="" alt="background">
+              <div id="previewEmpty" class="text-center p-4" style="color:#9ca3af">
+                <i class="bi bi-image" style="font-size:3rem;display:block;margin-bottom:.75rem;opacity:.3"></i>
+                <div class="small">อัปโหลดรูปภาพพื้นหลัง<br>เพื่อดูตัวอย่าง</div>
+              </div>
+              <div id="previewQrWrap" class="qr-drag d-none" style="width:25%">
+                <div id="previewQrImg" draggable="false" style="pointer-events:none;overflow:hidden;border-radius:4px"></div>
+              </div>
+            </div>
+            <div class="mt-2 small text-muted">
+              <i class="bi bi-info-circle me-1"></i>QR Code ตัวอย่างใช้เบอร์ที่กรอก • ยอดเงินจริงจะเปลี่ยนตามแต่ละ order
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+
+  /* ===== Image cache (Drive fileId → base64 dataURL) — IndexedDB ===== */
+  const _imgMem = {};
+  const _driveInFlight = {};
+  const _idb = (() => {
+    let _dbP = null;
+    const DB = 'OpenStorefrontImgCache', ST = 'imgs';
+    function open() {
+      if (!_dbP) _dbP = new Promise((ok, fail) => {
+        const r = indexedDB.open(DB, 1);
+        r.onupgradeneeded = e => e.target.result.createObjectStore(ST);
+        r.onsuccess = e => ok(e.target.result);
+        r.onerror = () => fail(r.error);
+      }).catch(() => null);
+      return _dbP;
+    }
+    return {
+      get: k => open().then(db => {
+        if (!db) return null;
+        return new Promise(ok => {
+          const req = db.transaction(ST).objectStore(ST).get(k);
+          req.onsuccess = () => ok(req.result || null);
+          req.onerror = () => ok(null);
+        });
+      }).catch(() => null),
+      set: (k, v) => open().then(db => {
+        if (!db) return;
+        db.transaction(ST, 'readwrite').objectStore(ST).put(v, k);
+      }).catch(() => {})
+    };
+  })();
+  function driveFileToDataUrl(fileId) {
+    if (!fileId) return Promise.resolve(null);
+    if (_imgMem[fileId]) return Promise.resolve(_imgMem[fileId]);
+    if (_driveInFlight[fileId]) return _driveInFlight[fileId];
+    const p = _idb.get(fileId).then(cached => {
+      if (cached) { _imgMem[fileId] = cached; return cached; }
+      return callRpc('getFileDataUrlRpc', fileId).then(r => {
+        if (r && r.dataUrl) { _imgMem[fileId] = r.dataUrl; _idb.set(fileId, r.dataUrl); return r.dataUrl; }
+        return null;
+      });
+    }).catch(() => null).then(v => { delete _driveInFlight[fileId]; return v; });
+    _driveInFlight[fileId] = p;
+    return p;
+  }
+
+  /* ===== PromptPay payload ===== */
+  function _tlv(id,value){ const v=String(value); return id+String(v.length).padStart(2,'0')+v; }
+  function _onlyDigits(t){ return String(t||'').replace(/\D/g,''); }
+  function _fmtPpTarget(target){ const d=_onlyDigits(target); if(d.length>=13) return d; return d.replace(/^0/,'66').padStart(13,'0'); }
+  function _crc16ccitt(text){
+    let crc=0xFFFF;
+    for(let i=0;i<text.length;i++){ crc^=text.charCodeAt(i)<<8; for(let j=0;j<8;j++){ crc=(crc&0x8000)?((crc<<1)^0x1021):(crc<<1); crc&=0xFFFF; } }
+    return crc.toString(16).toUpperCase().padStart(4,'0');
+  }
+  function _promptPayPayload(target,amount){
+    const clean=_onlyDigits(target); if(!clean) return '';
+    const ttype=clean.length>=15?'03':(clean.length>=13?'02':'01');
+    const mInfo=_tlv('00','A000000677010111')+_tlv(ttype,_fmtPpTarget(clean));
+    const hasAmt=amount!==''&&!isNaN(Number(amount))&&Number(amount)>0;
+    let p=_tlv('00','01')+_tlv('01',hasAmt?'12':'11')+_tlv('29',mInfo)+_tlv('58','TH')+_tlv('53','764');
+    if(hasAmt) p+=_tlv('54',Number(amount).toFixed(2));
+    p+='6304'; p+=_crc16ccitt(p); return p;
+  }
+  function _renderQr(el,payload,size){
+    el.innerHTML=''; if(!payload) return;
+    const tmp=document.createElement('div');
+    tmp.style.cssText='position:absolute;left:-9999px;top:-9999px;width:0;height:0;overflow:hidden;visibility:hidden';
+    document.body.appendChild(tmp);
+    new QRCode(tmp,{text:payload,width:size,height:size,correctLevel:QRCode.CorrectLevel.M});
+    const canvas=tmp.querySelector('canvas');
+    if(canvas){
+      const img=document.createElement('img');
+      img.src=canvas.toDataURL('image/png');
+      img.style.cssText='width:100%;height:auto;display:block;border-radius:inherit';
+      el.appendChild(img);
+    }
+    document.body.removeChild(tmp);
+  }
+
+  /* ===== State ===== */
+  let qrState = { x: 50, y: 50, size: 25 };
+  let newBgData = null;   // { base64, filename, contentType } when new image selected
+  let removeBg  = false;  // flag to remove existing bg
+  let existingBgUrl = '';
+  let _origPpNumber = '';  // เบอร์ที่โหลดมาจาก server (ใช้เทียบว่าเปลี่ยนไหม)
+  let _origHasBg = false;  // มีรูปบันทึกอยู่ไหม
+
+  /* ===== Preview helpers ===== */
+  function _hasBg() {
+    return !document.getElementById('previewBgImg').classList.contains('d-none');
+  }
+
+  function refreshQrSrc() {
+    const ppNum = document.getElementById('ppNumber').value.trim();
+    if (!ppNum || !_hasBg()) return;
+    const payload = _promptPayPayload(ppNum, 100); // sample amount ฿100
+    if (!payload) return;
+    _renderQr(document.getElementById('previewQrImg'), payload, 300);
+  }
+
+  function refreshQrPosition() {
+    if (!_hasBg()) return;
+    const qrWrap = document.getElementById('previewQrWrap');
+    qrWrap.style.left = qrState.x + '%';
+    qrWrap.style.top  = qrState.y + '%';
+    qrWrap.style.width = qrState.size + '%';
+    qrWrap.classList.remove('d-none');
+    document.getElementById('qrXDisplay').textContent = Math.round(qrState.x) + '%';
+    document.getElementById('qrYDisplay').textContent = Math.round(qrState.y) + '%';
+    document.getElementById('qrSizeLabel').textContent = qrState.size + '%';
+    document.getElementById('qrSizeSlider').value = qrState.size;
+  }
+
+  function showPreviewBg(src) {
+    const bgImg = document.getElementById('previewBgImg');
+    const wrap  = document.getElementById('previewWrap');
+    const empty = document.getElementById('previewEmpty');
+    bgImg.src = src;
+    bgImg.classList.remove('d-none');
+    empty.style.display = 'none';
+    wrap.classList.remove('empty');
+    refreshQrPosition();
+    refreshQrSrc();
+  }
+
+  function clearPreviewBg() {
+    const bgImg = document.getElementById('previewBgImg');
+    const wrap  = document.getElementById('previewWrap');
+    const empty = document.getElementById('previewEmpty');
+    const qrWrap = document.getElementById('previewQrWrap');
+    bgImg.src = '';
+    bgImg.classList.add('d-none');
+    qrWrap.classList.add('d-none');
+    empty.style.display = '';
+    wrap.classList.add('empty');
+  }
+
+  /* ===== Drag / click to set QR position ===== */
+  (function setupDrag() {
+    const wrap = document.getElementById('previewWrap');
+    const qrWrap = document.getElementById('previewQrWrap');
+    let dragging = false;
+
+    function posFromEvent(e) {
+      const rect = wrap.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        x: Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width)  * 100)),
+        y: Math.max(0, Math.min(100, ((clientY - rect.top)  / rect.height) * 100))
+      };
+    }
+
+    function applyPos(e) {
+      if (!_hasBg()) return;
+      const pos = posFromEvent(e);
+      qrState.x = pos.x;
+      qrState.y = pos.y;
+      refreshQrPosition();
+    }
+
+    // Click on wrap → set position
+    wrap.addEventListener('click', e => {
+      if (e.target === qrWrap || qrWrap.contains(e.target)) return;
+      applyPos(e);
+    });
+
+    // Drag the QR element
+    qrWrap.addEventListener('mousedown', e => { dragging=true; e.preventDefault(); });
+    document.addEventListener('mousemove', e => { if(dragging) applyPos(e); });
+    document.addEventListener('mouseup',   () => { dragging=false; });
+
+    // Touch support
+    qrWrap.addEventListener('touchstart', e => { dragging=true; e.preventDefault(); }, {passive:false});
+    document.addEventListener('touchmove', e => { if(dragging){ applyPos(e); e.preventDefault(); } }, {passive:false});
+    document.addEventListener('touchend',  () => { dragging=false; });
+    wrap.addEventListener('touchend', e => {
+      if(!dragging && _hasBg()) applyPos(e.changedTouches ? {clientX:e.changedTouches[0].clientX,clientY:e.changedTouches[0].clientY} : e);
+    });
+  })();
+
+  /* ===== Event handlers ===== */
+  function refreshPpVerify() {
+    const ppNum = document.getElementById('ppNumber').value.trim();
+    const panel = document.getElementById('ppVerifyPanel');
+    if (!ppNum) { panel.classList.add('d-none'); return; }
+    const payload = _promptPayPayload(ppNum, 0);
+    if (!payload) { panel.classList.add('d-none'); return; }
+    panel.classList.remove('d-none');
+    _renderQr(document.getElementById('ppVerifyQr'), payload, 160);
+  }
+
+  function onPpNumberChange() { refreshQrSrc(); refreshPpVerify(); }
+
+  function onSizeChange(val) {
+    qrState.size = Number(val);
+    refreshQrPosition();
+  }
+
+  function onBgFileSelected(input) {
+    const file = input.files[0];
+    if (!file) return;
+    removeBg = false;
+    const reader = new FileReader();
+    reader.onload = e => {
+      newBgData = { base64: e.target.result, filename: file.name, contentType: file.type || 'image/jpeg' };
+      showPreviewBg(e.target.result);
+      // Update current row
+      const row = document.getElementById('bgCurrentRow');
+      document.getElementById('bgCurrentThumb').src = e.target.result;
+      document.getElementById('bgCurrentName').textContent = file.name;
+      document.getElementById('bgCurrentSub').textContent = (file.size / 1024 / 1024).toFixed(2) + ' MB — ยังไม่ได้บันทึก';
+      row.classList.remove('d-none');
+    };
+    reader.readAsDataURL(file);
+    // Reset input so same file can be re-selected
+    input.value = '';
+  }
+
+  async function removeBgImage() {
+    const ok = await confirmDanger({
+      title: 'ยืนยันการลบรูปภาพพื้นหลัง',
+      text: 'การเปลี่ยนแปลงจะมีผลเมื่อยืนยัน OTP เท่านั้น'
+    });
+    if (!ok) return;
+    removeBg   = true;
+    newBgData  = null;
+    existingBgUrl = '';
+    clearPreviewBg();
+    document.getElementById('bgCurrentRow').classList.add('d-none');
+  }
+
+  /* ===== Drag-and-drop on upload zone ===== */
+  (function() {
+    const zone = document.getElementById('bgUploadZone');
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith('image/')) {
+        const fakeInput = { files:[file] };
+        onBgFileSelected(fakeInput);
+      }
+    });
+  })();
+
+  /* ===== Load existing config ===== */
+  async function loadConfig() {
+    if (!GAS_ENV) { showHUD('โหมดทดสอบ (ไม่มี GAS)'); return; }
+    showHUD('กำลังโหลด…');
+    try {
+      const r = await _rpc('getPaymentConfigRpc');
+      if (r && r.ok) {
+        const p = r.payment || {};
+        document.getElementById('ppNumber').value = p.promptpay_number || '';
+        document.getElementById('ppName').value   = p.promptpay_name   || '';
+        qrState.x    = p.qr_x    !== undefined ? p.qr_x    : 50;
+        qrState.y    = p.qr_y    !== undefined ? p.qr_y    : 50;
+        qrState.size = p.qr_size !== undefined ? p.qr_size : 25;
+        _origPpNumber = p.promptpay_number || '';
+        _origHasBg    = !!(p.bg_drive_id || p.bg_url);
+        if (p.bg_drive_id || p.bg_url) {
+          existingBgUrl = p.bg_url || '';
+          const row = document.getElementById('bgCurrentRow');
+          document.getElementById('bgCurrentName').textContent = 'รูปที่บันทึกไว้';
+          document.getElementById('bgCurrentSub').textContent = 'กำลังโหลด…';
+          row.classList.remove('d-none');
+          // Show shimmer in preview + thumbnail while fetching
+          const wrap = document.getElementById('previewWrap');
+          const shimmer = document.getElementById('previewLoadShimmer');
+          const thumbShimmer = document.getElementById('bgThumbShimmer');
+          document.getElementById('previewEmpty').style.display = 'none';
+          wrap.classList.remove('empty');
+          shimmer.style.display = '';
+          thumbShimmer.style.display = '';
+          const applyBg = (dataUrl) => {
+            shimmer.style.display = 'none';
+            thumbShimmer.style.display = 'none';
+            if (dataUrl) {
+              showPreviewBg(dataUrl);
+              document.getElementById('bgCurrentThumb').src = dataUrl;
+              document.getElementById('bgCurrentSub').textContent = 'บันทึกใน Google Drive แล้ว';
+            } else {
+              document.getElementById('previewEmpty').style.display = '';
+              wrap.classList.add('empty');
+              document.getElementById('bgCurrentSub').textContent = 'โหลดไม่สำเร็จ';
+            }
+          };
+          if (p.bg_drive_id) {
+            driveFileToDataUrl(p.bg_drive_id).then(applyBg);
+          } else {
+            applyBg(p.bg_url);
+          }
+        }
+        refreshQrPosition();
+        refreshQrSrc();
+        refreshPpVerify();
+        hideHUD();
+      } else {
+        hideHUD('err', 'โหลดไม่สำเร็จ');
+      }
+    } catch(err) {
+      hideHUD('err', translateRpcError(err, MSG.error.fetch));
+    }
+  }
+
+  /* ===== Save ===== */
+  async function savePaymentConfig() {
+    if (!GAS_ENV) {
+      Swal.fire({ icon:'warning', title:'ไม่ได้เชื่อมต่อ GAS', text:'กรุณาเปิดผ่าน GAS Web App', confirmButtonColor:'#111827' });
+      return;
+    }
+    const btnSave = document.getElementById('btnSave');
+    btnSave.disabled = true;
+
+    const currentPpNumber = document.getElementById('ppNumber').value.trim();
+
+    // Build payload
+    const payload = {
+      promptpay_number: currentPpNumber,
+      promptpay_name:   document.getElementById('ppName').value.trim(),
+      qr_x:    Math.round(qrState.x  * 10) / 10,
+      qr_y:    Math.round(qrState.y  * 10) / 10,
+      qr_size: qrState.size
+    };
+    if (newBgData) {
+      payload.bg_image = { mode:'file', base64:newBgData.base64, filename:newBgData.filename, contentType:newBgData.contentType };
+    } else if (removeBg) {
+      payload.bg_image = { mode:'remove' };
+    }
+    const otpPayload = Object.assign({}, payload);
+    if (otpPayload.bg_image && otpPayload.bg_image.mode === 'file') {
+      otpPayload.bg_image = {
+        mode: 'file',
+        filename: otpPayload.bg_image.filename || '',
+        contentType: otpPayload.bg_image.contentType || ''
+      };
+    }
+
+    try {
+      // === บังคับ OTP ทุกครั้ง ===
+      showHUD('กำลังส่ง OTP…');
+      const otpReq = await _rpc('sendPaymentOtpRpc', otpPayload);
+      hideHUD();
+      if (!otpReq || !otpReq.ok) throw new Error(otpReq?.error || 'ส่ง OTP ไม่สำเร็จ');
+
+      const quotaLeft = otpReq.remainingQuota;
+      const quotaHtml = (quotaLeft !== undefined)
+        ? '<br><span style="font-size:.78rem;color:#9ca3af"><i class="bi bi-envelope me-1"></i>โควต้าการส่ง OTP เหลืออีก <strong style="color:#374151">' + quotaLeft + '</strong> ครั้ง</span>'
+        : '';
+
+      const result = await Swal.fire({
+        title: 'ยืนยันตัวตน',
+        html: 'ส่งรหัส OTP ไปที่ <strong>' + otpReq.maskedEmail + '</strong> แล้ว<br>' +
+              '<span style="font-size:.82rem;color:#6b7280">รหัสมีอายุ 10 นาที</span>' + quotaHtml,
+        input: 'text',
+        inputPlaceholder: 'กรอกรหัส 6 หลัก',
+        inputAttributes: { maxlength:'6', style:'text-align:center;letter-spacing:.4em;font-size:1.5rem;font-weight:700' },
+        confirmButtonText: 'ยืนยัน',
+        cancelButtonText: 'ยกเลิก',
+        showCancelButton: true,
+        confirmButtonColor: '#111827',
+        inputValidator: v => (!v || v.trim().length < 4) ? 'กรุณากรอกรหัส OTP' : null
+      });
+      if (!result.isConfirmed || !result.value) { btnSave.disabled = false; return; }
+
+      showHUD('กำลังยืนยัน OTP…');
+      const r = await _rpc('verifyPaymentOtpAndSaveRpc', result.value.trim(), payload);
+      if (!r || !r.ok) throw new Error(r?.error || 'บันทึกไม่สำเร็จ');
+
+      newBgData = null; removeBg = false;
+      await loadConfig();
+      hideHUD('ok', MSG.success.save);
+    } catch(err) {
+      hideHUD('err', translateRpcError(err, MSG.error.save));
+    } finally {
+      btnSave.disabled = false;
+    }
+  }
+
+  /* ===== Boot ===== */
+  (async function() {
+    _setupAdminPage();
+    if (!GAS_ENV) { _dismissPageLoader(); loadConfig(); return; }
+    try {
+      await _initAuth();
+      await loadConfig();
+      _dismissPageLoader();
+    }
+    catch(err) {
+      var authErrs = ['AUTH_REQUIRED','NOT_LOGGED_IN','SESSION_INVALID'];
+      if (authErrs.indexOf(err.message) === -1) { _dismissPageLoader(); console.error(err); }
+    }
+  })();
+</script>
+</body>
+</html>

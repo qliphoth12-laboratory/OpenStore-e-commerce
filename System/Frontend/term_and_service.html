@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ข้อกำหนดการใช้บริการ • Open Storefront</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:#f6f7f9;
+      --panel:#ffffff;
+      --border:#e5e7eb;
+      --accent:#111827;
+      --muted:#6b7280;
+      --soft:#f8fafc;
+      --highlight:#eef2ff;
+      --radius:18px;
+      --shadow:0 10px 28px rgba(15,23,42,.06);
+    }
+
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body {
+      margin:0;
+      background:var(--bg);
+      color:var(--accent);
+      font-family:"Zen Maru Gothic","Noto Sans Thai",ui-sans-serif,system-ui;
+      line-height:1.75;
+    }
+
+    a { color:inherit; }
+
+    .topbar {
+      position:sticky;
+      top:0;
+      z-index:1000;
+      background:rgba(255,255,255,.88);
+      backdrop-filter:blur(12px);
+      border-bottom:1px solid var(--border);
+    }
+    .topbar-inner {
+      max-width:1200px;
+      margin:0 auto;
+      padding:12px 20px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .brand {
+      display:flex;
+      align-items:center;
+      gap:12px;
+      min-width:0;
+    }
+    .brand-logo {
+      width:40px;
+      height:40px;
+      border-radius:50%;
+      border:1px solid var(--border);
+      object-fit:cover;
+      background:#fff;
+      display:none;
+      flex-shrink:0;
+    }
+    .brand-logo-fallback {
+      width:40px;
+      height:40px;
+      border-radius:50%;
+      border:1px solid var(--border);
+      background:linear-gradient(180deg,#fff,#f3f4f6);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      color:#9ca3af;
+      flex-shrink:0;
+    }
+    .brand-text {
+      min-width:0;
+    }
+    .brand-title {
+      font-size:.98rem;
+      font-weight:700;
+      color:var(--accent);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      max-width:min(48vw,560px);
+    }
+    .brand-sub {
+      font-size:.78rem;
+      color:var(--muted);
+    }
+    .top-actions {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+
+    .pill-btn {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      padding:.62rem .95rem;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background:#fff;
+      color:var(--accent);
+      text-decoration:none;
+      font-size:.85rem;
+      font-weight:600;
+      transition:all .16s ease;
+      box-shadow:none;
+    }
+    .pill-btn:hover {
+      background:#f9fafb;
+      transform:translateY(-1px);
+    }
+    .pill-btn.primary {
+      background:var(--accent);
+      color:#fff;
+      border-color:var(--accent);
+    }
+    .pill-btn.primary:hover {
+      background:#1f2937;
+      border-color:#1f2937;
+    }
+
+    .container-page {
+      max-width:1200px;
+      margin:0 auto;
+      padding:24px 20px 40px;
+    }
+
+    .hero {
+      background:linear-gradient(180deg,#ffffff 0%, #fbfbfc 100%);
+      border:1px solid var(--border);
+      border-radius:28px;
+      box-shadow:var(--shadow);
+      padding:28px;
+      overflow:hidden;
+      position:relative;
+    }
+    .hero::after {
+      content:"";
+      position:absolute;
+      inset:auto -60px -60px auto;
+      width:220px;
+      height:220px;
+      border-radius:50%;
+      background:radial-gradient(circle, rgba(17,24,39,.06), rgba(17,24,39,0));
+      pointer-events:none;
+    }
+    .eyebrow {
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:.42rem .78rem;
+      border-radius:999px;
+      background:#f8fafc;
+      border:1px solid var(--border);
+      color:#4b5563;
+      font-size:.78rem;
+      font-weight:700;
+      letter-spacing:.03em;
+      margin-bottom:14px;
+    }
+    .hero h1 {
+      font-size:clamp(1.7rem,2vw + 1rem,2.5rem);
+      font-weight:700;
+      letter-spacing:-.02em;
+      margin:0 0 10px;
+      color:var(--accent);
+    }
+    .hero p.lead {
+      margin:0;
+      color:#4b5563;
+      max-width:880px;
+      font-size:1rem;
+    }
+    .hero-meta {
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:18px;
+    }
+    .meta-chip {
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:.5rem .78rem;
+      border-radius:999px;
+      background:#fff;
+      border:1px solid var(--border);
+      color:#374151;
+      font-size:.82rem;
+      font-weight:600;
+    }
+
+    .notice {
+      margin-top:16px;
+      display:flex;
+      align-items:flex-start;
+      gap:10px;
+      background:#fffbeb;
+      border:1px solid #fde68a;
+      color:#854d0e;
+      border-radius:14px;
+      padding:14px 16px;
+      font-size:.88rem;
+    }
+    .notice i {
+      flex-shrink:0;
+      margin-top:2px;
+    }
+
+    .page-grid {
+      margin-top:22px;
+      display:grid;
+      grid-template-columns:290px minmax(0,1fr);
+      gap:22px;
+      align-items:start;
+    }
+    @media (max-width: 991.98px) {
+      .page-grid { grid-template-columns:1fr; }
+    }
+
+    .panel {
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+    }
+
+    .toc {
+      position:sticky;
+      top:88px;
+      padding:18px;
+    }
+    @media (max-width: 991.98px) {
+      .toc { position:static; }
+    }
+    .toc h2 {
+      margin:0 0 12px;
+      font-size:.85rem;
+      font-weight:700;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+      color:var(--muted);
+    }
+    .toc a {
+      display:block;
+      padding:10px 12px;
+      border-radius:12px;
+      color:#374151;
+      text-decoration:none;
+      font-size:.92rem;
+      transition:background .15s ease, color .15s ease, transform .15s ease;
+    }
+    .toc a:hover {
+      background:#f8fafc;
+      color:#111827;
+      transform:translateX(2px);
+    }
+    .toc .mini {
+      margin-top:14px;
+      padding:12px;
+      border-radius:14px;
+      background:var(--soft);
+      border:1px solid var(--border);
+      color:var(--muted);
+      font-size:.82rem;
+      line-height:1.65;
+    }
+
+    .content {
+      padding:22px;
+    }
+    .content-section + .content-section {
+      margin-top:16px;
+    }
+    .section-card {
+      border:1px solid var(--border);
+      border-radius:16px;
+      overflow:hidden;
+      background:#fff;
+    }
+    .section-head {
+      padding:14px 18px;
+      background:#fafafa;
+      border-bottom:1px solid var(--border);
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .section-no {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      width:30px;
+      height:30px;
+      border-radius:10px;
+      background:var(--accent);
+      color:#fff;
+      font-size:.84rem;
+      font-weight:700;
+      flex-shrink:0;
+    }
+    .section-title {
+      font-size:1.04rem;
+      font-weight:700;
+      color:var(--accent);
+      margin:0;
+    }
+    .section-body {
+      padding:18px;
+      color:#374151;
+      font-size:.96rem;
+    }
+    .section-body p:last-child,
+    .section-body ul:last-child,
+    .section-body ol:last-child { margin-bottom:0; }
+
+    .section-body ul,
+    .section-body ol {
+      padding-left:1.15rem;
+      margin-bottom:0;
+    }
+    .section-body li + li { margin-top:8px; }
+
+    .inline-note {
+      margin-top:14px;
+      padding:12px 14px;
+      border-radius:14px;
+      background:var(--highlight);
+      border:1px solid #c7d2fe;
+      color:#3730a3;
+      font-size:.88rem;
+    }
+
+    .two-col {
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0,1fr));
+      gap:14px;
+    }
+    @media (max-width: 767.98px) {
+      .two-col { grid-template-columns:1fr; }
+    }
+    .info-box {
+      border:1px solid var(--border);
+      border-radius:14px;
+      background:var(--soft);
+      padding:14px;
+    }
+    .info-box .label {
+      font-size:.72rem;
+      color:var(--muted);
+      text-transform:uppercase;
+      letter-spacing:.06em;
+      font-weight:700;
+      margin-bottom:6px;
+    }
+    .info-box .value {
+      color:#111827;
+      font-weight:600;
+      word-break:break-word;
+      overflow-wrap:break-word;
+    }
+    .info-box .value a { word-break:break-all; overflow-wrap:break-word; }
+
+    .footer-card {
+      margin-top:18px;
+      padding:18px;
+      background:#fff;
+      border:1px solid var(--border);
+      border-radius:18px;
+      box-shadow:var(--shadow);
+    }
+    .footer-small {
+      color:var(--muted);
+      font-size:.84rem;
+    }
+
+    .placeholder {
+      color:#0f172a;
+      background:#f8fafc;
+      border:1px dashed #cbd5e1;
+      border-radius:10px;
+      padding:.08rem .45rem;
+      display:inline-block;
+      font-size:.92em;
+    }
+
+    .text-muted-legal { color:var(--muted); }
+  </style>
+</head>
+<body>
+<script>window._EXEC_URL = '<?!= typeof execUrl !== "undefined" ? execUrl : "" ?>';</script>
+<script id="server-cfg" type="application/json"><?!= typeof siteCfgJs !== 'undefined' ? siteCfgJs.replace(/</g, '\\u003c').replace(/>/g, '\\u003e') : '{}' ?></script>
+<script>
+  window.TERMS_META = {
+    legalEntityName: 'ผู้ประกอบการ/นิติบุคคลของร้าน',
+    brandDisplayName: 'Open Storefront',
+    contactEmail: 'support@example.com',
+    primaryContactUrl: '',
+    contactPhone: '-',
+    businessAddress: '-',
+    privacyPolicyUrl: '#',
+    effectiveDateText: '21 เมษายน 2026'
+  };
+</script>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <img id="brandLogo" class="brand-logo" alt="logo" style="display:none">
+      <div id="brandLogoFallback" class="brand-logo-fallback"><i class="bi bi-shop"></i></div>
+      <div class="brand-text">
+        <div class="brand-title" id="brandTitle">Open Storefront</div>
+        <div class="brand-sub">ข้อกำหนดการใช้บริการเว็บไซต์</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <a class="pill-btn" id="btnBackHome" href="#"><i class="bi bi-house"></i>กลับหน้าร้าน</a>
+      <a class="pill-btn primary" id="btnContact" href="#"><i class="bi bi-envelope"></i>ช่องทางติดต่อ</a>
+    </div>
+  </div>
+</div>
+
+<div class="container-page">
+  <section class="hero">
+    <div class="eyebrow"><i class="bi bi-file-earmark-text"></i> Terms of Service</div>
+    <h1>ข้อกำหนดการใช้บริการของ <span data-fill="brandDisplayName">Open Storefront</span></h1>
+    <p class="lead">
+      เอกสารฉบับนี้กำหนดหลักเกณฑ์ เงื่อนไข และขอบเขตความรับผิดระหว่าง
+      <span data-fill="legalEntityName" class="placeholder">ผู้ประกอบการ/นิติบุคคลของร้าน</span>
+      ในฐานะผู้ให้บริการ กับผู้ใช้งานเว็บไซต์และลูกค้าทุกท่านที่เข้าชม สั่งซื้อสินค้า ชำระเงิน ส่งหลักฐานการชำระเงิน ติดตามสถานะคำสั่งซื้อ หรือใช้บริการอื่นใดผ่านเว็บไซต์นี้
+    </p>
+    <div class="hero-meta">
+      <span class="meta-chip"><i class="bi bi-calendar-event"></i>มีผลใช้บังคับตั้งแต่ <span data-fill="effectiveDateText">21 เมษายน 2026</span></span>
+    </div>
+   
+  </section>
+
+  <div class="page-grid">
+    <aside class="panel toc">
+      <h2>สารบัญ</h2>
+      <a href="#sec-1">1. การยอมรับข้อกำหนด</a>
+      <a href="#sec-2">2. ขอบเขตการใช้บริการ</a>
+      <a href="#sec-3">3. ข้อมูลสินค้าและราคา</a>
+      <a href="#sec-4">4. การสั่งซื้อและการยืนยันคำสั่งซื้อ</a>
+      <a href="#sec-5">5. การชำระเงินและหลักฐานการชำระเงิน</a>
+      <a href="#sec-6">6. การจัดส่งและการติดตามพัสดุ</a>
+      <a href="#sec-7">7. การยกเลิก แก้ไข คืนสินค้า และคืนเงิน</a>
+      <a href="#sec-8">8. การใช้ลิงก์หรือรหัสสำหรับดูคำสั่งซื้อ</a>
+      <a href="#sec-9">9. หน้าที่ของผู้ใช้งาน</a>
+      <a href="#sec-10">10. ทรัพย์สินทางปัญญา</a>
+      <a href="#sec-11">11. ข้อจำกัดความรับผิด</a>
+      <a href="#sec-12">12. ข้อมูลส่วนบุคคล</a>
+      <a href="#sec-13">13. การเปลี่ยนแปลงข้อกำหนด</a>
+      <a href="#sec-14">14. กฎหมายที่ใช้บังคับและการติดต่อ</a>
+
+      <div class="mini">
+        เอกสารฉบับนี้เขียนให้ใช้กับระบบร้านปัจจุบันที่มีการสั่งซื้อสินค้า การอัปโหลดสลิป การตรวจสอบการชำระเงิน การจัดส่ง และหน้าติดตามคำสั่งซื้อโดยเฉพาะ
+      </div>
+    </aside>
+
+    <main class="panel content">
+      <section class="content-section section-card" id="sec-1">
+        <div class="section-head">
+          <span class="section-no">1</span>
+          <h2 class="section-title">การยอมรับข้อกำหนด</h2>
+        </div>
+        <div class="section-body">
+          <p>
+            เมื่อท่านเข้าถึง ใช้งาน ลงทะเบียน สั่งซื้อ ชำระเงิน อัปโหลดหลักฐานการชำระเงิน ติดตามคำสั่งซื้อ
+            หรือใช้บริการใด ๆ ผ่านเว็บไซต์ของ <span data-fill="brandDisplayName">Open Storefront</span>
+            ให้ถือว่าท่านได้อ่าน ทำความเข้าใจ และยอมรับข้อกำหนดการใช้บริการฉบับนี้ รวมถึงนโยบายอื่นที่เกี่ยวข้องของร้านแล้ว
+          </p>
+          <p>
+            หากท่านไม่ยอมรับข้อกำหนดฉบับนี้ทั้งหมดหรือบางส่วน ท่านควรงดใช้บริการเว็บไซต์นี้ทันที
+          </p>
+          <div class="inline-note">
+            ร้านอาจมีนโยบายเฉพาะเพิ่มเติมสำหรับบางสินค้า บางแคมเปญ หรือบางวิธีการชำระเงิน ซึ่งให้ถือเป็นส่วนหนึ่งของข้อกำหนดฉบับนี้ด้วย
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section section-card" id="sec-2">
+        <div class="section-head">
+          <span class="section-no">2</span>
+          <h2 class="section-title">ขอบเขตการใช้บริการ</h2>
+        </div>
+        <div class="section-body">
+          <p>เว็บไซต์นี้ให้บริการเกี่ยวกับการจำหน่ายสินค้า การแสดงรายละเอียดสินค้า การรับคำสั่งซื้อ การตรวจสอบการชำระเงิน การจัดส่ง และการติดตามสถานะคำสั่งซื้อ</p>
+          <ul>
+            <li>บริการบางส่วนอาจเปิดให้ใช้โดยไม่ต้องมีบัญชีผู้ใช้ เช่น การสั่งซื้อหรือดูสถานะคำสั่งซื้อผ่านลิงก์เฉพาะของออเดอร์</li>
+            <li>ร้านขอสงวนสิทธิ์ในการระงับ ปรับปรุง แก้ไข หรือยกเลิกบริการบางส่วนหรือทั้งหมดได้ตามความเหมาะสม</li>
+            <li>การให้บริการอาจมีช่วงเวลาปิดปรับปรุงระบบ ชะลอการประมวลผล หรือข้อจำกัดจากผู้ให้บริการภายนอก เช่น ผู้ให้บริการขนส่ง หรือระบบชำระเงิน</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="content-section section-card" id="sec-3">
+        <div class="section-head">
+          <span class="section-no">3</span>
+          <h2 class="section-title">ข้อมูลสินค้าและราคา</h2>
+        </div>
+        <div class="section-body">
+          <ul>
+            <li>ร้านพยายามแสดงรายละเอียดสินค้า รูปภาพ ตัวเลือกสินค้า ราคา ค่าจัดส่ง และข้อมูลประกอบอื่น ๆ ให้ถูกต้องและเป็นปัจจุบันที่สุด</li>
+            <li>สีของสินค้า ขนาด สัดส่วน หรือรายละเอียดบางประการอาจแตกต่างจากของจริงเล็กน้อยตามอุปกรณ์แสดงผลหรือรอบการผลิต</li>
+            <li>ร้านมีสิทธิ์เปลี่ยนแปลงราคา รายละเอียดสินค้า โปรโมชั่น ของแถม หรือเงื่อนไขการขายได้โดยไม่ต้องแจ้งให้ทราบล่วงหน้า ทั้งนี้จะยึดข้อมูล ณ เวลาที่ระบบรับคำสั่งซื้อของท่านเป็นหลัก</li>
+            <li>ในกรณีที่พบความผิดพลาดด้านข้อมูลสินค้า ราคา สต็อก หรือค่าจัดส่งอันเกิดจากความคลาดเคลื่อนของระบบ ร้านมีสิทธิ์ติดต่อเพื่อแก้ไขข้อมูล ยืนยันใหม่ หรือยกเลิกคำสั่งซื้อพร้อมคืนเงินตามที่เหมาะสม</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="content-section section-card" id="sec-4">
+        <div class="section-head">
+          <span class="section-no">4</span>
+          <h2 class="section-title">การสั่งซื้อและการยืนยันคำสั่งซื้อ</h2>
+        </div>
+        <div class="section-body">
+          <p>
+            การส่งคำสั่งซื้อผ่านเว็บไซต์ถือเป็นการเสนอซื้อสินค้าโดยลูกค้า แต่ยังไม่ถือว่าการซื้อขายเสร็จสมบูรณ์จนกว่าร้านจะตรวจสอบรายละเอียดที่เกี่ยวข้องครบถ้วนแล้ว
+          </p>
+          <ol>
+            <li>ลูกค้าต้องกรอกชื่อ ที่อยู่ เบอร์โทรศัพท์ และข้อมูลที่จำเป็นอื่น ๆ ให้ถูกต้องครบถ้วน</li>
+            <li>ระบบอาจออกเลขคำสั่งซื้อ ลิงก์ติดตาม หรือรหัสสำหรับดูสถานะคำสั่งซื้อเพื่อใช้ตรวจสอบภายหลัง</li>
+            <li>ร้านขอสงวนสิทธิ์ในการติดต่อกลับเพื่อยืนยันข้อมูล หากพบข้อมูลไม่ครบถ้วน ผิดปกติ ซ้ำซ้อน หรือมีเหตุอันควรสงสัย</li>
+            <li>คำสั่งซื้ออาจถูกยกเลิกหรือพักการดำเนินการได้ หากสินค้าไม่พร้อมจำหน่าย ชำระเงินไม่ครบ ไม่สามารถยืนยันตัวตนได้ หรือพบพฤติการณ์ที่อาจเข้าข่ายทุจริต</li>
+          </ol>
+          <div class="inline-note">
+            การได้รับข้อความว่า "รับคำสั่งซื้อแล้ว" หรือการมีเลขคำสั่งซื้อ ไม่ได้หมายความว่าร้านยืนยันการจัดส่งแล้วเสมอไป ร้านอาจต้องรอตรวจสอบการชำระเงิน สต็อก หรือข้อมูลจัดส่งก่อน
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section section-card" id="sec-5">
+        <div class="section-head">
+          <span class="section-no">5</span>
+          <h2 class="section-title">การชำระเงินและหลักฐานการชำระเงิน</h2>
+        </div>
+        <div class="section-body">
+          <ul>
+            <li>ลูกค้าต้องชำระเงินตามช่องทาง วิธีการ และระยะเวลาที่ร้านกำหนดไว้ในหน้าเว็บไซต์หรือหน้าคำสั่งซื้อ</li>
+            <li>หากระบบของร้านรองรับการอัปโหลดหลักฐานการชำระเงิน ลูกค้าต้องส่งข้อมูลและไฟล์ที่ชัดเจน ถูกต้อง และเป็นรายการที่เกี่ยวข้องกับคำสั่งซื้อของตนเองเท่านั้น</li>
+            <li>ร้านมีสิทธิ์ตรวจสอบข้อมูลการชำระเงิน เปรียบเทียบยอด วันเวลา เลขอ้างอิง สลิป หรือข้อมูลประกอบอื่น ๆ ก่อนอนุมัติคำสั่งซื้อ</li>
+            <li>ร้านมีสิทธิ์ระงับการดำเนินการ ยกเลิกคำสั่งซื้อ หรือปฏิเสธหลักฐานการชำระเงิน หากพบว่ายอดเงินไม่ตรง หลักฐานไม่ชัดเจน เป็นข้อมูลเท็จ ใช้ซ้ำ หรือมีเหตุอันควรเชื่อได้ว่าอาจเกิดการทุจริต</li>
+            <li>ในกรณีที่ลูกค้าชำระเงินเกินกว่ายอดที่ต้องชำระ ร้านจะดำเนินการคืนส่วนเกินตามวิธีที่ร้านเห็นสมควรและสามารถตรวจสอบได้</li>
+          </ul>
+          <div class="two-col mt-3">
+            <div class="info-box">
+              <div class="label">ตัวอย่างแนวปฏิบัติที่ควรใช้</div>
+              <div class="value">ตรวจสอบยอดเงิน ผู้โอน วันเวลา และคำสั่งซื้อให้ตรงกันทุกครั้งก่อนกดยืนยัน</div>
+            </div>
+            <div class="info-box">
+              <div class="label">สิ่งที่ลูกค้าควรหลีกเลี่ยง</div>
+              <div class="value">ห้ามอัปโหลดสลิปของผู้อื่น ห้ามแก้ไขภาพหลักฐาน และห้ามใช้ข้อมูลปลอมเพื่อยืนยันการชำระเงิน</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section section-card" id="sec-6">
+        <div class="section-head">
+          <span class="section-no">6</span>
+          <h2 class="section-title">การจัดส่งและการติดตามพัสดุ</h2>
+        </div>
+        <div class="section-body">
+          <ul>
+            <li>ร้านจะดำเนินการจัดส่งหลังจากตรวจสอบคำสั่งซื้อและการชำระเงินเรียบร้อยแล้ว เว้นแต่มีการระบุเงื่อนไขไว้เป็นอย่างอื่น</li>
+            <li>ระยะเวลาจัดส่งที่แสดงบนเว็บไซต์หรือแจ้งแก่ลูกค้าเป็นเพียงระยะเวลาโดยประมาณ ไม่ใช่การรับประกันวันที่ได้รับสินค้า</li>
+            <li>ข้อมูลติดตามพัสดุที่แสดงผ่านเว็บไซต์อาจอ้างอิงข้อมูลจากผู้ให้บริการขนส่งหรือผู้ให้บริการติดตามพัสดุภายนอก ซึ่งอาจมีความล่าช้าหรือความคลาดเคลื่อนชั่วคราวได้</li>
+            <li>เมื่อลูกค้าระบุชื่อผู้รับ ที่อยู่ เบอร์โทรศัพท์ หรือรหัสไปรษณีย์ผิดพลาด จนทำให้จัดส่งไม่ได้ ล่าช้า ตีกลับ หรือสูญหาย ร้านอาจเรียกเก็บค่าใช้จ่ายเพิ่มเติมตามจริง</li>
+            <li>หากพัสดุถูกตีกลับมายังร้านเนื่องจากลูกค้าไม่รับสินค้า ไม่มารับตามกำหนด หรือให้ข้อมูลจัดส่งผิด ร้านมีสิทธิ์ติดต่อเพื่อให้ลูกค้าชำระค่าจัดส่งใหม่ก่อนส่งซ้ำ</li>
+          </ul>
+          <div class="inline-note">
+            เมื่อระบบแสดงเลขพัสดุหรือสถานะจัดส่งแล้ว ลูกค้าควรติดตามความเคลื่อนไหวของพัสดุอย่างสม่ำเสมอ และติดต่อร้านโดยเร็วหากพบเหตุผิดปกติ
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section section-card" id="sec-7">
+        <div class="section-head">
+          <span class="section-no">7</span>
+          <h2 class="section-title">การยกเลิก แก้ไข คืนสินค้า และคืนเงิน</h2>
+        </div>
+        <div class="section-body">
+          <ul>
+            <li>ลูกค้าสามารถขอแก้ไขหรือยกเลิกคำสั่งซื้อได้เฉพาะช่วงที่ร้านยังไม่ยืนยันการจัดเตรียมหรือจัดส่งสินค้า ทั้งนี้ขึ้นอยู่กับสถานะคำสั่งซื้อ ณ ขณะนั้น</li>
+            <li>สินค้าที่เป็นงานสั่งทำ สินค้าพรีออเดอร์ สินค้าลดราคา สินค้าใช้สิทธิพิเศษเฉพาะรายการ หรือสินค้าที่ร้านระบุว่าไม่รับเปลี่ยนคืน อาจไม่สามารถคืนหรือยกเลิกได้ เว้นแต่กฎหมายบังคับไว้เป็นอย่างอื่น</li>
+            <li>หากลูกค้าได้รับสินค้าผิดรุ่น ผิดสี ผิดขนาด สินค้าชำรุดจากการผลิต หรือได้รับไม่ครบ ลูกค้าต้องแจ้งร้านภายในระยะเวลาที่ร้านกำหนด พร้อมแนบภาพหรือข้อมูลประกอบที่ชัดเจน</li>
+            <li>การคืนเงินจะดำเนินการผ่านช่องทางที่ร้านเห็นสมควร หลังตรวจสอบข้อเท็จจริงและยืนยันสิทธิในการคืนเงินเรียบร้อยแล้ว</li>
+            <li>ค่าธรรมเนียมการโอน ค่าบริการของผู้ให้บริการภายนอก หรือค่าใช้จ่ายที่เกิดจากข้อมูลผิดพลาดของลูกค้า อาจไม่อยู่ในขอบเขตการคืนเงิน เว้นแต่ร้านพิจารณาเป็นอย่างอื่น</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="content-section section-card" id="sec-8">
+        <div class="section-head">
+          <span class="section-no">8</span>
+          <h2 class="section-title">การใช้ลิงก์หรือรหัสสำหรับดูคำสั่งซื้อ</h2>
+        </div>
+        <div class="section-body">
+          <p>
+            ระบบของร้านอาจจัดให้มีลิงก์เฉพาะ รหัสเฉพาะ หรือข้อมูลอ้างอิงสำหรับดูสถานะคำสั่งซื้อ อัปโหลดสลิป หรือตรวจสอบรายละเอียดการจัดส่ง
+            ซึ่งถือเป็นข้อมูลที่มีความสำคัญต่อความเป็นส่วนตัวของคำสั่งซื้อ
+          </p>
+          <ul>
+            <li>ลูกค้าต้องเก็บลิงก์ รหัส หรือข้อมูลดังกล่าวไว้เป็นความลับ และไม่ส่งต่อแก่บุคคลที่ไม่เกี่ยวข้อง</li>
+            <li>หากลูกค้าเผยแพร่ ส่งต่อ หรือเก็บรักษาไม่เหมาะสมจนทำให้บุคคลอื่นเข้าถึงข้อมูลคำสั่งซื้อได้ ร้านจะไม่รับผิดชอบต่อความเสียหายที่เกิดจากการกระทำดังกล่าวในส่วนที่อยู่นอกเหนือการควบคุมของร้าน</li>
+            <li>ร้านมีสิทธิ์ยกเลิก เปลี่ยน หรือกำหนดวันหมดอายุของลิงก์หรือรหัสดังกล่าวเพื่อความปลอดภัยของระบบ</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="content-section section-card" id="sec-9">
+        <div class="section-head">
+          <span class="section-no">9</span>
+          <h2 class="section-title">หน้าที่ของผู้ใช้งาน</h2>
+        </div>
+        <div class="section-body">
+          <ul>
+            <li>ต้องให้ข้อมูลที่ถูกต้อง เป็นปัจจุบัน และตรวจสอบได้ โดยเฉพาะข้อมูลติดต่อและข้อมูลสำหรับการจัดส่ง</li>
+            <li>ต้องไม่ใช้เว็บไซต์ในทางที่ผิดกฎหมาย ละเมิดสิทธิผู้อื่น ฝ่าฝืนศีลธรรมอันดี หรือก่อให้เกิดความเสียหายต่อร้านหรือบุคคลอื่น</li>
+            <li>ต้องไม่พยายามเข้าถึงระบบหลังบ้าน แก้ไขข้อมูลของคำสั่งซื้อผู้อื่น ทดสอบช่องโหว่ ส่งคำสั่งอัตโนมัติที่ผิดปกติ หรือกระทำการใด ๆ ที่อาจรบกวนการทำงานของเว็บไซต์</li>
+            <li>ต้องไม่อัปโหลดไฟล์ ข้อความ หรือเนื้อหาที่เป็นเท็จ ละเมิดลิขสิทธิ์ มีมัลแวร์ หรือก่อให้เกิดความเสี่ยงต่อระบบ</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="content-section section-card" id="sec-10">
+        <div class="section-head">
+          <span class="section-no">10</span>
+          <h2 class="section-title">ทรัพย์สินทางปัญญา</h2>
+        </div>
+        <div class="section-body">
+          <p>
+            เนื้อหาทั้งหมดบนเว็บไซต์นี้ รวมถึงแต่ไม่จำกัดเพียง ชื่อร้าน โลโก้ รูปภาพสินค้า ข้อความ งานออกแบบ โครงสร้างหน้าเว็บไซต์ ฐานข้อมูลบางส่วน
+            ไฟล์ภาพ ไอคอน และองค์ประกอบอื่นใด ถือเป็นทรัพย์สินทางปัญญาของร้านหรือของเจ้าของสิทธิที่เกี่ยวข้อง
+          </p>
+          <ul>
+            <li>ห้ามคัดลอก ดัดแปลง ทำซ้ำ เผยแพร่ จำหน่าย หรือใช้ประโยชน์ในเชิงพาณิชย์โดยไม่ได้รับอนุญาตล่วงหน้าเป็นลายลักษณ์อักษร</li>
+            <li>การเข้าชมเว็บไซต์ไม่ได้ทำให้ผู้ใช้งานได้รับสิทธิในทรัพย์สินทางปัญญาใด ๆ ของร้านโดยปริยาย</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="content-section section-card" id="sec-11">
+        <div class="section-head">
+          <span class="section-no">11</span>
+          <h2 class="section-title">ข้อจำกัดความรับผิด</h2>
+        </div>
+        <div class="section-body">
+          <ul>
+            <li>ร้านจะใช้ความระมัดระวังตามสมควรในการให้บริการ แต่ไม่อาจรับประกันได้ว่าเว็บไซต์จะทำงานได้โดยปราศจากความล่าช้า ข้อผิดพลาด การหยุดชะงัก หรือปัญหาจากระบบภายนอกตลอดเวลา</li>
+            <li>ร้านไม่รับผิดชอบต่อความเสียหายทางอ้อม ความเสียหายต่อกำไร โอกาสทางธุรกิจ ข้อมูล หรือประโยชน์อื่นใดที่เกิดจากการใช้หรือไม่สามารถใช้บริการได้ เว้นแต่กฎหมายที่ใช้บังคับจะกำหนดไว้เป็นอย่างอื่น</li>
+            <li>ร้านไม่รับผิดชอบต่อความล่าช้าหรือความเสียหายที่เกิดจากเหตุสุดวิสัย เช่น ภัยธรรมชาติ สงคราม โรคระบาด คำสั่งของรัฐ ระบบสื่อสารล้มเหลว การหยุดให้บริการของบุคคลภายนอก หรือเหตุอื่นที่อยู่นอกเหนือการควบคุมอันสมควรของร้าน</li>
+          </ul>
+          <div class="inline-note">
+            ข้อจำกัดความรับผิดข้างต้นจะใช้เท่าที่กฎหมายอนุญาต หากมีกฎหมายคุ้มครองผู้บริโภคใช้บังคับ ร้านจะปฏิบัติตามกฎหมายดังกล่าวเป็นสำคัญ
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section section-card" id="sec-12">
+        <div class="section-head">
+          <span class="section-no">12</span>
+          <h2 class="section-title">ข้อมูลส่วนบุคคล</h2>
+        </div>
+        <div class="section-body">
+          <p>
+            ร้านอาจเก็บ ใช้ หรือเปิดเผยข้อมูลส่วนบุคคลของลูกค้าเท่าที่จำเป็นเพื่อดำเนินการตามคำสั่งซื้อ ติดต่อประสานงาน ตรวจสอบการชำระเงิน จัดส่งสินค้า ให้บริการหลังการขาย และปฏิบัติตามกฎหมายที่เกี่ยวข้อง
+          </p>
+          <p>
+            รายละเอียดเกี่ยวกับการคุ้มครองข้อมูลส่วนบุคคลให้เป็นไปตามนโยบายความเป็นส่วนตัวของร้าน ซึ่งควรเผยแพร่แยกต่างหากเพื่อให้ผู้ใช้งานศึกษาเพิ่มเติม
+          </p>
+          <div class="inline-note">
+            ลิงก์นโยบายความเป็นส่วนตัว: <a id="privacyPolicyLink" href="#" rel="noopener">คลิกที่นี่</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section section-card" id="sec-13">
+        <div class="section-head">
+          <span class="section-no">13</span>
+          <h2 class="section-title">การเปลี่ยนแปลงข้อกำหนด</h2>
+        </div>
+        <div class="section-body">
+          <p>
+            ร้านมีสิทธิ์แก้ไข ปรับปรุง หรือเพิ่มเติมข้อกำหนดการใช้บริการฉบับนี้ได้เป็นครั้งคราว เพื่อให้สอดคล้องกับรูปแบบการให้บริการ ความเปลี่ยนแปลงของระบบ หรือข้อกำหนดทางกฎหมาย
+          </p>
+          <ul>
+            <li>เมื่อมีการแก้ไข ร้านอาจแสดงวันที่มีผลใช้บังคับฉบับล่าสุดไว้บนหน้านี้</li>
+            <li>การที่ท่านยังคงใช้บริการต่อหลังจากข้อกำหนดฉบับใหม่มีผลใช้บังคับ ให้ถือว่าท่านยอมรับข้อกำหนดฉบับที่แก้ไขแล้ว</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="content-section section-card" id="sec-14">
+        <div class="section-head">
+          <span class="section-no">14</span>
+          <h2 class="section-title">กฎหมายที่ใช้บังคับและการติดต่อ</h2>
+        </div>
+        <div class="section-body" id="contact">
+          <p>
+            ข้อกำหนดการใช้บริการฉบับนี้ให้อยู่ภายใต้และตีความตามกฎหมายไทย เว้นแต่กฎหมายคุ้มครองผู้บริโภคหรือกฎหมายอื่นที่เกี่ยวข้องจะกำหนดไว้เป็นอย่างอื่น
+          </p>
+          <p>
+            หากท่านมีข้อสงสัย คำร้องเรียน หรือประสงค์ติดต่อเกี่ยวกับการใช้บริการ สามารถติดต่อร้านได้ตามข้อมูลต่อไปนี้
+          </p>
+          <div class="two-col mt-3">
+            <div class="info-box">
+              <div class="label">ชื่อผู้ประกอบการ / ชื่อนิติบุคคล</div>
+              <div class="value" data-fill="legalEntityName">ผู้ประกอบการ/นิติบุคคลของร้าน</div>
+            </div>
+            <div class="info-box">
+              <div class="label">ชื่อร้าน</div>
+              <div class="value" data-fill="brandDisplayName">Open Storefront</div>
+            </div>
+            <div class="info-box">
+              <div class="label">อีเมล</div>
+              <div class="value"><a id="contactEmailLink" href="mailto:support@example.com" data-fill="contactEmail">support@example.com</a></div>
+            </div>
+            <div class="info-box">
+              <div class="label">ช่องทางการติดต่อหลัก</div>
+              <div class="value" data-fill="primaryContactUrl">-</div>
+            </div>
+            <div class="info-box">
+              <div class="label">โทรศัพท์</div>
+              <div class="value" data-fill="contactPhone">-</div>
+            </div>
+            <div class="info-box">
+              <div class="label">ที่อยู่ติดต่อ</div>
+              <div class="value" data-fill="businessAddress">กรุณากรอกที่อยู่ติดต่อทางธุรกิจ</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+ 
+    </main>
+  </div>
+</div>
+
+<script>
+(function(){
+  function parseServerCfg() {
+    try {
+      var el = document.getElementById('server-cfg');
+      if (!el) return {};
+      return JSON.parse(el.textContent || '{}') || {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  var siteCfg = parseServerCfg();
+  window._SITE_CFG = siteCfg;
+
+  var meta = Object.assign({}, window.TERMS_META || {});
+  if (!meta.brandDisplayName && siteCfg.siteTitle) meta.brandDisplayName = siteCfg.siteTitle;
+  if (siteCfg.siteTitle) meta.brandDisplayName = siteCfg.siteTitle;
+
+  var legal = siteCfg.legal || {};
+  if (legal.legalEntityName)   meta.legalEntityName   = legal.legalEntityName;
+  if (legal.contactEmail)      meta.contactEmail      = legal.contactEmail;
+  if (legal.contactPhone)      meta.contactPhone      = legal.contactPhone;
+  if (legal.primaryContactUrl) meta.primaryContactUrl = legal.primaryContactUrl;
+  if (legal.businessAddress)   meta.businessAddress   = legal.businessAddress;
+  if (legal.terms && legal.terms.effectiveDate) meta.effectiveDateText = legal.terms.effectiveDate;
+  meta.privacyPolicyUrl = ((window._EXEC_URL || '').trim() || '') + '?page=privacy-policy';
+
+  var brandTitle = document.getElementById('brandTitle');
+  if (brandTitle) brandTitle.textContent = meta.brandDisplayName || 'Open Storefront';
+
+  // Brand logo — cache → Drive RPC → direct URL fallback
+  (function() {
+    var BRAND_KEY = 'SHOP_BRAND_CACHE_V1';
+    var BRAND_TTL = 3600 * 1000;
+    var logoEl = document.getElementById('brandLogo');
+    var logoFallback = document.getElementById('brandLogoFallback');
+
+    function applyLogo(src) {
+      if (!src || !logoEl) return;
+      logoEl.onload = function() {
+        logoEl.style.display = 'block';
+        if (logoFallback) logoFallback.style.display = 'none';
+      };
+      logoEl.src = src;
+    }
+
+    try {
+      var cached = JSON.parse(localStorage.getItem(BRAND_KEY) || 'null');
+      if (cached && (Date.now() - (cached.ts || 0)) < BRAND_TTL && cached.logo && cached.logo.indexOf('drive.google') < 0) {
+        applyLogo(cached.logo); return;
+      }
+    } catch(_) {}
+
+    var driveId = siteCfg.logoImageDriveFileId || '';
+    if (!driveId && siteCfg.logoImage && /drive\.google\.com/i.test(siteCfg.logoImage)) {
+      var m = siteCfg.logoImage.match(/[?&]id=([^&]+)/);
+      if (m) driveId = m[1];
+    }
+    var directUrl = (!driveId && siteCfg.logoImage && !/drive\.google\.com/i.test(siteCfg.logoImage) && siteCfg.logoImage.indexOf('picsum') < 0) ? siteCfg.logoImage : '';
+
+    if (!driveId) { applyLogo(directUrl); return; }
+
+    if (!(window.google && google.script && google.script.run)) { applyLogo(directUrl); return; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.dataUrl) {
+          try { localStorage.setItem(BRAND_KEY, JSON.stringify({ logo: res.dataUrl, title: siteCfg.siteTitle || '', ts: Date.now() })); } catch(_) {}
+          applyLogo(res.dataUrl);
+        }
+      })
+      .withFailureHandler(function() { applyLogo(directUrl); })
+      .getFileDataUrlRpc(driveId);
+  })();
+
+  document.querySelectorAll('[data-fill]').forEach(function(el){
+    var key = el.getAttribute('data-fill');
+    if (!key) return;
+    var value = meta[key];
+    if (value == null || value === '') return;
+    if (/^https?:\/\//i.test(String(value))) {
+      el.innerHTML = '';
+      var a = document.createElement('a');
+      a.href = value; a.target = '_blank'; a.rel = 'noopener';
+      try { a.textContent = new URL(value).hostname.replace(/^www\./, ''); } catch(_) { a.textContent = value; }
+      a.title = value;
+      el.appendChild(a);
+    } else {
+      el.textContent = value;
+    }
+  });
+
+  var email = meta.contactEmail || 'support@example.com';
+  var emailLink = document.getElementById('contactEmailLink');
+  if (emailLink) {
+    emailLink.textContent = email;
+    emailLink.href = 'mailto:' + email;
+  }
+
+  var privacyLink = document.getElementById('privacyPolicyLink');
+  if (privacyLink && meta.privacyPolicyUrl) {
+    privacyLink.href = meta.privacyPolicyUrl;
+  }
+
+  var backHome = document.getElementById('btnBackHome');
+  if (backHome) {
+    var base = (window._EXEC_URL || '').trim();
+    backHome.href = base || '#';
+  }
+
+  var contactBtn = document.getElementById('btnContact');
+  if (contactBtn) {
+    var contactUrl = meta.primaryContactUrl || '';
+    if (contactUrl) {
+      contactBtn.href = contactUrl;
+      contactBtn.target = '_blank';
+      contactBtn.rel = 'noopener';
+    } else {
+      contactBtn.style.display = 'none';
+    }
+  }
+})();
+</script>
+</body>
+</html>

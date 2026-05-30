@@ -1,0 +1,2469 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>แดชบอร์ดทดสอบ QA Integration</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --panel-2: #f1f5f9;
+      --ink: #172033;
+      --muted: #64748b;
+      --line: #d8dee8;
+      --blue: #2563eb;
+      --green: #15803d;
+      --red: #b91c1c;
+      --amber: #b45309;
+      --teal: #0f766e;
+      --shadow: 0 14px 38px rgba(15, 23, 42, 0.08);
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    .shell {
+      width: min(1240px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 44px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 8px 0 22px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .eyebrow {
+      color: var(--teal);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    h1 {
+      font-size: clamp(1.75rem, 3vw, 2.4rem);
+      line-height: 1.08;
+      letter-spacing: 0;
+      margin: 0;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      max-width: 780px;
+      margin: 10px 0 0;
+      line-height: 1.6;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      min-height: 40px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      border-radius: var(--radius);
+      padding: 0 14px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      border-color: #94a3b8;
+    }
+
+    .btn.primary {
+      border-color: var(--blue);
+      background: var(--blue);
+      color: #fff;
+    }
+
+    .btn.small {
+      min-height: 30px;
+      padding: 0 10px;
+      font-size: 0.78rem;
+    }
+
+    .btn:disabled {
+      cursor: wait;
+      opacity: 0.68;
+    }
+
+    .icon {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 18px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 18px 0;
+    }
+
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+      min-height: 92px;
+      box-shadow: var(--shadow);
+    }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    .metric .value {
+      font-size: 1.9rem;
+      font-weight: 850;
+      margin-top: 8px;
+    }
+
+    .metric.pass .value {
+      color: var(--green);
+    }
+
+    .metric.fail .value {
+      color: var(--red);
+    }
+
+    .metric.skip .value {
+      color: var(--amber);
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+      margin: 18px 0 0;
+      box-shadow: var(--shadow);
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .panel-title {
+      font-weight: 850;
+      font-size: 1rem;
+    }
+
+    .panel-note {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
+      margin-top: 4px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .field label {
+      display: block;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+      margin-bottom: 5px;
+    }
+
+    .input {
+      width: 100%;
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 0 10px;
+      color: var(--ink);
+      background: #fff;
+    }
+
+    .input:focus {
+      outline: 2px solid rgba(37, 99, 235, 0.16);
+      border-color: var(--blue);
+    }
+
+    .auth-state {
+      color: var(--muted);
+      font-weight: 750;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      min-height: 40px;
+    }
+
+    .warning {
+      margin-top: 12px;
+      border: 1px solid #f59e0b;
+      background: #fffbeb;
+      color: #92400e;
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      line-height: 1.5;
+      font-size: 0.9rem;
+    }
+
+    .tabs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .tab {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--ink);
+      border-radius: var(--radius);
+      min-height: 34px;
+      padding: 0 10px;
+      cursor: pointer;
+      font-weight: 750;
+    }
+
+    .tab.active {
+      background: #172033;
+      border-color: #172033;
+      color: #fff;
+    }
+
+    .options {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-weight: 650;
+      font-size: 0.9rem;
+    }
+
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .toggle input {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--blue);
+    }
+
+    .statusline {
+      min-height: 28px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 8px 0 12px;
+      font-size: 0.94rem;
+    }
+
+    .progress {
+      height: 8px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      overflow: hidden;
+      flex: 1;
+      max-width: 360px;
+    }
+
+    .progress span {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: var(--blue);
+      transition: width 180ms ease;
+    }
+
+    .test-list {
+      display: grid;
+      gap: 16px;
+    }
+
+    .case-section {
+      display: grid;
+      gap: 8px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 4px 2px 2px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section-title {
+      min-width: 0;
+    }
+
+    .section-title h3 {
+      margin: 0;
+      font-size: 0.98rem;
+      line-height: 1.25;
+      color: var(--ink);
+    }
+
+    .section-title p {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+
+    .section-stats {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      flex-shrink: 0;
+    }
+
+    .section-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .section-select-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .section-select-wrap input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--blue);
+    }
+
+    .section-stat {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      min-height: 24px;
+      padding: 0 8px;
+      border-radius: 999px;
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.74rem;
+      font-weight: 750;
+    }
+
+    .testcase {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .case-head {
+      display: grid;
+      grid-template-columns: 38px 120px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 13px 14px;
+      cursor: pointer;
+    }
+
+    .select-cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: default;
+    }
+
+    .case-select {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--blue);
+      cursor: pointer;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 28px;
+      padding: 0 9px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 850;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .pill.pending {
+      background: #e2e8f0;
+      color: #334155;
+    }
+
+    .pill.passed {
+      background: #dcfce7;
+      color: var(--green);
+      border-color: #bbf7d0;
+    }
+
+    .pill.failed {
+      background: #fee2e2;
+      color: var(--red);
+      border-color: #fecaca;
+    }
+
+    .pill.skipped {
+      background: #fef3c7;
+      color: var(--amber);
+      border-color: #fde68a;
+    }
+
+    .pill.running {
+      background: #dbeafe;
+      color: var(--blue);
+      border-color: #bfdbfe;
+    }
+
+    .pill.running::before {
+      content: "";
+      width: 11px;
+      height: 11px;
+      border-radius: 999px;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      animation: qaSpin 0.75s linear infinite;
+    }
+
+    @keyframes qaSpin {
+      to { transform: rotate(360deg); }
+    }
+
+    .case-title {
+      min-width: 0;
+    }
+
+    .case-title strong {
+      display: block;
+      font-size: 0.98rem;
+      line-height: 1.35;
+    }
+
+    .case-meta {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .case-time {
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      font-size: 0.88rem;
+      white-space: nowrap;
+    }
+
+    .case-actions {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .case-body {
+      display: none;
+      border-top: 1px solid var(--line);
+      padding: 14px;
+      color: var(--muted);
+      line-height: 1.58;
+    }
+
+    .testcase.open .case-body {
+      display: block;
+    }
+
+    .testcase.running {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+    }
+
+    .body-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .mini-title {
+      color: var(--ink);
+      font-weight: 800;
+      margin-bottom: 5px;
+    }
+
+    pre {
+      margin: 10px 0 0;
+      max-height: 280px;
+      overflow: auto;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 12px;
+      border-radius: var(--radius);
+      font-size: 0.82rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .empty {
+      background: var(--panel);
+      border: 1px dashed #94a3b8;
+      border-radius: var(--radius);
+      padding: 28px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    .raw-panel {
+      margin-top: 16px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+    }
+
+    .raw-panel summary {
+      cursor: pointer;
+      font-weight: 850;
+    }
+
+    .log-panel {
+      display: none;
+      margin-top: 16px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+    }
+
+    .log-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .log-title {
+      font-weight: 850;
+    }
+
+    .case-log {
+      margin-top: 12px;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }
+
+    .case-log .log-list {
+      min-height: 180px;
+      max-height: 560px;
+    }
+
+    .log-list {
+      display: grid;
+      gap: 8px;
+      max-height: 360px;
+      overflow: auto;
+    }
+
+    .log-entry {
+      border: 1px solid var(--line);
+      border-left-width: 4px;
+      border-radius: var(--radius);
+      padding: 10px;
+      background: #fff;
+    }
+
+    .log-entry.running {
+      border-left-color: var(--blue);
+    }
+
+    .log-entry.passed {
+      border-left-color: var(--green);
+    }
+
+    .log-entry.failed {
+      border-left-color: var(--red);
+    }
+
+    .log-entry.skipped {
+      border-left-color: var(--amber);
+    }
+
+    .log-meta {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 750;
+      margin-bottom: 4px;
+    }
+
+    .log-message {
+      font-weight: 800;
+    }
+
+    @media (max-width: 860px) {
+      .topbar,
+      .statusline {
+        display: block;
+      }
+
+      .actions {
+        justify-content: flex-start;
+        margin-top: 16px;
+      }
+
+      .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .case-head {
+        grid-template-columns: 1fr;
+      }
+
+      .body-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .progress {
+        margin-top: 10px;
+        max-width: none;
+      }
+
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .shell {
+        width: min(100% - 20px, 1240px);
+        padding-top: 18px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="topbar">
+      <div>
+        <div class="eyebrow">QA Integration</div>
+        <h1>แดชบอร์ดทดสอบ Integration</h1>
+        <p class="subtitle">
+          หน้านี้ใช้รันชุดทดสอบฝั่ง Apps Script พร้อมดูความคืบหน้าแยกทีละเคส มีโหมดเขียนข้อมูลจริงสำหรับตรวจ flow สินค้า โปรโมชั่น ของแถม และออร์เดอร์แบบ end-to-end
+        </p>
+      </div>
+      <div class="actions">
+        <button class="btn" id="btnManifest" type="button" title="โหลดรายการ testcase">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+          Load cases
+        </button>
+        <button class="btn primary" id="btnRun" type="button" title="รัน integration tests">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 9-14 9V3z"/></svg>
+          Run selected
+        </button>
+        <button class="btn" id="btnRunAll" type="button" title="รัน testcases ทั้งหมด">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 9-14 9V3z"/></svg>
+          Run all
+        </button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Admin Login</div>
+          <div class="panel-note">เข้าสู่ระบบตรงนี้เพื่อส่ง admin token ให้เคสที่ต้องอ่านข้อมูลหลังสร้างออร์เดอร์จริง ถ้าบัญชีเปิด OTP ให้กรอกรหัสแล้วกดยืนยัน OTP</div>
+        </div>
+        <div class="auth-state" id="authState">Not logged in</div>
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="loginEmail">อีเมล</label>
+          <input class="input" id="loginEmail" type="email" autocomplete="username" placeholder="admin@example.com">
+        </div>
+        <div class="field">
+          <label for="loginPassword">รหัสผ่าน</label>
+          <input class="input" id="loginPassword" type="password" autocomplete="current-password" placeholder="รหัสผ่าน">
+        </div>
+        <button class="btn" id="btnLogin" type="button">Login</button>
+        <button class="btn" id="btnLogout" type="button">Clear</button>
+      </div>
+      <div class="form-grid" id="otpRow" style="display:none;margin-top:10px;grid-template-columns:minmax(0,1fr) auto 1fr 1fr;">
+        <div class="field">
+          <label for="loginOtp">OTP</label>
+          <input class="input" id="loginOtp" type="text" inputmode="numeric" maxlength="6" placeholder="ตัวเลข 6 หลัก">
+        </div>
+        <button class="btn" id="btnVerifyOtp" type="button">Verify OTP</button>
+      </div>
+      <div class="warning">
+        โหมดเขียนข้อมูลจริงจะสร้างข้อมูลจริง: สินค้า QA, โปรโมชั่น QA, ของแถม QA, กฎของแถม QA และออร์เดอร์จริง เคส full flow จะล้าง master data หลังตรวจ แต่ snapshot ของออร์เดอร์จะยังอยู่ในชีต orders
+      </div>
+    </section>
+
+    <section class="grid" aria-label="สรุปผล">
+      <div class="metric">
+        <div class="label">Total</div>
+        <div class="value" id="metricTotal">0</div>
+      </div>
+      <div class="metric pass">
+        <div class="label">Passed</div>
+        <div class="value" id="metricPassed">0</div>
+      </div>
+      <div class="metric fail">
+        <div class="label">Failed</div>
+        <div class="value" id="metricFailed">0</div>
+      </div>
+      <div class="metric skip">
+        <div class="label">Skipped</div>
+        <div class="value" id="metricSkipped">0</div>
+      </div>
+    </section>
+
+    <section class="toolbar">
+      <div class="tabs" id="tabs" aria-label="ตัวกรอง">
+        <button class="tab active" data-filter="all" type="button">All</button>
+        <button class="tab" data-filter="failed" type="button">Failed</button>
+        <button class="tab" data-filter="passed" type="button">Passed</button>
+        <button class="tab" data-filter="skipped" type="button">Skipped</button>
+        <button class="tab" data-filter="orders" type="button">Orders</button>
+        <button class="tab" data-filter="gifts" type="button">Gifts</button>
+        <button class="tab" data-filter="products" type="button">Products</button>
+        <button class="tab" data-filter="promotions" type="button">Promotions</button>
+        <button class="tab" data-filter="shipping" type="button">Shipping</button>
+        <button class="tab" data-filter="payment" type="button">Payment</button>
+        <button class="tab" data-filter="config" type="button">Config</button>
+        <button class="tab" data-filter="routes" type="button">Routes</button>
+      </div>
+      <div class="options">
+        <button class="btn" id="btnSelectVisible" type="button">Select visible</button>
+        <button class="btn" id="btnClearSelection" type="button">Clear selection</button>
+        <label class="toggle">
+          <input id="runRouteSmoke" type="checkbox" checked>
+          Run route smoke
+        </label>
+        <label class="toggle">
+          <input id="allowWriteTests" type="checkbox">
+          Enable real write tests
+        </label>
+      </div>
+    </section>
+
+    <div class="statusline">
+      <div id="statusText">Ready. Load cases or run all tests.</div>
+      <div class="progress" aria-hidden="true"><span id="progressBar"></span></div>
+    </div>
+
+    <section class="test-list" id="testList"></section>
+
+    <section class="log-panel">
+      <div class="log-head">
+        <div class="log-title">Run log</div>
+        <button class="btn" id="btnClearLog" type="button">Clear log</button>
+      </div>
+      <div class="log-list" id="runnerLog">
+        <div class="empty">ยังไม่มี log การรัน</div>
+      </div>
+    </section>
+
+    <details class="raw-panel">
+      <summary>Raw JSON</summary>
+      <pre id="rawJson">{}</pre>
+    </details>
+  </main>
+
+  <script>
+    const state = {
+      tests: [],
+      results: [],
+      filter: 'all',
+      running: false,
+      lastReport: null,
+      selectedIds: new Set(),
+      logs: [],
+      currentLogTestId: '',
+      traceRunId: '',
+      traceLastSeq: 0,
+      tracePollTimer: null,
+      adminToken: localStorage.getItem('QA_ADMIN_TOKEN_V1') || '',
+      pendingEmail: ''
+    };
+
+    const els = {
+      btnManifest: document.getElementById('btnManifest'),
+      btnRun: document.getElementById('btnRun'),
+      btnRunAll: document.getElementById('btnRunAll'),
+      btnSelectVisible: document.getElementById('btnSelectVisible'),
+      btnClearSelection: document.getElementById('btnClearSelection'),
+      btnClearLog: document.getElementById('btnClearLog'),
+      btnLogin: document.getElementById('btnLogin'),
+      btnLogout: document.getElementById('btnLogout'),
+      btnVerifyOtp: document.getElementById('btnVerifyOtp'),
+      loginEmail: document.getElementById('loginEmail'),
+      loginPassword: document.getElementById('loginPassword'),
+      loginOtp: document.getElementById('loginOtp'),
+      otpRow: document.getElementById('otpRow'),
+      authState: document.getElementById('authState'),
+      runRouteSmoke: document.getElementById('runRouteSmoke'),
+      allowWriteTests: document.getElementById('allowWriteTests'),
+      testList: document.getElementById('testList'),
+      statusText: document.getElementById('statusText'),
+      progressBar: document.getElementById('progressBar'),
+      rawJson: document.getElementById('rawJson'),
+      runnerLog: document.getElementById('runnerLog'),
+      metricTotal: document.getElementById('metricTotal'),
+      metricPassed: document.getElementById('metricPassed'),
+      metricFailed: document.getElementById('metricFailed'),
+      metricSkipped: document.getElementById('metricSkipped'),
+      tabs: document.getElementById('tabs')
+    };
+
+    function gasAvailable() {
+      return !!(window.google && google.script && google.script.run);
+    }
+
+    function shouldRedactLogKey(key) {
+      return /(token|password|otp|secret|api[_-]?key|base64|dataurl|data_url)/i.test(String(key || ''));
+    }
+
+    function maskLogValue(value) {
+      const text = String(value == null ? '' : value);
+      if (!text) return '';
+      if (text.length <= 8) return '[REDACTED]';
+      return text.slice(0, 4) + '...' + text.slice(-4) + ' [REDACTED]';
+    }
+
+    function sanitizeForLog(value, key, depth) {
+      depth = depth || 0;
+      if (shouldRedactLogKey(key)) return maskLogValue(value);
+      if (value === null || value === undefined) return value;
+      if (typeof value === 'string') {
+        if (state.adminToken && value === state.adminToken) return maskLogValue(value);
+        if (/^data:/i.test(value)) return '[DATA_URL ' + value.length + ' chars REDACTED]';
+        if (value.length > 1000) return value.slice(0, 1000) + '... [truncated ' + value.length + ' chars]';
+        return value;
+      }
+      if (typeof value === 'number' || typeof value === 'boolean') return value;
+      if (depth >= 5) return '[Max depth reached]';
+      if (Array.isArray(value)) {
+        const arr = value.slice(0, 50).map(item => sanitizeForLog(item, key, depth + 1));
+        if (value.length > 50) arr.push('[truncated ' + (value.length - 50) + ' more item(s)]');
+        return arr;
+      }
+      if (typeof value === 'object') {
+        const out = {};
+        const keys = Object.keys(value);
+        keys.slice(0, 80).forEach(k => {
+          out[k] = sanitizeForLog(value[k], k, depth + 1);
+        });
+        if (keys.length > 80) out.__truncatedKeys = keys.length - 80;
+        return out;
+      }
+      return String(value);
+    }
+
+    function sanitizeRpcArgsForLog(method, args) {
+      if (method === 'loginRpc') {
+        return [sanitizeForLog(args[0], 'email'), maskLogValue(args[1])];
+      }
+      if (method === 'loginVerifyOtpRpc') {
+        return [sanitizeForLog(args[0], 'email'), maskLogValue(args[1])];
+      }
+      return (args || []).map((arg, index) => {
+        const key = index === 0 && state.adminToken && arg === state.adminToken ? 'token' : 'arg' + index;
+        return sanitizeForLog(arg, key);
+      });
+    }
+
+    function callGas(method, ...args) {
+      return new Promise((resolve, reject) => {
+        if (!gasAvailable()) {
+          reject(new Error('ต้องเปิด dashboard ผ่าน Google Apps Script HtmlService เพื่อเรียก google.script.run'));
+          return;
+        }
+        const startedAt = Date.now();
+        addLog('running', 'Server RPC request: ' + method, {
+          rpc: method,
+          direction: 'request',
+          args: sanitizeRpcArgsForLog(method, args)
+        });
+        google.script.run
+          .withSuccessHandler(response => {
+            addLog('passed', 'Server RPC response: ' + method, {
+              rpc: method,
+              direction: 'response',
+              durationMs: Date.now() - startedAt,
+              response: sanitizeForLog(response, 'response')
+            });
+            resolve(response);
+          })
+          .withFailureHandler(error => {
+            addLog('failed', 'Server RPC error: ' + method, {
+              rpc: method,
+              direction: 'error',
+              durationMs: Date.now() - startedAt,
+              error: error && error.message ? error.message : String(error || '')
+            });
+            reject(error);
+          })[method](...args);
+      });
+    }
+
+    function makeTraceRunId() {
+      const rand = Math.random().toString(36).slice(2, 10);
+      return 'qa-' + Date.now().toString(36) + '-' + rand;
+    }
+
+    function addTraceEvent(event) {
+      if (!event) return;
+      const data = Object.assign({
+        traceSeq: event.seq,
+        traceType: event.type,
+        testcase: event.testcase || ''
+      }, event.data || {});
+      addLog(event.status || 'running', '[server] ' + (event.message || event.type || 'trace'), data);
+    }
+
+    function pollTraceOnce() {
+      return new Promise(resolve => {
+        if (!gasAvailable() || !state.traceRunId) {
+          resolve();
+          return;
+        }
+        google.script.run
+          .withSuccessHandler(res => {
+            try {
+              if (res && res.ok && Array.isArray(res.events)) {
+                res.events.forEach(event => {
+                  addTraceEvent(event);
+                  state.traceLastSeq = Math.max(state.traceLastSeq, Number(event.seq || 0));
+                });
+                if (res.lastSeq) state.traceLastSeq = Math.max(state.traceLastSeq, Number(res.lastSeq || 0));
+              }
+            } catch (_) {}
+            resolve();
+          })
+          .withFailureHandler(() => resolve())
+          .getQaIntegrationTraceEventsRpc(state.traceRunId, state.traceLastSeq);
+      });
+    }
+
+    function startTracePolling(runId) {
+      stopTracePolling(false);
+      state.traceRunId = runId || makeTraceRunId();
+      state.traceLastSeq = 0;
+      if (!gasAvailable()) return state.traceRunId;
+      state.tracePollTimer = window.setInterval(pollTraceOnce, 1200);
+      return state.traceRunId;
+    }
+
+    async function stopTracePolling(finalPoll) {
+      if (state.tracePollTimer) {
+        window.clearInterval(state.tracePollTimer);
+        state.tracePollTimer = null;
+      }
+      if (finalPoll !== false) {
+        await pollTraceOnce();
+      }
+      state.traceRunId = '';
+      state.traceLastSeq = 0;
+    }
+
+    function setBusy(isBusy, text) {
+      state.running = isBusy;
+      els.btnRun.disabled = isBusy;
+      els.btnRunAll.disabled = isBusy;
+      els.btnManifest.disabled = isBusy;
+      els.btnSelectVisible.disabled = isBusy;
+      els.btnClearSelection.disabled = isBusy;
+      els.btnLogin.disabled = isBusy;
+      els.btnVerifyOtp.disabled = isBusy;
+      els.statusText.textContent = text || (isBusy ? 'Running...' : 'Ready.');
+      els.progressBar.style.width = isBusy ? '45%' : '100%';
+      document.querySelectorAll('.case-run, .section-run, .section-select').forEach(control => {
+        control.disabled = isBusy;
+      });
+      document.querySelectorAll('.case-pdf').forEach(button => {
+        button.disabled = !canDownloadPdf(findCaseResult(button.dataset.id));
+      });
+      if (!isBusy) {
+        window.setTimeout(() => { els.progressBar.style.width = '0'; }, 500);
+      }
+    }
+
+    function statusLabel(status) {
+      if (status === 'passed') return 'PASSED';
+      if (status === 'failed') return 'FAILED';
+      if (status === 'skipped') return 'SKIPPED';
+      if (status === 'running') return 'RUNNING';
+      return 'PENDING';
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[c]);
+    }
+
+    function compactJson(value) {
+      if (!value || (typeof value === 'object' && Object.keys(value).length === 0)) return '{}';
+      return JSON.stringify(value, null, 2);
+    }
+
+    function buildRunOptions() {
+      return {
+        runRouteSmoke: els.runRouteSmoke.checked,
+        allowWriteTests: els.allowWriteTests.checked,
+        adminToken: state.adminToken || ''
+      };
+    }
+
+    function updateAuthState(text) {
+      if (state.adminToken) {
+        els.authState.textContent = text || 'Logged in';
+        els.authState.style.color = 'var(--green)';
+      } else {
+        els.authState.textContent = text || 'Not logged in';
+        els.authState.style.color = 'var(--muted)';
+      }
+    }
+
+    function summarizeCurrentResults() {
+      const source = state.results.length
+        ? state.results
+        : state.tests.map(t => Object.assign({ status: 'pending', durationMs: 0 }, t));
+      return source.reduce((acc, item) => {
+        acc.total += 1;
+        if (item.status === 'passed') acc.passed += 1;
+        if (item.status === 'failed') acc.failed += 1;
+        if (item.status === 'skipped') acc.skipped += 1;
+        return acc;
+      }, { total: 0, passed: 0, failed: 0, skipped: 0 });
+    }
+
+    const AREA_META = {
+      environment: { title: 'Environment', desc: 'ตรวจ contract ของ backend สถานะ setup และ RPC ที่จำเป็น' },
+      config: { title: 'Config', desc: 'ตรวจ site config ข้อมูลแบรนด์ และ bundle สำหรับหน้าร้าน' },
+      products: { title: 'Products', desc: 'ตรวจรายการสินค้าสาธารณะ การแบ่งหน้า และ contract การอ่านสินค้า' },
+      promotions: { title: 'Promotions', desc: 'ตรวจโปรโมชั่น การคำนวณส่วนลด target และการป้องกันโปรซ้อน' },
+      shipping: { title: 'Shipping', desc: 'ตรวจค่าขนส่งสาธารณะและข้อมูล provider' },
+      payment: { title: 'Payment', desc: 'ตรวจ config การชำระเงิน validation และการ preserve site config' },
+      gifts: { title: 'Gifts', desc: 'ตรวจ campaign ของแถม การ preview สิทธิ์ และพฤติกรรม stock ของแถม' },
+      auth: { title: 'Auth', desc: 'ตรวจ session และการกัน RPC ที่ต้องใช้สิทธิ์ admin' },
+      routes: { title: 'Routes', desc: 'ทดสอบเปิด route ของ Web App ที่เสิร์ฟผ่าน HtmlService' },
+      orders: { title: 'Orders', desc: 'ตรวจการสร้างออร์เดอร์ idempotency rollback stock variant และการเพิ่มของแถมเอง' },
+    };
+
+    const AREA_ORDER = ['environment', 'config', 'products', 'promotions', 'shipping', 'payment', 'gifts', 'auth', 'routes', 'orders'];
+
+    const CASE_SECTION_OVERRIDES = {
+      'writes.concurrent-stock-race': 'orders',
+      'writes.full-commerce-flow': 'orders',
+      'writes.submit-order': 'orders',
+      'writes.concurrent-gift-stock-race': 'gifts',
+      'writes.concurrent-admin-gift-order-race': 'gifts',
+      'writes.manual-gift-out-of-stock': 'gifts',
+      'writes.create-gift-item': 'gifts',
+      'writes.create-gift-rule': 'gifts',
+      'writes.save-shipping': 'shipping',
+      'writes.publish-site-config': 'config'
+    };
+
+    function caseSectionArea(item) {
+      return CASE_SECTION_OVERRIDES[item.id] || item.area || 'other';
+    }
+
+    function getVisibleCases() {
+      const source = state.results.length
+        ? state.results
+        : state.tests.map(t => Object.assign({ status: 'pending', durationMs: 0 }, t));
+
+      if (state.filter === 'all') return source;
+      if (AREA_META[state.filter]) return source.filter(item => caseSectionArea(item) === state.filter);
+      return source.filter(item => item.status === state.filter);
+    }
+
+    function areaMeta(area) {
+      return AREA_META[area] || {
+        title: String(area || 'Other').replace(/^\w/, c => c.toUpperCase()),
+        desc: 'ชุดทดสอบของหมวดนี้'
+      };
+    }
+
+    function groupCasesByArea(items) {
+      const map = new Map();
+      items.forEach(item => {
+        const area = caseSectionArea(item);
+        if (!map.has(area)) map.set(area, []);
+        map.get(area).push(item);
+      });
+      return Array.from(map.entries()).sort((a, b) => {
+        const ai = AREA_ORDER.indexOf(a[0]);
+        const bi = AREA_ORDER.indexOf(b[0]);
+        if (ai >= 0 || bi >= 0) return (ai >= 0 ? ai : 999) - (bi >= 0 ? bi : 999);
+        return String(a[0]).localeCompare(String(b[0]));
+      });
+    }
+
+    function getDisplayOrderedCases(items) {
+      return groupCasesByArea(items).flatMap(([, group]) => group);
+    }
+
+    function sectionStats(items) {
+      return items.reduce((acc, item) => {
+        const status = item.status || 'pending';
+        acc.total += 1;
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, { total: 0, pending: 0, passed: 0, failed: 0, skipped: 0, running: 0 });
+    }
+
+    function renderSummary(summary) {
+      const total = summary ? summary.total : state.tests.length;
+      els.metricTotal.textContent = total || 0;
+      els.metricPassed.textContent = summary ? summary.passed || 0 : 0;
+      els.metricFailed.textContent = summary ? summary.failed || 0 : 0;
+      els.metricSkipped.textContent = summary ? summary.skipped || 0 : 0;
+    }
+
+    function renderCases() {
+      const items = getVisibleCases();
+      if (!items.length) {
+        els.testList.innerHTML = '<div class="empty">ไม่มี testcase ในตัวกรองนี้</div>';
+        return;
+      }
+
+      function renderCase(item) {
+        const status = item.status || 'pending';
+        const details = item.details || {};
+        const message = item.error || item.reason || '';
+        const caseLogs = logsForCase(item.id);
+        return `
+          <article class="testcase ${status === 'running' ? 'running ' : ''}${(status === 'running' || status === 'failed') ? 'open' : ''}" data-id="${escapeHtml(item.id)}">
+            <div class="case-head" role="button" tabindex="0">
+              <label class="select-cell" title="เลือก testcase นี้">
+                <input class="case-select" type="checkbox" data-id="${escapeHtml(item.id)}" ${state.selectedIds.has(item.id) ? 'checked' : ''}>
+              </label>
+              <span class="pill ${escapeHtml(status)}">${statusLabel(status)}</span>
+              <div class="case-title">
+                <strong>${escapeHtml(item.title)}</strong>
+                <div class="case-meta">
+                  <span>${escapeHtml(item.id)}</span>
+                  <span>${escapeHtml(caseSectionArea(item))}</span>
+                  <span>${escapeHtml(item.type)}</span>
+                  <span>ความเสี่ยง: ${escapeHtml(item.risk)}</span>
+                </div>
+              </div>
+              <div class="case-actions">
+                <span class="case-time">${Number(item.durationMs || 0)} ms</span>
+                <button class="btn small case-pdf" type="button" data-id="${escapeHtml(item.id)}" ${canDownloadPdf(item) ? '' : 'disabled'} title="Download detailed PDF result">PDF</button>
+                <button class="btn small case-run" type="button" data-id="${escapeHtml(item.id)}" ${state.running ? 'disabled' : ''}>Run</button>
+              </div>
+            </div>
+            <div class="case-body">
+              <div class="body-grid">
+                <div>
+                  <div class="mini-title">รายละเอียด</div>
+                  <div>${escapeHtml(item.description)}</div>
+                </div>
+                <div>
+                  <div class="mini-title">ผลที่คาดหวัง</div>
+                  <div>${escapeHtml(item.expected)}</div>
+                </div>
+              </div>
+              ${realWriteNote(item)}
+              ${item.clientDriven ? '<p><strong>ตัวรัน:</strong> เคสนี้รันจากหน้า dashboard โดยตรง เพื่อยิง google.script.run หลายชุดและบันทึกผลตอบกลับแต่ละรายการลงใน log</p>' : ''}
+              ${item.requiresAdminToken ? '<p><strong>สิทธิ์:</strong> ต้องเข้าสู่ระบบผู้ดูแลก่อนรัน</p>' : ''}
+              ${message ? `<p><strong>${status === 'failed' ? 'ข้อผิดพลาด' : 'เหตุผล'}:</strong> ${escapeHtml(message)}</p>` : ''}
+              <pre>${escapeHtml(compactJson(details))}</pre>
+              <div class="case-log">
+                <div class="log-head">
+                  <div class="log-title">Run log</div>
+                  <span class="case-time case-log-count" data-id="${escapeHtml(item.id)}">${caseLogs.length} item${caseLogs.length === 1 ? '' : 's'}</span>
+                </div>
+                <div class="log-list case-log-list" data-id="${escapeHtml(item.id)}">
+                  ${renderCaseLogEntries(item.id)}
+                </div>
+              </div>
+            </div>
+          </article>
+        `;
+      }
+
+      els.testList.innerHTML = groupCasesByArea(items).map(([area, group]) => {
+        const meta = areaMeta(area);
+        const stats = sectionStats(group);
+        const groupIds = group.map(item => item.id);
+        const selectedCount = groupIds.filter(id => state.selectedIds.has(id)).length;
+        const allSelected = selectedCount === groupIds.length && groupIds.length > 0;
+        return `
+          <section class="case-section" data-area="${escapeHtml(area)}">
+            <div class="section-head">
+              <div class="section-title">
+                <h3>${escapeHtml(meta.title)}</h3>
+                <p>${escapeHtml(meta.desc)}</p>
+              </div>
+              <div class="section-actions">
+                <label class="section-select-wrap" title="Select all visible cases in this section">
+                  <input class="section-select" type="checkbox" data-area="${escapeHtml(area)}" ${allSelected ? 'checked' : ''} ${state.running ? 'disabled' : ''}>
+                  Select section
+                </label>
+                <button class="btn small section-run" type="button" data-area="${escapeHtml(area)}" ${state.running ? 'disabled' : ''}>Run section</button>
+                <div class="section-stats" aria-label="${escapeHtml(area)} summary">
+                  <span class="section-stat">Total ${stats.total}</span>
+                  ${stats.running ? `<span class="section-stat">Running ${stats.running}</span>` : ''}
+                  ${stats.passed ? `<span class="section-stat">Passed ${stats.passed}</span>` : ''}
+                  ${stats.failed ? `<span class="section-stat">Failed ${stats.failed}</span>` : ''}
+                  ${stats.skipped ? `<span class="section-stat">Skipped ${stats.skipped}</span>` : ''}
+                  ${stats.pending ? `<span class="section-stat">Pending ${stats.pending}</span>` : ''}
+                </div>
+              </div>
+            </div>
+            ${group.map(renderCase).join('')}
+          </section>
+        `;
+      }).join('');
+
+      Array.from(document.querySelectorAll('.case-head')).forEach(head => {
+        head.addEventListener('click', event => {
+          if (event.target.closest('.select-cell')) return;
+          if (event.target.closest('.case-actions button')) return;
+          head.closest('.testcase').classList.toggle('open');
+        });
+        head.addEventListener('keydown', event => {
+          if (event.target.closest('.select-cell')) return;
+          if (event.target.closest('.case-actions button')) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            head.closest('.testcase').classList.toggle('open');
+          }
+        });
+      });
+      Array.from(document.querySelectorAll('.case-select')).forEach(input => {
+        input.addEventListener('click', event => event.stopPropagation());
+        input.addEventListener('change', event => {
+          const id = event.target.dataset.id;
+          if (event.target.checked) state.selectedIds.add(id);
+          else state.selectedIds.delete(id);
+          els.statusText.textContent = `Selected ${state.selectedIds.size} testcase(s).`;
+          renderCases();
+        });
+      });
+      Array.from(document.querySelectorAll('.section-select')).forEach(input => {
+        const section = input.closest('.case-section');
+        const ids = Array.from(section.querySelectorAll('.case-select')).map(el => el.dataset.id);
+        const selectedCount = ids.filter(id => state.selectedIds.has(id)).length;
+        input.indeterminate = selectedCount > 0 && selectedCount < ids.length;
+        input.addEventListener('click', event => event.stopPropagation());
+        input.addEventListener('change', event => {
+          input.indeterminate = false;
+          ids.forEach(id => {
+            if (event.target.checked) state.selectedIds.add(id);
+            else state.selectedIds.delete(id);
+          });
+          els.statusText.textContent = `Selected ${state.selectedIds.size} testcase(s).`;
+          renderCases();
+        });
+      });
+      Array.from(document.querySelectorAll('.section-select-wrap')).forEach(label => {
+        label.addEventListener('click', event => {
+          if (event.target.matches('.section-select')) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const input = label.querySelector('.section-select');
+          if (!input || input.disabled) return;
+          input.indeterminate = false;
+          input.checked = !input.checked;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+      });
+      Array.from(document.querySelectorAll('.case-run')).forEach(button => {
+        button.addEventListener('click', event => {
+          event.stopPropagation();
+          runSelected([event.currentTarget.dataset.id], event.currentTarget.dataset.id);
+        });
+      });
+      Array.from(document.querySelectorAll('.case-pdf')).forEach(button => {
+        button.addEventListener('click', event => {
+          event.stopPropagation();
+          downloadCasePdf(event.currentTarget.dataset.id);
+        });
+      });
+      Array.from(document.querySelectorAll('.section-run')).forEach(button => {
+        button.addEventListener('click', event => {
+          event.stopPropagation();
+          const section = event.currentTarget.closest('.case-section');
+          const ids = Array.from(section.querySelectorAll('.case-select')).map(el => el.dataset.id);
+          const meta = areaMeta(event.currentTarget.dataset.area);
+          runSelected(ids, `${meta.title} section`);
+        });
+      });
+    }
+
+    function realWriteNote(item) {
+      if (!item.requiresRealWrite) return '';
+      if (item.id === 'writes.full-commerce-flow') {
+        return '<p><strong>เขียนข้อมูลจริง:</strong> สร้างสินค้า QA โปรโมชั่น ของแถม และกฎของแถม จากนั้นสร้างออร์เดอร์จริงและตรวจ snapshot ของออร์เดอร์ พร้อมล้าง master data ชั่วคราวหลังตรวจเสร็จ</p>';
+      }
+      if (item.id === 'writes.concurrent-stock-race') {
+        return '<p><strong>เขียนข้อมูลจริง:</strong> สร้างสินค้า QA stock 2 แล้วปล่อยผู้ซื้อ A-E เข้าแข่งกันสร้างออร์เดอร์ 5 รายการ ต้องมีผู้ชนะ 2 ราย โดยชื่อผู้ชนะไม่ตายตัว</p>';
+      }
+      return '<p><strong>เขียนข้อมูลจริง:</strong> เคสนี้อาจสร้างข้อมูลจริงเมื่อเปิดใช้งาน</p>';
+    }
+
+    function renderRaw(report) {
+      els.rawJson.textContent = JSON.stringify(report || {}, null, 2);
+    }
+
+    function logsForCase(testId) {
+      return state.logs.filter(entry => entry.testId === testId);
+    }
+
+    function canDownloadPdf(item) {
+      const status = item && (item.status || 'pending');
+      return !state.running && status !== 'pending' && status !== 'running';
+    }
+
+    function findCaseResult(testId) {
+      const spec = state.tests.find(item => item.id === testId) || {};
+      const result = state.results.find(item => item.id === testId) || {};
+      return Object.assign({}, spec, result);
+    }
+
+    function safeFileName(value) {
+      return String(value || 'qa-testcase')
+        .replace(/[\\/:*?"<>|]+/g, '-')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .slice(0, 120);
+    }
+
+    function addPdfLines(lines, text, style) {
+      String(text == null ? '' : text).split(/\r?\n/).forEach(line => {
+        lines.push({ style: style || 'body', text: line });
+      });
+    }
+
+    function buildCasePdfLines(item) {
+      const logs = logsForCase(item.id);
+      const lines = [];
+      const status = item.status || 'pending';
+
+      lines.push({ style: 'title', text: 'รายงานผล Integration Test' });
+      lines.push({ style: 'subtitle', text: item.title || item.id });
+      lines.push({ style: 'muted', text: 'สร้างรายงาน: ' + new Date().toISOString() });
+      lines.push({ style: 'gap', text: '' });
+
+      [
+        ['Testcase ID', item.id],
+        ['Section', caseSectionArea(item)],
+        ['Type', item.type],
+        ['Risk', item.risk],
+        ['Status', status],
+        ['Duration', Number(item.durationMs || 0) + ' ms'],
+        ['Started at', item.startedAt || '-'],
+        ['Ended at', item.endedAt || '-']
+      ].forEach(row => lines.push({ style: 'body', text: row[0] + ': ' + (row[1] == null || row[1] === '' ? '-' : row[1]) }));
+
+      lines.push({ style: 'heading', text: 'รายละเอียด' });
+      addPdfLines(lines, item.description || '-');
+      lines.push({ style: 'heading', text: 'ผลลัพธ์ที่คาดหวัง' });
+      addPdfLines(lines, item.expected || '-');
+
+      if (item.error || item.reason) {
+        lines.push({ style: 'heading', text: status === 'failed' ? 'ข้อผิดพลาด' : 'เหตุผล' });
+        addPdfLines(lines, item.error || item.reason);
+      }
+
+      lines.push({ style: 'heading', text: 'Run log' });
+      if (!logs.length) {
+        lines.push({ style: 'muted', text: 'ยังไม่มี run log สำหรับ testcase นี้' });
+      } else {
+        logs.forEach((entry, index) => {
+          lines.push({ style: 'bodyStrong', text: (index + 1) + '. [' + (entry.status || '-') + '] ' + (entry.at || '') });
+          addPdfLines(lines, entry.message || '');
+          const dataText = compactJson(entry.data || {});
+          if (dataText && dataText !== '{}') {
+            lines.push({ style: 'monoLabel', text: 'log data' });
+            addPdfLines(lines, dataText, 'mono');
+          }
+          lines.push({ style: 'gapSmall', text: '' });
+        });
+      }
+
+      lines.push({ style: 'heading', text: 'ข้อมูลผลลัพธ์ทั้งหมด (JSON)' });
+      addPdfLines(lines, compactJson(item), 'mono');
+      return lines;
+    }
+
+    function setPdfFont(ctx, style) {
+      const family = '"Noto Sans Thai", Tahoma, Arial, sans-serif';
+      if (style === 'title') {
+        ctx.font = '700 36px ' + family;
+        ctx.fillStyle = '#111827';
+        return 48;
+      }
+      if (style === 'subtitle') {
+        ctx.font = '700 25px ' + family;
+        ctx.fillStyle = '#1f2937';
+        return 36;
+      }
+      if (style === 'heading') {
+        ctx.font = '700 24px ' + family;
+        ctx.fillStyle = '#111827';
+        return 38;
+      }
+      if (style === 'bodyStrong') {
+        ctx.font = '700 21px ' + family;
+        ctx.fillStyle = '#111827';
+        return 30;
+      }
+      if (style === 'monoLabel') {
+        ctx.font = '700 18px Consolas, "Courier New", monospace';
+        ctx.fillStyle = '#475569';
+        return 25;
+      }
+      if (style === 'muted') {
+        ctx.font = '20px ' + family;
+        ctx.fillStyle = '#64748b';
+        return 30;
+      }
+      ctx.font = style === 'mono'
+        ? '18px Consolas, "Courier New", monospace'
+        : '21px ' + family;
+      ctx.fillStyle = style === 'mono' ? '#334155' : '#334155';
+      return style === 'mono' ? 25 : 31;
+    }
+
+    function wrapCanvasText(ctx, text, maxWidth) {
+      const out = [];
+      String(text == null ? '' : text).split(/\r?\n/).forEach(line => {
+        if (!line) {
+          out.push('');
+          return;
+        }
+        let current = '';
+        Array.from(line).forEach(ch => {
+          const next = current + ch;
+          if (!current || ctx.measureText(next).width <= maxWidth) {
+            current = next;
+          } else {
+            out.push(current);
+            current = ch;
+          }
+        });
+        out.push(current);
+      });
+      return out;
+    }
+
+    function renderCasePdfCanvases(item) {
+      const pageWidth = 1240;
+      const pageHeight = 1754;
+      const margin = 74;
+      const bottomMargin = 90;
+      const canvases = [];
+      let canvas = null;
+      let ctx = null;
+      let y = margin;
+
+      function newPage() {
+        canvas = document.createElement('canvas');
+        canvas.width = pageWidth;
+        canvas.height = pageHeight;
+        ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, pageWidth, pageHeight);
+        canvases.push(canvas);
+        y = margin;
+      }
+
+      function ensureSpace(height) {
+        if (!canvas) newPage();
+        if (y + height > pageHeight - bottomMargin) newPage();
+      }
+
+      function drawDivider() {
+        ensureSpace(22);
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(margin, y + 8);
+        ctx.lineTo(pageWidth - margin, y + 8);
+        ctx.stroke();
+        y += 28;
+      }
+
+      buildCasePdfLines(item).forEach(row => {
+        const style = row.style || 'body';
+        if (style === 'gap') {
+          y += 18;
+          return;
+        }
+        if (style === 'gapSmall') {
+          y += 8;
+          return;
+        }
+        if (style === 'heading') {
+          drawDivider();
+        }
+        if (!ctx) newPage();
+        const textStyle = String(row.text || '').trim().match(/^[\[{]/) || String(row.text || '').indexOf('  ') === 0 ? 'mono' : style;
+        const drawStyle = textStyle === 'mono' && style !== 'heading' ? 'mono' : style;
+        const lineHeight = setPdfFont(ctx, drawStyle);
+        const lines = wrapCanvasText(ctx, row.text, pageWidth - margin * 2);
+        lines.forEach(line => {
+          ensureSpace(lineHeight);
+          setPdfFont(ctx, drawStyle);
+          ctx.fillText(line, margin, y);
+          y += lineHeight;
+        });
+      });
+
+      canvases.forEach((page, index) => {
+        const pctx = page.getContext('2d');
+        pctx.font = '18px Arial, sans-serif';
+        pctx.fillStyle = '#94a3b8';
+        pctx.textAlign = 'center';
+        pctx.fillText('Page ' + (index + 1) + ' / ' + canvases.length, pageWidth / 2, pageHeight - 36);
+      });
+      return canvases;
+    }
+
+    function dataUrlToBytes(dataUrl) {
+      const base64 = String(dataUrl).split(',')[1] || '';
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      return bytes;
+    }
+
+    function buildPdfFromJpegs(images, pageWidthPt, pageHeightPt) {
+      const encoder = new TextEncoder();
+      const parts = [];
+      const offsets = [];
+      let length = 0;
+      function pushString(text) {
+        const bytes = encoder.encode(text);
+        parts.push(bytes);
+        length += bytes.length;
+      }
+      function pushBytes(bytes) {
+        parts.push(bytes);
+        length += bytes.length;
+      }
+      function beginObject(num) {
+        offsets[num] = length;
+        pushString(num + ' 0 obj\n');
+      }
+      function endObject() {
+        pushString('\nendobj\n');
+      }
+
+      const pageObjs = images.map((_, index) => 3 + index * 3);
+      const objectCount = 2 + images.length * 3;
+      pushString('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+      beginObject(1);
+      pushString('<< /Type /Catalog /Pages 2 0 R >>');
+      endObject();
+      beginObject(2);
+      pushString('<< /Type /Pages /Kids [' + pageObjs.map(num => num + ' 0 R').join(' ') + '] /Count ' + images.length + ' >>');
+      endObject();
+
+      images.forEach((image, index) => {
+        const pageObj = 3 + index * 3;
+        const imageObj = pageObj + 1;
+        const contentObj = pageObj + 2;
+        const imageName = 'Im' + index;
+        const bytes = dataUrlToBytes(image.dataUrl);
+        const content = 'q\n' + pageWidthPt + ' 0 0 ' + pageHeightPt + ' 0 0 cm\n/' + imageName + ' Do\nQ\n';
+
+        beginObject(pageObj);
+        pushString('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + pageWidthPt + ' ' + pageHeightPt + '] /Resources << /XObject << /' + imageName + ' ' + imageObj + ' 0 R >> >> /Contents ' + contentObj + ' 0 R >>');
+        endObject();
+
+        beginObject(imageObj);
+        pushString('<< /Type /XObject /Subtype /Image /Width ' + image.width + ' /Height ' + image.height + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + bytes.length + ' >>\nstream\n');
+        pushBytes(bytes);
+        pushString('\nendstream');
+        endObject();
+
+        beginObject(contentObj);
+        pushString('<< /Length ' + encoder.encode(content).length + ' >>\nstream\n' + content + 'endstream');
+        endObject();
+      });
+
+      const xrefStart = length;
+      pushString('xref\n0 ' + (objectCount + 1) + '\n');
+      pushString('0000000000 65535 f \n');
+      for (let i = 1; i <= objectCount; i += 1) {
+        pushString(String(offsets[i] || 0).padStart(10, '0') + ' 00000 n \n');
+      }
+      pushString('trailer\n<< /Size ' + (objectCount + 1) + ' /Root 1 0 R >>\nstartxref\n' + xrefStart + '\n%%EOF');
+      return new Blob(parts, { type: 'application/pdf' });
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function downloadCasePdf(testId) {
+      const item = findCaseResult(testId);
+      if (!canDownloadPdf(item)) {
+        els.statusText.textContent = 'Run this testcase before downloading PDF.';
+        return;
+      }
+      try {
+        const canvases = renderCasePdfCanvases(item);
+        const images = canvases.map(canvas => ({
+          dataUrl: canvas.toDataURL('image/jpeg', 0.92),
+          width: canvas.width,
+          height: canvas.height
+        }));
+        const pdf = buildPdfFromJpegs(images, 595, 842);
+        const filename = safeFileName('qa-' + item.id + '-' + (item.status || 'result')) + '.pdf';
+        downloadBlob(pdf, filename);
+        els.statusText.textContent = 'Downloaded PDF: ' + filename;
+        addLog('passed', 'Downloaded testcase PDF', { testcase: item.id, filename: filename, pages: images.length });
+      } catch (err) {
+        const message = err && err.message ? err.message : String(err);
+        els.statusText.textContent = 'PDF download failed: ' + message;
+        addLog('failed', 'PDF download failed', { testcase: testId, error: message });
+      }
+    }
+
+    function renderCaseLogEntries(testId) {
+      const logs = logsForCase(testId);
+      if (!logs.length) return '<div class="empty">No log for this testcase yet.</div>';
+      return logs.slice().reverse().map(entry => `
+        <div class="log-entry ${escapeHtml(entry.status)}">
+          <div class="log-meta">${escapeHtml(entry.at)} · ${escapeHtml(statusLabel(entry.status).toLowerCase())}</div>
+          <div class="log-message">${escapeHtml(entry.message)}</div>
+          <pre>${escapeHtml(compactJson(entry.data))}</pre>
+        </div>
+      `).join('');
+    }
+
+    function addLog(status, message, data) {
+      const explicitTestId = data && (data.testcase || data.testId || data.id);
+      state.logs.push({
+        at: new Date().toISOString(),
+        status: status || 'running',
+        message: message || '',
+        data: data || {},
+        testId: String(explicitTestId || state.currentLogTestId || '')
+      });
+      if (state.logs.length > 2000) state.logs = state.logs.slice(-2000);
+      renderLogs();
+    }
+
+    function delay(ms) {
+      return new Promise(resolve => window.setTimeout(resolve, ms));
+    }
+
+    function makeFailedResult(base, error, details) {
+      return Object.assign({}, base, {
+        ok: true,
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error || 'Testcase ไม่ผ่าน'),
+        details: details || {},
+        durationMs: 0,
+        endedAt: new Date().toISOString()
+      });
+    }
+
+    async function runConcurrentStockRace(base, options) {
+      const started = Date.now();
+      let prep = null;
+      let cleanup = null;
+      const submissions = [];
+      addLog('running', 'เตรียมชุดข้อมูลทดสอบแข่งกันตัด stock สินค้า', { testcase: base.id });
+      try {
+        prep = await callGas('qaPrepareConcurrentStockRaceRpc', options);
+        if (!prep || !prep.ok) throw new Error((prep && prep.error) || 'เตรียมชุดข้อมูลทดสอบแข่ง stock ไม่สำเร็จ');
+        addLog('running', 'สร้างสินค้า QA สำหรับแข่ง stock=2 แล้ว', prep);
+
+        const jobs = Array.isArray(prep.jobs) ? prep.jobs : [];
+        const promises = jobs.map(job => delay(Number(job.delayMs || 0)).then(async () => {
+          addLog('running', `ผู้ซื้อ ${job.buyer} กำลังส่งออร์เดอร์`, {
+            buyer: job.buyer,
+            delayMs: job.delayMs,
+            client_order_id: job.payload && job.payload.client_order_id
+          });
+          try {
+            const response = await callGas('submitOrderRpc', job.payload);
+            const entry = { buyer: job.buyer, delayMs: job.delayMs, ok: !!(response && response.ok), response };
+            submissions.push(entry);
+            addLog(entry.ok ? 'passed' : 'failed', `ผลตอบกลับของผู้ซื้อ ${job.buyer}`, entry);
+            return entry;
+          } catch (err) {
+            const entry = { buyer: job.buyer, delayMs: job.delayMs, ok: false, error: err.message || String(err) };
+            submissions.push(entry);
+            addLog('failed', `คำขอของผู้ซื้อ ${job.buyer} ล้มเหลว`, entry);
+            return entry;
+          }
+        }));
+
+        const settled = await Promise.all(promises);
+        const byBuyer = {};
+        settled.forEach(entry => { byBuyer[entry.buyer] = entry; });
+        const isStockFailure = entry => !entry.ok && entry.response && entry.response.error === 'STOCK_INSUFFICIENT';
+        const successBuyers = settled.filter(entry => entry.ok).map(entry => entry.buyer).sort();
+        const failedBuyers = settled.filter(entry => !entry.ok).map(entry => entry.buyer).sort();
+        const stockFailBuyers = settled.filter(isStockFailure).map(entry => entry.buyer).sort();
+        const expectedSuccessCount = Number(prep.stock || 2);
+        const expectedStockFailureCount = Math.max(0, jobs.length - expectedSuccessCount);
+        const nonStockFailureBuyers = settled
+          .filter(entry => !entry.ok && !isStockFailure(entry))
+          .map(entry => entry.buyer)
+          .sort();
+        const successOrderIds = settled
+          .filter(entry => entry.ok && entry.response && entry.response.order_id)
+          .map(entry => entry.response.order_id);
+        const uniqueSuccessOrderIds = Array.from(new Set(successOrderIds));
+        const passed = successBuyers.length === expectedSuccessCount
+          && stockFailBuyers.length === expectedStockFailureCount
+          && nonStockFailureBuyers.length === 0
+          && uniqueSuccessOrderIds.length === expectedSuccessCount;
+
+        cleanup = await callGas('qaCleanupConcurrentStockRaceRpc', options.adminToken, prep);
+        addLog(cleanup && cleanup.ok ? 'passed' : 'failed', 'ล้างสินค้า QA สำหรับทดสอบแข่ง stock แล้ว', cleanup);
+
+        const result = Object.assign({}, base, {
+          ok: true,
+          status: passed ? 'passed' : 'failed',
+          error: passed ? '' : 'คาดว่าต้องมีออร์เดอร์สำเร็จ 2 รายการพอดี และที่เหลือต้องเป็น STOCK_INSUFFICIENT',
+          details: {
+            expected_success_count: expectedSuccessCount,
+            expected_stock_insufficient_count: expectedStockFailureCount,
+            actual_success_buyers: successBuyers,
+            actual_failed_buyers: failedBuyers,
+            actual_stock_insufficient_buyers: stockFailBuyers,
+            actual_non_stock_failure_buyers: nonStockFailureBuyers,
+            success_order_ids: uniqueSuccessOrderIds,
+            product_id: prep.product_id,
+            submissions: settled,
+            by_buyer: byBuyer,
+            cleanup: cleanup
+          },
+          startedAt: new Date(started).toISOString(),
+          endedAt: new Date().toISOString(),
+          durationMs: Date.now() - started
+        });
+        return result;
+      } catch (err) {
+        if (prep && prep.product_id && !cleanup) {
+          try {
+            cleanup = await callGas('qaCleanupConcurrentStockRaceRpc', options.adminToken, prep);
+            addLog(cleanup && cleanup.ok ? 'passed' : 'failed', 'ล้างสินค้า QA หลังเกิดข้อผิดพลาดแล้ว', cleanup);
+          } catch (cleanupErr) {
+            cleanup = { ok: false, error: cleanupErr.message || String(cleanupErr) };
+            addLog('failed', 'ล้างข้อมูล QA สำหรับแข่ง stock ไม่สำเร็จ', cleanup);
+          }
+        }
+        return makeFailedResult(base, err, {
+          prep,
+          submissions,
+          cleanup
+        });
+      }
+    }
+
+    async function runConcurrentGiftStockRace(base, options) {
+      const started = Date.now();
+      let prep = null;
+      let verify = null;
+      let cleanup = null;
+      const submissions = [];
+      addLog('running', 'เตรียมชุดข้อมูลทดสอบแข่งกันตัด stock ของแถม', { testcase: base.id });
+      try {
+        prep = await callGas('qaPrepareConcurrentGiftStockRaceRpc', options);
+        if (!prep || !prep.ok) throw new Error((prep && prep.error) || 'เตรียมชุดข้อมูลทดสอบแข่ง stock ของแถมไม่สำเร็จ');
+        addLog('running', 'สร้างของแถม QA stock=2 แล้ว', prep);
+
+        const jobs = Array.isArray(prep.jobs) ? prep.jobs : [];
+        const settled = await Promise.all(jobs.map(job => delay(Number(job.delayMs || 0)).then(async () => {
+          try {
+            const response = await callGas('submitOrderRpc', job.payload);
+            const entry = { buyer: job.buyer, delayMs: job.delayMs, ok: !!(response && response.ok), response };
+            submissions.push(entry);
+            addLog(entry.ok ? 'passed' : 'failed', `ผลตอบกลับเคสของแถมของผู้ซื้อ ${job.buyer}`, entry);
+            return entry;
+          } catch (err) {
+            const entry = { buyer: job.buyer, delayMs: job.delayMs, ok: false, error: err.message || String(err) };
+            submissions.push(entry);
+            addLog('failed', `คำขอเคสของแถมของผู้ซื้อ ${job.buyer} ล้มเหลว`, entry);
+            return entry;
+          }
+        })));
+
+        verify = await callGas('qaVerifyConcurrentGiftStockRaceRpc', options.adminToken, prep, settled);
+        addLog(verify && verify.passed ? 'passed' : 'failed', 'ตรวจผลการแข่ง stock ของแถมแล้ว', verify);
+        cleanup = await callGas('qaCleanupConcurrentGiftStockRaceRpc', options.adminToken, prep);
+        addLog(cleanup && cleanup.ok ? 'passed' : 'failed', 'ล้างชุดข้อมูล QA สำหรับแข่ง stock ของแถมแล้ว', cleanup);
+
+        return Object.assign({}, base, {
+          ok: true,
+          status: verify && verify.passed ? 'passed' : 'failed',
+          error: verify && verify.passed ? '' : 'คาดว่าต้องมีออร์เดอร์ 2 รายการพอดีที่ได้ของแถม และ stock ของแถมต้องเหลือ 0',
+          details: { prep, submissions: settled, verify, cleanup },
+          startedAt: new Date(started).toISOString(),
+          endedAt: new Date().toISOString(),
+          durationMs: Date.now() - started
+        });
+      } catch (err) {
+        if (prep && !cleanup) {
+          try { cleanup = await callGas('qaCleanupConcurrentGiftStockRaceRpc', options.adminToken, prep); }
+          catch (cleanupErr) { cleanup = { ok: false, error: cleanupErr.message || String(cleanupErr) }; }
+        }
+        return makeFailedResult(base, err, { prep, submissions, verify, cleanup });
+      }
+    }
+
+    async function runAdminGiftOrderRace(base, options) {
+      const started = Date.now();
+      let prep = null;
+      let verify = null;
+      let cleanup = null;
+      const results = [];
+      addLog('running', 'เตรียมชุดข้อมูลทดสอบ admin เพิ่มของแถมชนกับออร์เดอร์ลูกค้า', { testcase: base.id });
+      try {
+        prep = await callGas('qaPrepareAdminGiftOrderRaceRpc', options);
+        if (!prep || !prep.ok) throw new Error((prep && prep.error) || 'เตรียมชุดข้อมูล admin gift vs order ไม่สำเร็จ');
+        addLog('running', 'สร้างของแถม QA stock=1 และออร์เดอร์เดิมแล้ว', prep);
+
+        const jobs = Array.isArray(prep.jobs) ? prep.jobs : [];
+        const settled = await Promise.all(jobs.map(job => delay(Number(job.delayMs || 0)).then(async () => {
+          try {
+            const response = job.kind === 'admin_add'
+              ? await callGas('addManualGiftToOrderRpc', options.adminToken, job.order_id, job.payload)
+              : await callGas('submitOrderRpc', job.payload);
+            const entry = { kind: job.kind, ok: !!(response && response.ok), response };
+            results.push(entry);
+            addLog(entry.ok ? 'passed' : 'failed', `ผลตอบกลับ admin/order race: ${job.kind}`, entry);
+            return entry;
+          } catch (err) {
+            const entry = { kind: job.kind, ok: false, error: err.message || String(err) };
+            results.push(entry);
+            addLog('failed', `คำขอ admin/order race ล้มเหลว: ${job.kind}`, entry);
+            return entry;
+          }
+        })));
+
+        verify = await callGas('qaVerifyAdminGiftOrderRaceRpc', options.adminToken, prep, settled);
+        addLog(verify && verify.passed ? 'passed' : 'failed', 'ตรวจผล admin gift vs order แล้ว', verify);
+        cleanup = await callGas('qaCleanupAdminGiftOrderRaceRpc', options.adminToken, prep);
+        addLog(cleanup && cleanup.ok ? 'passed' : 'failed', 'ล้างชุดข้อมูล admin gift vs order แล้ว', cleanup);
+
+        return Object.assign({}, base, {
+          ok: true,
+          status: verify && verify.passed ? 'passed' : 'failed',
+          error: verify && verify.passed ? '' : 'คาดว่าต้องมีฝ่ายเดียวที่ได้ของแถมชิ้นเดียว และ stock ของแถมต้องเหลือ 0',
+          details: { prep, results: settled, verify, cleanup },
+          startedAt: new Date(started).toISOString(),
+          endedAt: new Date().toISOString(),
+          durationMs: Date.now() - started
+        });
+      } catch (err) {
+        if (prep && !cleanup) {
+          try { cleanup = await callGas('qaCleanupAdminGiftOrderRaceRpc', options.adminToken, prep); }
+          catch (cleanupErr) { cleanup = { ok: false, error: cleanupErr.message || String(cleanupErr) }; }
+        }
+        return makeFailedResult(base, err, { prep, results, verify, cleanup });
+      }
+    }
+
+    async function runConcurrentDuplicateOrderId(base, options) {
+      const started = Date.now();
+      let prep = null;
+      let verify = null;
+      let cleanup = null;
+      const submissions = [];
+      addLog('running', 'เตรียมชุดข้อมูลทดสอบ client_order_id ซ้ำพร้อมกัน', { testcase: base.id });
+      try {
+        prep = await callGas('qaPrepareConcurrentDuplicateOrderIdRpc', options);
+        if (!prep || !prep.ok) throw new Error((prep && prep.error) || 'เตรียมชุดข้อมูล duplicate order id ไม่สำเร็จ');
+        addLog('running', 'สร้างชุดข้อมูล QA สำหรับ duplicate-id แล้ว', prep);
+        const jobs = Array.isArray(prep.jobs) ? prep.jobs : [];
+        const settled = await Promise.all(jobs.map(job => delay(Number(job.delayMs || 0)).then(async () => {
+          try {
+            const response = await callGas('submitOrderRpc', job.payload);
+            const entry = { buyer: job.buyer, delayMs: job.delayMs, ok: !!(response && response.ok), response };
+            submissions.push(entry);
+            addLog(entry.ok ? 'passed' : 'failed', `ผลตอบกลับ duplicate-id ของผู้ซื้อ ${job.buyer}`, entry);
+            return entry;
+          } catch (err) {
+            const entry = { buyer: job.buyer, delayMs: job.delayMs, ok: false, error: err.message || String(err) };
+            submissions.push(entry);
+            addLog('failed', `คำขอ duplicate-id ของผู้ซื้อ ${job.buyer} ล้มเหลว`, entry);
+            return entry;
+          }
+        })));
+        verify = await callGas('qaVerifyConcurrentDuplicateOrderIdRpc', options.adminToken, prep, settled);
+        addLog(verify && verify.passed ? 'passed' : 'failed', 'ตรวจผล client_order_id ซ้ำพร้อมกันแล้ว', verify);
+        cleanup = await callGas('qaCleanupConcurrentDuplicateOrderIdRpc', options.adminToken, prep);
+        addLog(cleanup && cleanup.ok ? 'passed' : 'failed', 'ล้างชุดข้อมูล duplicate-id แล้ว', cleanup);
+        return Object.assign({}, base, {
+          ok: true,
+          status: verify && verify.passed ? 'passed' : 'failed',
+          error: verify && verify.passed ? '' : 'คาดว่าต้องสร้างออร์เดอร์สำเร็จ 1 รายการ และอีก 4 รายการต้องได้ DUPLICATE_ORDER',
+          details: { prep, submissions: settled, verify, cleanup },
+          startedAt: new Date(started).toISOString(),
+          endedAt: new Date().toISOString(),
+          durationMs: Date.now() - started
+        });
+      } catch (err) {
+        if (prep && !cleanup) {
+          try { cleanup = await callGas('qaCleanupConcurrentDuplicateOrderIdRpc', options.adminToken, prep); }
+          catch (cleanupErr) { cleanup = { ok: false, error: cleanupErr.message || String(cleanupErr) }; }
+        }
+        return makeFailedResult(base, err, { prep, submissions, verify, cleanup });
+      }
+    }
+
+    async function runVariantStockRace(base, options) {
+      const started = Date.now();
+      let prep = null;
+      let verify = null;
+      let cleanup = null;
+      const submissions = [];
+      addLog('running', 'เตรียมชุดข้อมูลทดสอบแข่ง stock ของ variant', { testcase: base.id });
+      try {
+        prep = await callGas('qaPrepareVariantStockRaceRpc', options);
+        if (!prep || !prep.ok) throw new Error((prep && prep.error) || 'เตรียมชุดข้อมูล variant stock race ไม่สำเร็จ');
+        addLog('running', 'สร้างชุดข้อมูล QA สำหรับแข่ง stock variant แล้ว', prep);
+        const jobs = Array.isArray(prep.jobs) ? prep.jobs : [];
+        const settled = await Promise.all(jobs.map(job => delay(Number(job.delayMs || 0)).then(async () => {
+          try {
+            const response = await callGas('submitOrderRpc', job.payload);
+            const entry = { buyer: job.buyer, delayMs: job.delayMs, ok: !!(response && response.ok), response };
+            submissions.push(entry);
+            addLog(entry.ok ? 'passed' : 'failed', `ผลตอบกลับ variant race ของผู้ซื้อ ${job.buyer}`, entry);
+            return entry;
+          } catch (err) {
+            const entry = { buyer: job.buyer, delayMs: job.delayMs, ok: false, error: err.message || String(err) };
+            submissions.push(entry);
+            addLog('failed', `คำขอ variant race ของผู้ซื้อ ${job.buyer} ล้มเหลว`, entry);
+            return entry;
+          }
+        })));
+        verify = await callGas('qaVerifyVariantStockRaceRpc', options.adminToken, prep, settled);
+        addLog(verify && verify.passed ? 'passed' : 'failed', 'ตรวจผลการแข่ง stock variant แล้ว', verify);
+        cleanup = await callGas('qaCleanupVariantStockRaceRpc', options.adminToken, prep);
+        addLog(cleanup && cleanup.ok ? 'passed' : 'failed', 'ล้างชุดข้อมูล variant stock race แล้ว', cleanup);
+        return Object.assign({}, base, {
+          ok: true,
+          status: verify && verify.passed ? 'passed' : 'failed',
+          error: verify && verify.passed ? '' : 'คาดว่าต้องมีออร์เดอร์ variant สำเร็จ 2 รายการ และอีก 3 รายการต้องเป็น STOCK_INSUFFICIENT',
+          details: { prep, submissions: settled, verify, cleanup },
+          startedAt: new Date(started).toISOString(),
+          endedAt: new Date().toISOString(),
+          durationMs: Date.now() - started
+        });
+      } catch (err) {
+        if (prep && !cleanup) {
+          try { cleanup = await callGas('qaCleanupVariantStockRaceRpc', options.adminToken, prep); }
+          catch (cleanupErr) { cleanup = { ok: false, error: cleanupErr.message || String(cleanupErr) }; }
+        }
+        return makeFailedResult(base, err, { prep, submissions, verify, cleanup });
+      }
+    }
+
+    async function runManualGiftDoubleClick(base, options) {
+      const started = Date.now();
+      let prep = null;
+      let verify = null;
+      let cleanup = null;
+      const results = [];
+      addLog('running', 'เตรียมชุดข้อมูลทดสอบกดเพิ่มของแถมเองซ้ำพร้อมกัน', { testcase: base.id });
+      try {
+        prep = await callGas('qaPrepareManualGiftDoubleClickRpc', options);
+        if (!prep || !prep.ok) throw new Error((prep && prep.error) || 'เตรียมชุดข้อมูล manual gift double-click ไม่สำเร็จ');
+        addLog('running', 'สร้างออร์เดอร์ QA และของแถม stock=1 แล้ว', prep);
+        const jobs = Array.isArray(prep.jobs) ? prep.jobs : [];
+        const settled = await Promise.all(jobs.map(job => delay(Number(job.delayMs || 0)).then(async () => {
+          try {
+            const response = await callGas('addManualGiftToOrderRpc', options.adminToken, job.order_id, job.payload);
+            const entry = { kind: job.kind, ok: !!(response && response.ok), response };
+            results.push(entry);
+            addLog(entry.ok ? 'passed' : 'failed', `ผลตอบกลับ manual gift double-click: ${job.kind}`, entry);
+            return entry;
+          } catch (err) {
+            const entry = { kind: job.kind, ok: false, error: err.message || String(err) };
+            results.push(entry);
+            addLog('failed', `คำขอ manual gift double-click ล้มเหลว: ${job.kind}`, entry);
+            return entry;
+          }
+        })));
+        verify = await callGas('qaVerifyManualGiftDoubleClickRpc', options.adminToken, prep, settled);
+        addLog(verify && verify.passed ? 'passed' : 'failed', 'ตรวจผล manual gift double-click แล้ว', verify);
+        cleanup = await callGas('qaCleanupManualGiftDoubleClickRpc', options.adminToken, prep);
+        addLog(cleanup && cleanup.ok ? 'passed' : 'failed', 'ล้างชุดข้อมูล manual gift double-click แล้ว', cleanup);
+        return Object.assign({}, base, {
+          ok: true,
+          status: verify && verify.passed ? 'passed' : 'failed',
+          error: verify && verify.passed ? '' : 'คาดว่าต้องเพิ่มของแถมสำเร็จ 1 ครั้ง ล้มเหลว 1 ครั้ง และห้ามขายเกิน stock',
+          details: { prep, results: settled, verify, cleanup },
+          startedAt: new Date(started).toISOString(),
+          endedAt: new Date().toISOString(),
+          durationMs: Date.now() - started
+        });
+      } catch (err) {
+        if (prep && !cleanup) {
+          try { cleanup = await callGas('qaCleanupManualGiftDoubleClickRpc', options.adminToken, prep); }
+          catch (cleanupErr) { cleanup = { ok: false, error: cleanupErr.message || String(cleanupErr) }; }
+        }
+        return makeFailedResult(base, err, { prep, results, verify, cleanup });
+      }
+    }
+
+    async function runPreparedSubmitRace(base, options, cfg) {
+      const started = Date.now();
+      let prep = null;
+      let verify = null;
+      let cleanup = null;
+      const submissions = [];
+      addLog('running', `Preparing concurrent testcase: ${base.id}`, { testcase: base.id, prepareRpc: cfg.prepareRpc });
+      try {
+        prep = await callGas(cfg.prepareRpc, options);
+        if (!prep || !prep.ok) throw new Error((prep && prep.error) || `Prepare failed: ${cfg.prepareRpc}`);
+        addLog('running', `Prepared ${base.id}`, prep);
+
+        const jobs = Array.isArray(prep.jobs) ? prep.jobs : [];
+        const settled = await Promise.all(jobs.map(job => delay(Number(job.delayMs || 0)).then(async () => {
+          try {
+            const response = await callGas('submitOrderRpc', job.payload);
+            const entry = { buyer: job.buyer || '', delayMs: job.delayMs || 0, ok: !!(response && response.ok), response };
+            submissions.push(entry);
+            addLog(entry.ok ? 'passed' : 'failed', `Concurrent response ${base.id}: ${job.buyer || 'job'}`, entry);
+            return entry;
+          } catch (err) {
+            const entry = { buyer: job.buyer || '', delayMs: job.delayMs || 0, ok: false, error: err.message || String(err) };
+            submissions.push(entry);
+            addLog('failed', `Concurrent request failed ${base.id}: ${job.buyer || 'job'}`, entry);
+            return entry;
+          }
+        })));
+
+        verify = await callGas(cfg.verifyRpc, options.adminToken, prep, settled);
+        addLog(verify && verify.passed ? 'passed' : 'failed', `Verified concurrent testcase: ${base.id}`, verify);
+        cleanup = await callGas(cfg.cleanupRpc, options.adminToken, prep, settled);
+        addLog(cleanup && cleanup.ok ? 'passed' : 'failed', `Cleaned concurrent testcase: ${base.id}`, cleanup);
+
+        return Object.assign({}, base, {
+          ok: true,
+          status: verify && verify.passed ? 'passed' : 'failed',
+          error: verify && verify.passed ? '' : (cfg.failureMessage || 'Concurrent testcase did not meet expected counts'),
+          details: { prep, submissions: settled, verify, cleanup },
+          startedAt: new Date(started).toISOString(),
+          endedAt: new Date().toISOString(),
+          durationMs: Date.now() - started
+        });
+      } catch (err) {
+        if (prep && !cleanup) {
+          try { cleanup = await callGas(cfg.cleanupRpc, options.adminToken, prep, submissions); }
+          catch (cleanupErr) { cleanup = { ok: false, error: cleanupErr.message || String(cleanupErr) }; }
+        }
+        return makeFailedResult(base, err, { prep, submissions, verify, cleanup });
+      }
+    }
+
+    function renderLogs() {
+      document.querySelectorAll('.case-log-list[data-id]').forEach(node => {
+        node.innerHTML = renderCaseLogEntries(node.dataset.id);
+      });
+      document.querySelectorAll('.case-log-count[data-id]').forEach(node => {
+        const count = logsForCase(node.dataset.id).length;
+        node.textContent = `${count} item${count === 1 ? '' : 's'}`;
+      });
+      if (!els.runnerLog) return;
+      if (!state.logs.length) {
+        els.runnerLog.innerHTML = '<div class="empty">ยังไม่มี log การรัน</div>';
+        return;
+      }
+      els.runnerLog.innerHTML = state.logs.slice().reverse().map(entry => `
+        <div class="log-entry ${escapeHtml(entry.status)}">
+          <div class="log-meta">${escapeHtml(entry.at)} · ${escapeHtml(statusLabel(entry.status).toLowerCase())}</div>
+          <div class="log-message">${escapeHtml(entry.message)}</div>
+          <pre>${escapeHtml(compactJson(entry.data))}</pre>
+        </div>
+      `).join('');
+    }
+
+    async function loginAdmin() {
+      const email = els.loginEmail.value.trim();
+      const password = els.loginPassword.value;
+      if (!email || !password) {
+        updateAuthState('Email and password required');
+        return;
+      }
+      setBusy(true, 'Logging in...');
+      try {
+        const res = await callGas('loginRpc', email, password);
+        if (!res || !res.ok) throw new Error((res && res.error) || 'Login failed');
+        if (res.otpRequired) {
+          state.pendingEmail = email;
+          els.otpRow.style.display = 'grid';
+          updateAuthState('OTP required');
+          els.statusText.textContent = `OTP sent to ${res.maskedEmail || email}`;
+          return;
+        }
+        state.adminToken = res.token || '';
+        localStorage.setItem('QA_ADMIN_TOKEN_V1', state.adminToken);
+        els.otpRow.style.display = 'none';
+        updateAuthState('Logged in');
+        els.statusText.textContent = 'Admin login ready.';
+      } catch (err) {
+        state.adminToken = '';
+        localStorage.removeItem('QA_ADMIN_TOKEN_V1');
+        updateAuthState(err.message || String(err));
+        els.statusText.textContent = err.message || String(err);
+      } finally {
+        state.currentLogTestId = '';
+        setBusy(false, els.statusText.textContent);
+      }
+    }
+
+    async function verifyOtp() {
+      const otp = els.loginOtp.value.trim();
+      if (!state.pendingEmail || !otp) {
+        updateAuthState('OTP required');
+        return;
+      }
+      setBusy(true, 'Verifying OTP...');
+      try {
+        const res = await callGas('loginVerifyOtpRpc', state.pendingEmail, otp);
+        if (!res || !res.ok) throw new Error((res && res.error) || 'OTP verification failed');
+        state.adminToken = res.token || '';
+        localStorage.setItem('QA_ADMIN_TOKEN_V1', state.adminToken);
+        els.otpRow.style.display = 'none';
+        els.loginOtp.value = '';
+        updateAuthState('Logged in');
+        els.statusText.textContent = 'Admin login ready.';
+      } catch (err) {
+        updateAuthState(err.message || String(err));
+        els.statusText.textContent = err.message || String(err);
+      } finally {
+        state.currentLogTestId = '';
+        setBusy(false, els.statusText.textContent);
+      }
+    }
+
+    function clearLogin() {
+      state.adminToken = '';
+      state.pendingEmail = '';
+      localStorage.removeItem('QA_ADMIN_TOKEN_V1');
+      els.loginPassword.value = '';
+      els.loginOtp.value = '';
+      els.otpRow.style.display = 'none';
+      updateAuthState('Not logged in');
+    }
+
+    async function loadManifest() {
+      setBusy(true, 'Loading testcase manifest...');
+      try {
+        const manifest = await callGas('getQaIntegrationTestManifestRpc');
+        if (!manifest || !manifest.ok) throw new Error((manifest && manifest.error) || 'Manifest failed');
+        state.tests = manifest.tests || [];
+        state.results = [];
+        state.selectedIds = new Set();
+        state.lastReport = manifest;
+        renderSummary(null);
+        renderCases();
+        renderRaw(manifest);
+        els.statusText.textContent = `Loaded ${state.tests.length} testcases.`;
+      } catch (err) {
+        els.statusText.textContent = err.message || String(err);
+        renderRaw({ ok: false, error: err.message || String(err) });
+      } finally {
+        state.currentLogTestId = '';
+        setBusy(false, els.statusText.textContent);
+      }
+    }
+
+    async function runSelected(testIds, label) {
+      if (els.allowWriteTests.checked && !state.adminToken) {
+        els.statusText.textContent = 'Login as admin before enabling real write tests.';
+        return;
+      }
+      setBusy(true, `Running ${label || 'integration tests'}...`);
+      try {
+        if (!state.tests.length) {
+          const manifest = await callGas('getQaIntegrationTestManifestRpc');
+          if (!manifest || !manifest.ok) throw new Error((manifest && manifest.error) || 'Manifest failed');
+          state.tests = manifest.tests || [];
+        }
+
+        const startedAt = new Date().toISOString();
+        const selectedTestsRaw = Array.isArray(testIds) && testIds.length
+          ? state.tests.filter(t => testIds.includes(t.id))
+          : state.tests;
+        const selectedTests = getDisplayOrderedCases(selectedTestsRaw);
+        if (!selectedTests.length) throw new Error('ไม่มี testcase ที่ตรงกับรายการที่เลือก');
+        state.logs = [];
+        state.currentLogTestId = '';
+        const options = buildRunOptions();
+        options.qaRunId = startTracePolling(makeTraceRunId());
+        addLog('running', `Run started: ${label || 'integration tests'}`, {
+          selected: selectedTests.map(t => t.id),
+          options: sanitizeForLog(options, 'options')
+        });
+        state.results = selectedTests.map(t => Object.assign({ status: 'pending', durationMs: 0, details: {} }, t));
+        renderSummary(summarizeCurrentResults());
+        renderCases();
+
+        for (let i = 0; i < state.results.length; i += 1) {
+          state.results[i] = Object.assign({}, state.results[i], { status: 'running', details: {} });
+          state.currentLogTestId = state.results[i].id;
+          els.statusText.textContent = `Running ${i + 1}/${state.results.length}: ${state.results[i].title}`;
+          addLog('running', `Starting testcase ${i + 1}/${state.results.length}: ${state.results[i].id}`, {
+            title: state.results[i].title,
+            area: state.results[i].area,
+            type: state.results[i].type
+          });
+          els.progressBar.style.width = `${Math.max(3, Math.round((i / state.results.length) * 100))}%`;
+          renderSummary(summarizeCurrentResults());
+          renderCases();
+
+          let result;
+          if (state.results[i].id === 'writes.concurrent-stock-race') {
+            result = await runConcurrentStockRace(state.results[i], options);
+          } else if (state.results[i].id === 'orders.concurrent-duplicate-client-order-id') {
+            result = await runConcurrentDuplicateOrderId(state.results[i], options);
+          } else if (state.results[i].id === 'orders.variant-stock-race') {
+            result = await runVariantStockRace(state.results[i], options);
+          } else if (state.results[i].id === 'orders.manual-gift-add-double-click') {
+            result = await runManualGiftDoubleClick(state.results[i], options);
+          } else if (state.results[i].id === 'orders.concurrent-heavy-promo-gift-stock-race') {
+            result = await runPreparedSubmitRace(state.results[i], options, {
+              prepareRpc: 'qaPrepareConcurrentHeavyPromoGiftStockRaceRpc',
+              verifyRpc: 'qaVerifyConcurrentHeavyPromoGiftStockRaceRpc',
+              cleanupRpc: 'qaCleanupConcurrentHeavyPromoGiftStockRaceRpc',
+              failureMessage: 'Expected 3 successful orders, 5 stock failures, 2 attached gifts, and zero remaining product/gift stock.'
+            });
+          } else if (state.results[i].id === 'orders.concurrent-heavy-split-idempotency-race') {
+            result = await runPreparedSubmitRace(state.results[i], options, {
+              prepareRpc: 'qaPrepareConcurrentHeavySplitIdempotencyRaceRpc',
+              verifyRpc: 'qaVerifyConcurrentHeavySplitIdempotencyRaceRpc',
+              cleanupRpc: 'qaCleanupConcurrentHeavySplitIdempotencyRaceRpc',
+              failureMessage: 'Expected one winning split checkout, five duplicate failures, and stock deducted only once.'
+            });
+          } else if (state.results[i].id === 'writes.concurrent-gift-stock-race') {
+            result = await runConcurrentGiftStockRace(state.results[i], options);
+          } else if (state.results[i].id === 'writes.concurrent-admin-gift-order-race') {
+            result = await runAdminGiftOrderRace(state.results[i], options);
+          } else {
+            result = await callGas('qaRunIntegrationTestCaseRpc', state.results[i].id, options);
+          }
+          if (!result || result.ok === false) {
+            state.results[i] = Object.assign({}, state.results[i], {
+              status: 'failed',
+              error: (result && result.error) || 'Testcase ไม่ผ่าน',
+              durationMs: 0
+            });
+            addLog('failed', `Testcase ไม่ผ่าน: ${state.results[i].id}`, result || state.results[i]);
+          } else {
+            state.results[i] = result;
+            addLog(result.status || 'passed', `จบ testcase: ${result.id}`, result);
+            if (result.details && Array.isArray(result.details.steps)) {
+              result.details.steps.forEach(step => {
+                addLog(step.status === 'failed' ? 'failed' : 'passed', `${result.id} · ${step.step}`, step);
+              });
+            }
+          }
+          state.currentLogTestId = '';
+          renderSummary(summarizeCurrentResults());
+          renderCases();
+          renderRaw({
+            ok: true,
+            version: state.lastReport && state.lastReport.version,
+            startedAt,
+            progress: { index: i + 1, total: state.results.length },
+            summary: summarizeCurrentResults(),
+            results: state.results
+          });
+        }
+
+        const summary = summarizeCurrentResults();
+        const endedAt = new Date().toISOString();
+        state.lastReport = { ok: true, startedAt, endedAt, summary, results: state.results };
+        renderRaw(state.lastReport);
+        els.progressBar.style.width = '100%';
+        els.statusText.textContent = summary.failed
+          ? `Finished with ${summary.failed} failed testcase(s).`
+          : `Finished. ${summary.passed} passed, ${summary.skipped} skipped.`;
+        addLog(summary.failed ? 'failed' : 'passed', 'Run finished', summary);
+      } catch (err) {
+        els.statusText.textContent = err.message || String(err);
+        addLog('failed', 'เกิดข้อผิดพลาดระหว่างรัน', { error: err.message || String(err) });
+        renderRaw({ ok: false, error: err.message || String(err) });
+      } finally {
+        await stopTracePolling(true);
+        state.currentLogTestId = '';
+        setBusy(false, els.statusText.textContent);
+      }
+    }
+
+    async function runAll() {
+      return runSelected(null, 'integration tests');
+    }
+
+    async function runChosen() {
+      const ids = Array.from(state.selectedIds);
+      if (!ids.length) {
+        els.statusText.textContent = 'Select at least one testcase first.';
+        return;
+      }
+      return runSelected(ids, `${ids.length} selected testcase(s)`);
+    }
+
+    function selectVisibleCases() {
+      getVisibleCases().forEach(item => state.selectedIds.add(item.id));
+      renderCases();
+      els.statusText.textContent = `Selected ${state.selectedIds.size} testcase(s).`;
+    }
+
+    function clearSelection() {
+      state.selectedIds = new Set();
+      renderCases();
+      els.statusText.textContent = 'Selection cleared.';
+    }
+
+    els.btnManifest.addEventListener('click', loadManifest);
+    els.btnRun.addEventListener('click', runChosen);
+    els.btnRunAll.addEventListener('click', runAll);
+    els.btnSelectVisible.addEventListener('click', selectVisibleCases);
+    els.btnClearSelection.addEventListener('click', clearSelection);
+    els.btnClearLog.addEventListener('click', () => {
+      state.logs = [];
+      state.currentLogTestId = '';
+      renderLogs();
+    });
+    els.btnLogin.addEventListener('click', loginAdmin);
+    els.btnVerifyOtp.addEventListener('click', verifyOtp);
+    els.btnLogout.addEventListener('click', clearLogin);
+    els.tabs.addEventListener('click', event => {
+      const btn = event.target.closest('.tab');
+      if (!btn) return;
+      state.filter = btn.dataset.filter;
+      Array.from(els.tabs.querySelectorAll('.tab')).forEach(tab => tab.classList.toggle('active', tab === btn));
+      renderCases();
+    });
+
+    renderSummary(null);
+    renderCases();
+    updateAuthState(state.adminToken ? 'Logged in from saved token' : 'Not logged in');
+
+    if (gasAvailable()) {
+      loadManifest();
+    } else {
+      els.statusText.textContent = 'ต้องเปิดไฟล์นี้ผ่าน Apps Script HtmlService เพื่อรันชุดทดสอบ integration';
+      els.testList.innerHTML = '<div class="empty">ยังไม่พบ google.script.run จึงแสดงผลทดสอบจริงไม่ได้</div>';
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,2163 @@
+<!doctype html>
+<html lang="th">
+
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Product Manager • Open Storefront</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap"
+    rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+
+    .searchbox {
+      border-radius: 999px
+    }
+
+    .table thead th {
+      font-weight: 700;
+      color: #0f172a;
+      border-bottom-color: var(--border)
+    }
+
+    .table tbody td {
+      vertical-align: middle;
+      max-width: 260px;
+    }
+
+    .prod-desc-cell {
+      max-width: 240px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      word-break: break-all;
+    }
+
+    /* Badge pill — เล็ก, subtle */
+    .badge-soft {
+      display: inline-block;
+      font-size: .68rem;
+      font-weight: 700;
+      line-height: 1;
+      padding: .22rem .55rem;
+      border-radius: 999px;
+      letter-spacing: .02em;
+      white-space: nowrap;
+      background: #f1f5f9;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+    }
+    .badge-soft.hot   { background:#fff1f2; color:#e11d48; border-color:#fecdd3; }
+    .badge-soft.new   { background:#f0fdf4; color:#16a34a; border-color:#bbf7d0; }
+    .badge-soft.sale  { background:#fff7ed; color:#ea580c; border-color:#fed7aa; }
+    .badge-soft.promo { background:#faf5ff; color:#9333ea; border-color:#e9d5ff; }
+    .badge-soft.lim   { background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
+    /* .stock-chip styles come from admin-shared.html */
+    /* Variant option card */
+    .opt-card {
+      background: #f8fafc; border: 1px solid #e5e7eb;
+      border-radius: 10px; padding: 10px 12px;
+    }
+    .opt-card + .opt-card { margin-top: 6px; }
+    .btn-xs { padding: .15rem .4rem; font-size: .72rem; line-height: 1.4; }
+    /* Product image preview */
+    #preview { opacity: 0; transition: opacity .3s; display: block; }
+    #preview.loaded { opacity: 1; }
+    #previewEmpty { pointer-events: none; }
+    #preview.loaded ~ #previewEmpty { display: none !important; }
+
+    .thumb {
+      width: 56px;
+      height: 56px;
+      object-fit: cover;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #eee;
+      filter: brightness(0);
+      transition: filter .35s ease
+    }
+
+    .thumb.loaded {
+      filter: brightness(1)
+    }
+
+    .pill {
+      border-radius: 999px
+    }
+
+    .empty {
+      color: var(--muted)
+    }
+
+    .modal-content {
+      border-radius: 16px
+    }
+
+    .table-loading-overlay { position:absolute; inset:0; background:rgba(255,255,255,.6); display:flex; align-items:center; justify-content:center; z-index:10; pointer-events:none; }
+    .table-loading-overlay .spinner-border { width:1.75rem; height:1.75rem; border-width:.2rem; color:#6b7280; }
+    .tbl-wrap-pos { position:relative; }
+    tbody.is-loading { opacity:.5; pointer-events:none; }
+
+    .loading-thumb {
+      width: 56px;
+      height: 56px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f3f4f6
+    }
+  </style>
+</head>
+
+<body>
+<script>window._EXEC_URL = '<?!= execUrl ?>';</script>
+<?!= include('admin-shared') ?>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <img id="brandLogo" alt="logo" style="display:none">
+        <div>
+          <div id="brandName" class="fw-bold brand-skeleton"></div>
+          <div class="small text-muted">Dashboard</div>
+        </div>
+      </div>
+      <nav class="side-nav" id="sideNav">
+        <a class="link" data-page="editstore"><i class="bi bi-paint-bucket"></i> ตกแต่งหน้าร้าน</a>
+        <a class="link active" data-page="product"><i class="bi bi-boxes"></i> จัดการสินค้า</a>
+        <a class="link" data-page="order"><i class="bi bi-receipt"></i> คำสั่งซื้อ</a>
+        <a class="link" data-page="print-order"><i class="bi bi-printer"></i> พิมพ์ใบขนส่ง</a>
+        <a class="link" data-page="shipping"><i class="bi bi-truck"></i> ขนส่ง</a>
+        <a class="link" data-page="payment"><i class="bi bi-qr-code"></i> ตั้งค่าการชำระเงิน</a>
+        <a class="link" data-page="promotion"><i class="bi bi-tag"></i> โปรโมชั่น</a>
+      <a class="link" data-page="gift"><i class="bi bi-gift"></i> ของแถม</a>
+        <a class="link" data-page="user"><i class="bi bi-people"></i> ผู้ดูแลระบบ</a>
+        <a class="link" data-page="legal"><i class="bi bi-file-earmark-text"></i> ข้อมูลทางกฎหมาย</a>
+        <a class="link" data-page="system"><i class="bi bi-shield-check"></i> ตั้งค่าระบบ</a>
+      </nav>
+      <div class="sidebar-footer">
+        <button id="btnLogout" class="btn-logout">
+          <i class="bi bi-box-arrow-right"></i> ออกจากระบบ
+        </button>
+      </div>
+    </aside>
+    <main>
+      <div class="topbar">
+        <div class="wrap">
+          <div class="d-flex align-items-center gap-2">
+            <span class="fw-bold">จัดการสินค้า</span><span class="text-muted">•</span>
+            <span class="text-muted small">เพิ่ม/แก้ไข/ลบ + นำเข้า/ส่งออก</span>
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <button id="btnDeleteSelected" class="btn btn-danger btn-sm pill d-none" onclick="deleteSelectedProducts()">
+              <i class="bi bi-trash me-1"></i>ลบที่เลือก (<span id="selectedCount">0</span>)
+            </button>
+            <label class="btn btn-outline-secondary btn-sm pill mb-0">
+              <i class="bi bi-upload me-1"></i> นำเข้า JSON
+              <input id="fileImport" type="file" accept="application/json" hidden>
+            </label>
+            <button id="btnExport" class="btn btn-outline-secondary btn-sm pill"><i class="bi bi-download me-1"></i> ส่งออก JSON</button>
+            <button id="btnRefresh" class="btn btn-outline-secondary btn-sm pill"><i class="bi bi-arrow-clockwise me-1"></i> รีเฟรช</button>
+            <button id="btnAdd" class="btn btn-dark btn-sm pill"><i class="bi bi-plus-lg me-1"></i> เพิ่มสินค้า</button>
+          </div>
+        </div>
+      </div>
+      <div class="container py-4">
+        <div class="panel p-3 p-md-4">
+          <div class="row g-2 align-items-center mb-3">
+            <div class="col-md-5">
+              <input id="q" type="search" class="form-control" placeholder="ค้นหาชื่อ/รายละเอียด/ป้าย (badge)">
+            </div>
+            <div class="col-md-3">
+              <select id="sort" class="form-select pill">
+                <option value="new">เรียง: ล่าสุด</option>
+                <option value="name-asc">ชื่อ A→Z</option>
+                <option value="name-desc">ชื่อ Z→A</option>
+                <option value="price-asc">ราคา ต่ำ→สูง</option>
+                <option value="price-desc">ราคา สูง→ต่ำ</option>
+              </select>
+            </div>
+            <div class="col-md-4 text-md-end">
+              <span class="text-muted small">รวม <span id="count">0</span> รายการ</span>
+            </div>
+          </div>
+          <div id="prodPgBar" style="display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 0;border-bottom:1px solid #e5e7eb;margin-bottom:8px">
+            <div style="font-size:.8rem;color:#6b7280" id="pgInfo"></div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:.8rem;color:#6b7280">แสดง</span>
+              <select class="form-select form-select-sm" style="width:auto;border-radius:999px" id="pgSize">
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              <span style="font-size:.8rem;color:#6b7280">รายการ</span>
+              <div class="btn-group btn-group-sm" style="margin-left:8px">
+                <button class="btn btn-outline-secondary" id="pgPrev">‹</button>
+                <button class="btn btn-outline-secondary" id="pgNext">›</button>
+              </div>
+            </div>
+          </div>
+          <div class="table-responsive tbl-wrap-pos">
+            <table class="table admin-list-table align-middle">
+              <thead>
+                <tr>
+                  <th style="width:36px"><input type="checkbox" id="chkSelectAll" onclick="toggleSelectAll(this)"></th>
+                  <th style="width:80px">รูป</th>
+                  <th>สินค้า</th>
+                  <th style="width:140px" class="text-end">ราคา</th>
+                  <th style="width:100px" class="admin-cell-center">ป้าย</th>
+                  <th style="width:90px" class="admin-cell-center">คงเหลือ</th>
+                  <th style="width:90px" class="admin-cell-center">สถานะ</th>
+                  <th style="width:160px" class="text-end">การทำงาน</th>
+                </tr>
+              </thead>
+              <tbody id="tbody"></tbody>
+            </table>
+          </div>
+          <div id="empty" class="empty-state d-none">
+            <i class="bi bi-box"></i>
+            <div class="fw-semibold" id="emptyMsg">ยังไม่มีสินค้า</div>
+            <div class="text-muted small mt-1" id="emptyDesc">กดปุ่ม "เพิ่ม" เพื่อเพิ่มสินค้าแรก</div>
+            <button class="btn btn-dark btn-sm pill mt-3 empty-state-cta" id="btnAdd2"><i class="bi bi-plus-lg me-1"></i>เพิ่มสินค้า</button>
+          </div>        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <form class="modal-content" id="formProduct">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalTitle">เพิ่มสินค้า</h5>
+          <button class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">ชื่อสินค้า</label>
+              <input required name="title" class="form-control" maxlength="120">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">ราคา (บาท)</label>
+              <input required name="price" type="number" min="0" step="1" class="form-control">
+            </div>
+            <div class="col-md-12">
+              <label class="form-label">รายละเอียด</label>
+              <textarea name="desc" rows="2" class="form-control" maxlength="300"></textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label d-flex align-items-center justify-content-between">
+                <span>ป้าย (badge)</span>
+                <span id="badgePreview" style="display:none"></span>
+              </label>
+              <select name="badge" class="form-select" id="badgeSelect" onchange="_updateBadgePreview(this.value)">
+                <option value="">— ไม่มี —</option>
+                <option value="ใหม่">ใหม่</option>
+                <option value="ฮอต">ฮอต</option>
+                <option value="ลดราคา">ลดราคา</option>
+                <option value="โปร">โปร</option>
+                <option value="จำกัด">จำกัด</option>
+                <option value="ใกล้หมด">ใกล้หมด</option>
+                <option value="พรีออเดอร์">พรีออเดอร์</option>
+              </select>
+              <div class="form-text text-muted" style="font-size:.72rem">แก้ไขรายการ tag ได้ที่ ตั้งค่าร้านค้า → การ์ดสินค้า</div>
+            </div>
+            <!-- Weight + Stock + Shipping (with integrated active toggle) -->
+            <div class="col-md-6" id="weightCol">
+              <label class="form-label">น้ำหนักสินค้า (กรัม)</label>
+              <div class="input-group">
+                <input name="weight_grams" type="number" min="0" step="1" class="form-control" placeholder="0">
+                <span class="input-group-text">ก.</span>
+              </div>
+            </div>
+            <div class="col-md-6" id="stockCol">
+              <label class="form-label">สินค้าในคลัง</label>
+              <div class="input-group">
+                <input name="stock" type="number" min="-1" step="1" class="form-control" placeholder="-1">
+                <span class="input-group-text">ชิ้น</span>
+              </div>
+              <div class="form-text text-muted" style="font-size:.72rem">-1 หรือว่าง = ไม่จำกัด</div>
+            </div>
+            <div class="col-12" id="shippingSection">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="d-flex align-items-center gap-2">
+                  <span class="fw-semibold" style="font-size:.9rem;color:#111827">วิธีการจัดส่ง <span class="text-danger">*</span></span>
+                  <span id="shippingCountBadge" style="display:none;font-size:.7rem;font-weight:600;
+                        background:#f3f4f6;color:#374151;border-radius:6px;padding:1px 8px;border:1px solid #e5e7eb">0 วิธี</span>
+                </div>
+                <!-- Active toggle — locked to OFF when no shipping selected -->
+                <span id="activeLockNote" style="display:none;font-size:.72rem;color:#9ca3af;align-items:center;gap:4px">
+                  <i class="bi bi-lock-fill" style="font-size:.65rem"></i>กำหนดวิธีจัดส่งก่อน
+                </span>
+              </div>
+              <div id="shippingMethodsCheckboxes"
+                   style="border:1.5px solid #e5e7eb;border-radius:10px;background:#fff;min-height:48px;overflow:hidden">
+                <span class="text-muted small d-block text-center py-3" id="noShippingMsg">
+                  <i class="bi bi-truck me-1 opacity-50"></i>ยังไม่มีบริษัทขนส่ง — ไปจัดการที่เมนู ขนส่ง
+                </span>
+              </div>
+            </div>
+            <div class="col-12" id="saleModeSection" style="border:1.5px solid #e5e7eb;border-radius:10px;padding:12px;background:#fafafa">
+              <label class="form-label fw-semibold" for="saleMode" style="font-size:.9rem;color:#111827">สถานะการขาย</label>
+              <select id="saleMode" class="form-select form-select-sm" onchange="_onSaleModeChange()">
+                <option value="always">เปิดขายทันที</option>
+                <option value="scheduled">ตั้งเวลาเปิดขาย</option>
+                <option value="disabled">ปิดขาย</option>
+              </select>
+              <div id="saleScheduleFields" class="row g-2 mt-2" style="display:none">
+                <div class="col-md-6">
+                  <label class="form-label" style="font-size:.78rem">วันที่เริ่มขาย</label>
+                  <input type="datetime-local" class="form-control form-control-sm" id="saleStartsAt">
+                  <div class="form-text text-muted" style="font-size:.7rem">ว่าง = เริ่มขายทันที</div>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" style="font-size:.78rem">วันที่สิ้นสุดการขาย</label>
+                  <input type="datetime-local" class="form-control form-control-sm" id="saleEndsAt">
+                  <div class="form-text text-muted" style="font-size:.7rem">ว่าง = ไม่มีวันสิ้นสุด</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-12">
+              <label class="form-label d-flex align-items-center justify-content-between mb-2">
+                <span>รูปภาพสินค้า</span>
+                <div class="btn-group btn-group-sm" role="group" aria-label="image source">
+                  <input type="radio" class="btn-check" name="imgMode" id="modeUrl" value="url" checked>
+                  <label class="btn btn-outline-dark" for="modeUrl"><i class="bi bi-link-45deg"></i> URL</label>
+                  <input type="radio" class="btn-check" name="imgMode" id="modeFile" value="file">
+                  <label class="btn btn-outline-dark" for="modeFile"><i class="bi bi-upload"></i> ไฟล์</label>
+                </div>
+              </label>
+              <div class="d-flex gap-3 align-items-start">
+                <!-- preview square -->
+                <div style="flex-shrink:0;width:96px;height:96px;border-radius:12px;border:1.5px solid var(--border);background:#f3f4f6;overflow:hidden;position:relative">
+                  <img id="preview" alt="preview"
+                    style="width:100%;height:100%;object-fit:cover;display:block">
+                  <div id="previewEmpty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:1.4rem">
+                    <i class="bi bi-image"></i>
+                  </div>
+                </div>
+                <!-- input area -->
+                <div style="flex:1;min-width:0">
+                  <div id="imgUrlWrap">
+                    <input name="imageUrl" type="url" class="form-control"
+                      placeholder="https://  (รองรับลิงก์ Drive/ไฟล์ ID)">
+                    <div class="form-text">ใส่ลิงก์ภาพจาก CDN หรือวางลิงก์/ไฟล์ไอดีของ Google Drive ก็ได้</div>
+                  </div>
+                  <div id="imgFileWrap" class="d-none">
+                    <input id="imageFile" type="file" accept="image/*" class="form-control">
+                    <div class="form-text">รองรับ .jpg .png .webp (อัปโหลดไป Apps Script)</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-12">
+              <label class="form-label d-flex align-items-center justify-content-between">
+                <span>รูปภาพเพิ่มเติม</span>
+                <label class="btn btn-sm btn-outline-secondary pill mb-0">
+                  <i class="bi bi-plus-lg me-1"></i>เพิ่มรูป
+                  <input id="extraImgFileInput" type="file" accept="image/*" multiple hidden>
+                </label>
+              </label>
+              <div id="extraImgStrip" style="display:flex;gap:8px;overflow-x:auto;padding:10px 10px 4px;min-height:102px;align-items:flex-start"></div>
+            </div>
+            <div class="col-md-12">
+              <label class="form-label d-flex align-items-center justify-content-between">
+                <span>ตัวเลือกสินค้า (Variants)</span>
+                <button type="button" id="btnAddVariant" class="btn btn-sm btn-outline-secondary pill">
+                  <i class="bi bi-plus-lg me-1"></i>เพิ่ม Variant
+                </button>
+              </label>
+              <div id="variantEditor" class="d-grid gap-2"></div>
+              <div id="variantEmpty" class="text-muted small mt-1 py-2 text-center border rounded-3 bg-light">
+                <i class="bi bi-layers me-1"></i>ยังไม่มีตัวเลือก — กด "+ เพิ่ม Variant" เพื่อเพิ่ม เช่น สี, ขนาด
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary pill" data-bs-dismiss="modal">ยกเลิก</button>
+          <button class="btn btn-dark pill" type="submit"><i class="bi bi-check2 me-1"></i> บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal fade" id="delModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">ลบสินค้า</h5><button class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">ต้องการลบ <b id="delName"></b> ใช่หรือไม่? การลบนี้ไม่สามารถย้อนกลับได้</div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary pill" data-bs-dismiss="modal">ยกเลิก</button>
+          <button type="button" id="btnConfirmDel" class="btn btn-danger pill"><i class="bi bi-trash"></i> ลบ</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    console.log('[SCRIPT] loaded — JS block starting');
+    const brandNameEl = document.getElementById('brandName');
+    const brandLogoEl = document.getElementById('brandLogo');
+    const qEl = document.getElementById('q');
+    const sortEl = document.getElementById('sort');
+    const btnExportEl = document.getElementById('btnExport');
+    const fileImportEl = document.getElementById('fileImport');
+    const btnAddEl = document.getElementById('btnAdd');
+    const btnConfirmDelEl = document.getElementById('btnConfirmDel');
+    const modalTitleEl = document.getElementById('modalTitle');
+
+    function swalErrorBlock(title, text) { return Swal.fire({ icon: 'error', title: title || 'ไม่สำเร็จ', text: text || '', confirmButtonText: 'ปิด', confirmButtonColor: '#dc2626' }) }
+    function swalWarnBlock(title, text) { return Swal.fire({ icon: 'warning', title: title || 'ข้อมูลไม่ครบ', text: text || '', confirmButtonText: 'ตกลง', confirmButtonColor: '#f59e0b' }) }
+
+    function showToast(msg) {
+      const el = document.createElement('div');
+      el.className = 'toast align-items-center text-bg-dark border-0 position-fixed';
+      el.style.right = '12px'; el.style.bottom = '12px'; el.role = 'alert';
+      el.innerHTML = '<div class="d-flex"><div class="toast-body"></div><button class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>';
+      el.querySelector('.toast-body').textContent = msg || '';
+      document.body.appendChild(el);
+      new bootstrap.Toast(el, { delay: 2200 }).show();
+      el.addEventListener('hidden.bs.toast', () => el.remove());
+    }
+
+    const PROD_CACHE_KEY = 'PROD_CACHE_V2';
+    function now() { return Date.now() }
+    function getProdCache() { try { return JSON.parse(localStorage.getItem(PROD_CACHE_KEY) || '[]') } catch { return [] } }
+    function setProdCache(items) { try { localStorage.setItem(PROD_CACHE_KEY, JSON.stringify(items || [])) } catch { } }
+
+    // In-memory image cache — fast sync access สำหรับ session นี้
+    const _imgMem = {};
+    function getImgCache() { return _imgMem; }
+
+    // IndexedDB image cache — persistent, ไม่มี size limit
+    const _idb = (() => {
+      let _dbP = null;
+      const DB = 'OpenStorefrontImgCache', ST = 'imgs';
+      function open() {
+        if (!_dbP) _dbP = new Promise((ok, fail) => {
+          const r = indexedDB.open(DB, 1);
+          r.onupgradeneeded = e => e.target.result.createObjectStore(ST);
+          r.onsuccess = e => ok(e.target.result);
+          r.onerror = () => fail(r.error);
+        }).catch(() => null);
+        return _dbP;
+      }
+      return {
+        get: async (k) => {
+          try {
+            const db = await open();
+            if (!db) return null;
+            return await new Promise(res => {
+              const q = db.transaction(ST).objectStore(ST).get(k);
+              q.onsuccess = () => res(q.result ?? null);
+              q.onerror = () => res(null);
+            });
+          } catch { return null; }
+        },
+        set: (k, v) => {
+          open().then(db => {
+            if (!db) return;
+            db.transaction(ST, 'readwrite').objectStore(ST).put(v, k);
+          }).catch(() => {});
+        }
+      };
+    })();
+
+    // driveFileToDataUrl: memory → IDB → RPC (เรียง priority)
+    // deduplication: ถ้า request เดียวกัน in-flight อยู่ คืน promise เดิม (ไม่ยิง RPC ซ้ำ)
+    const _driveInFlight = {};
+    async function driveFileToDataUrl(fileId) {
+      if (!fileId) return '';
+      if (_imgMem[fileId]) return _imgMem[fileId];
+      if (_driveInFlight[fileId]) return _driveInFlight[fileId];
+      const p = (async () => {
+        const fromIdb = await _idb.get(fileId);
+        if (fromIdb) { _imgMem[fileId] = fromIdb; return fromIdb; }
+        try {
+          const r = await callRpc('getFileDataUrlRpc', fileId);
+          if (r && r.dataUrl) {
+            _imgMem[fileId] = r.dataUrl;
+            _idb.set(fileId, r.dataUrl); // async fire-and-forget
+            return r.dataUrl;
+          }
+        } catch {}
+        return '';
+      })();
+      p.finally(() => { delete _driveInFlight[fileId]; });
+      _driveInFlight[fileId] = p;
+      return p;
+    }
+    function parseDriveId(input) {
+      if (!input) return '';
+      const s = String(input).trim();
+      if (/^[\w-]{20,}$/.test(s)) return s;
+      const m1 = s.match(/\/file\/d\/([^/]+)/); if (m1) return m1[1];
+      const m2 = s.match(/[?&]id=([^&]+)/); if (m2) return m2[1];
+      return '';
+    }
+    function driveViewUrl(fileId) { return 'https://drive.google.com/uc?export=view&id=' + fileId }
+    function money(n) { return '฿' + Number(n || 0).toLocaleString() }
+
+    let opSeq = 0;
+    const inFlight = new Map();
+    function beginOp(id) { const token = ++opSeq; inFlight.set(String(id), token); return token }
+    function isCurrentOp(id, token) { return inFlight.get(String(id)) === token }
+    function endOp(id, token) { if (isCurrentOp(id, token)) inFlight.delete(String(id)) }
+
+    let items = [];
+    let _pgPage = 1, _pgSize = 20, _pgTotal = 0, _pgLoading = false, _firstLoad = true;
+    let _searchDebounce = null;
+    let editingId = null, deletingId = null;
+    let variantGroups = []; // [{name, type:'text'|'image', options:[{label,price,weight_grams,image}]}]
+    let extraImagesState = []; // [{driveFileId, url, dataURL}]
+
+    function escHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+    const tbody = document.getElementById('tbody');
+    const empty = document.getElementById('empty');
+    const countEl = document.getElementById('count');
+
+    function imgResolveLikePreview(raw) {
+      const id = parseDriveId(raw);
+      if (id) return { type: 'drive', id, url: driveViewUrl(id) };
+      if (raw) return { type: 'url', url: String(raw) };
+      return { type: 'none' };
+    }
+
+    function buildCellText(title, desc) {
+      const wrap = document.createElement('div');
+      const t = document.createElement('div'); t.className = 'admin-main-text'; t.textContent = title || '-';
+      const d = document.createElement('div'); d.className = 'admin-sub-text prod-desc-cell'; d.textContent = desc || '';
+      wrap.appendChild(t); wrap.appendChild(d);
+      return wrap;
+    }
+
+    function renderCountEmpty(rows) {
+      countEl.textContent = rows.length;
+      if (rows.length === 0) { empty.classList.remove('d-none') } else { empty.classList.add('d-none') }
+    }
+
+    function _currentSortValue() {
+      const s = document.getElementById('sort').value;
+      // Map UI sort to backend sort param (productListRpc supports new/name-asc/price-asc...)
+      if (s === 'name-asc' || s === 'name-desc' || s === 'price-asc' || s === 'price-desc') return s;
+      return 'new';
+    }
+
+    function productSaleRuntimeStatus(p) {
+      const mode = String(p?.sale_mode || p?.sale_status || 'always').toLowerCase();
+      if (mode === 'disabled' || p?.active === false || p?.sale_enabled === false) return 'disabled';
+      if (mode === 'expired') return 'expired';
+
+      const hasWindow = mode === 'scheduled' || !!p?.sale_starts_at || !!p?.sale_ends_at;
+      if (!hasWindow) return 'active';
+
+      const now = Date.now();
+      const start = p.sale_starts_at ? new Date(p.sale_starts_at).getTime() : 0;
+      const end = p.sale_ends_at ? new Date(p.sale_ends_at).getTime() : 0;
+      if (end && !Number.isNaN(end) && end < now) return 'expired';
+      if (start && !Number.isNaN(start) && start > now) return 'scheduled';
+      return 'active';
+    }
+
+    function applyImgLoad(img, p) {
+      let srcCandidate = '';
+      if (p.image_url) srcCandidate = p.image_url;
+      if (!srcCandidate && p.image) srcCandidate = p.image;
+      if (!srcCandidate && p.image_drive_file_id) srcCandidate = driveViewUrl(p.image_drive_file_id);
+      const resolved = imgResolveLikePreview(srcCandidate);
+      img.onload = () => img.classList.add('loaded');
+      img.onerror = () => {
+        if (p.image_drive_file_id) { img.src = driveViewUrl(p.image_drive_file_id) }
+        else { img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="100%" height="100%" fill="#e5e7eb"/></svg>') }
+      };
+      if (resolved.type === 'drive') {
+        const map = getImgCache();
+        if (map[resolved.id]) { img.src = map[resolved.id] }
+        else {
+          // ไม่ตั้ง img.src = '' เพราะ Chrome จะยิง onerror ทำให้ shimmer หายและรูปดำ
+          driveFileToDataUrl(resolved.id).then(u => { img.src = u || resolved.url }).catch(() => { img.src = resolved.url })
+        }
+      } else if (resolved.type === 'url') {
+        img.src = resolved.url;
+      } else {
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="100%" height="100%" fill="#e5e7eb"/></svg>');
+      }
+    }
+    let isLoading = false;
+
+    function renderLoadingRows(rows = 1) {
+      isLoading = true;
+      empty.classList.add('d-none');
+      countEl.textContent = '—';
+      tbody.innerHTML = '';
+      for (let i = 0; i < rows; i++) {
+        const tr = document.createElement('tr');
+
+        const tdChk = document.createElement('td');
+        tdChk.innerHTML = '<input type="checkbox" disabled>';
+        tr.appendChild(tdChk);
+
+        const tdImg = document.createElement('td');
+        const thumbWrap = document.createElement('div');
+        thumbWrap.style.cssText = 'position:relative;width:56px;height:56px;border-radius:12px;overflow:hidden;background:#f3f4f6';
+        const shimEl = document.createElement('div');
+        shimEl.className = 'skel';
+        shimEl.style.cssText = 'position:absolute;inset:0;height:100%;border-radius:0';
+        thumbWrap.appendChild(shimEl);
+        tdImg.appendChild(thumbWrap); tr.appendChild(tdImg);
+
+        const tdTitle = document.createElement('td');
+        tdTitle.innerHTML = '<div class="skel lg" style="width:48%"></div>'
+          + '<div class="mt-2 skel" style="width:80%"></div>';
+        tr.appendChild(tdTitle);
+
+        const tdPrice = document.createElement('td'); tdPrice.className = 'text-end';
+        tdPrice.innerHTML = '<div class="skel lg" style="width:70px;margin-left:auto"></div>';
+        tr.appendChild(tdPrice);
+
+        const tdBadge = document.createElement('td');
+        tdBadge.innerHTML = '<div class="skel pill"></div>';
+        tr.appendChild(tdBadge);
+
+        const tdAct = document.createElement('td'); tdAct.className = 'text-end';
+        tdAct.innerHTML = '<div class="btn-group">'
+          + '<button class="btn btn-outline-secondary btn-sm pill disabled"><span class="spinner-border spinner-border-sm"></span></button>'
+          + '<button class="btn btn-outline-secondary btn-sm pill disabled"><span class="spinner-border spinner-border-sm"></span></button>'
+          + '</div>';
+        tr.appendChild(tdAct);
+
+        tbody.appendChild(tr);
+      }
+    }
+
+    function setLoading(flag) {
+      if (flag) { renderLoadingRows() }
+      else { isLoading = false; render() }
+    }
+
+    function _pgUpdateProdBar() {
+      const bar = document.getElementById('prodPgBar');
+      if (!bar) return;
+      const total = _pgTotal;
+      const totalPages = Math.max(1, Math.ceil(total / _pgSize));
+      _pgPage = Math.max(1, Math.min(_pgPage, totalPages));
+      const start = (_pgPage - 1) * _pgSize;
+      const from = total === 0 ? 0 : start + 1;
+      const to = Math.min(start + _pgSize, total);
+      bar.style.display = total > 0 ? 'flex' : 'none';
+      const info = document.getElementById('pgInfo'); if (info) info.textContent = total === 0 ? '' : 'แสดง ' + from + '–' + to + ' จาก ' + total + ' รายการ';
+      const prev = document.getElementById('pgPrev'); if (prev) prev.disabled = _pgPage <= 1 || _pgLoading;
+      const next = document.getElementById('pgNext'); if (next) next.disabled = _pgPage >= totalPages || _pgLoading;
+    }
+
+    function _setPgControlsDisabled(disabled) {
+      ['pgPrev','pgNext','pgSize'].forEach(function(id){ const el = document.getElementById(id); if (el) el.disabled = !!disabled; });
+    }
+
+    function _showOverlay() {
+      const tb = document.getElementById('tbody');
+      const wrap = tb ? tb.closest('.table-responsive') : null;
+      if (tb) tb.classList.add('is-loading');
+      if (wrap && !wrap.querySelector('.table-loading-overlay')) {
+        wrap.classList.add('tbl-wrap-pos');
+        const ov = document.createElement('div');
+        ov.className = 'table-loading-overlay';
+        ov.innerHTML = '<div class="spinner-border" role="status"></div>';
+        wrap.appendChild(ov);
+      }
+    }
+    function _hideOverlay() {
+      const tb = document.getElementById('tbody');
+      if (tb) tb.classList.remove('is-loading');
+      const wrap = tb ? tb.closest('.table-responsive') : null;
+      const ov = wrap ? wrap.querySelector('.table-loading-overlay') : null;
+      if (ov) ov.remove();
+    }
+
+    function render() {
+      // server has already filtered/sorted/paginated → items is the current page
+      countEl.textContent = _pgTotal;
+      if (_pgTotal === 0 && items.length === 0) {
+        const _isFiltered = qEl.value.trim();
+        empty.classList.remove('d-none');
+        const _msgEl = document.getElementById('emptyMsg');
+        const _descEl = document.getElementById('emptyDesc');
+        const _btnAdd2 = document.getElementById('btnAdd2');
+        if (_msgEl) _msgEl.textContent = _isFiltered ? 'ไม่พบสินค้าที่ตรงกับการค้นหา' : 'ยังไม่มีสินค้า';
+        if (_descEl) _descEl.style.display = _isFiltered ? 'none' : '';
+        if (_btnAdd2) _btnAdd2.style.display = _isFiltered ? 'none' : '';
+      } else { empty.classList.add('d-none'); }
+      tbody.innerHTML = '';
+      _pgUpdateProdBar();
+      for (const p of items) {
+        const tr = document.createElement('tr');
+
+        const tdChk = document.createElement('td');
+        tdChk.innerHTML = `<input type="checkbox" class="row-chk" value="${p.id}" onchange="updateBulkDeleteBar()">`;
+        tr.appendChild(tdChk);
+
+        const tdImg = document.createElement('td');
+        const thumbWrap = document.createElement('div');
+        thumbWrap.style.cssText = 'position:relative;width:64px;height:64px;border-radius:12px;overflow:hidden;background:#f3f4f6';
+        const shimEl = document.createElement('div');
+        shimEl.className = 'skel';
+        shimEl.style.cssText = 'position:absolute;inset:0;height:100%;border-radius:0;z-index:1';
+        thumbWrap.appendChild(shimEl);
+        const img = document.createElement('img');
+        img.className = 'thumb';
+        img.alt = '';
+        img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .25s;z-index:2;border:none;border-radius:0';
+        thumbWrap.appendChild(img);
+        tdImg.appendChild(thumbWrap);
+        tr.appendChild(tdImg);
+        applyImgLoad(img, p);
+        // Chain shimmer behaviour onto whatever onload/onerror applyImgLoad set
+        const _origLoad = img.onload, _origErr = img.onerror;
+        const _showImg = () => { img.style.opacity = '1'; shimEl.style.display = 'none'; img.classList.add('loaded'); };
+        img.onload  = function() { if (_origLoad) _origLoad.call(this); _showImg(); };
+        img.onerror = function() { if (_origErr)  _origErr.call(this);  _showImg(); };
+        // Handle case where image was already loaded synchronously from cache
+        if (img.complete && img.naturalWidth > 0) _showImg();
+
+        const tdTitle = document.createElement('td');
+        tdTitle.appendChild(buildCellText(p.title, p.desc));
+        tr.appendChild(tdTitle);
+
+        const tdPrice = document.createElement('td');
+        tdPrice.className = 'text-end';
+        const priceWrap = document.createElement('div'); priceWrap.textContent = money(p.price);
+        tdPrice.appendChild(priceWrap);
+        tr.appendChild(tdPrice);
+
+        const tdBadge = document.createElement('td'); tdBadge.className = 'admin-cell-center';
+        if (p.badge) {
+          const b = document.createElement('span');
+          // Try configured tag colors
+          try {
+            const _cfgRaw = JSON.parse(localStorage.getItem('SHOP_CONFIG_SIMPLE') || 'null');
+            const _cfgTag = (_cfgRaw?.productTags || []).find(t => t.label === p.badge);
+            if (_cfgTag && _cfgTag.bg) {
+              b.className = 'admin-tag badge-soft';
+              b.style.background = _cfgTag.bg;
+              b.style.color = _cfgTag.text || '#ffffff';
+              b.style.borderColor = 'transparent';
+            } else {
+              const bl = p.badge.toLowerCase();
+              var badgeMod = '';
+              if (bl === 'hot' || bl === 'ฮอต' || bl === 'ยอดนิยม') badgeMod = ' hot';
+              else if (bl === 'new' || bl === 'ใหม่') badgeMod = ' new';
+              else if (bl === 'sale' || bl === 'ลดราคา' || bl === 'ลด') badgeMod = ' sale';
+              else if (bl === 'promo' || bl === 'โปรโมชัน' || bl === 'โปร') badgeMod = ' promo';
+              else if (bl === 'limited' || bl === 'จำกัด' || bl === 'limited edition') badgeMod = ' lim';
+              b.className = 'admin-tag badge-soft' + badgeMod;
+            }
+          } catch (_) {
+            b.className = 'admin-tag badge-soft';
+          }
+          b.textContent = p.badge;
+          tdBadge.appendChild(b);
+        } else {
+          const m = document.createElement('span'); m.className = 'admin-muted-dash'; m.textContent = '—'; tdBadge.appendChild(m);
+        }
+        tr.appendChild(tdBadge);
+
+        // Stock column — ถ้ามี variants ให้แสดงผลรวมจาก option stocks แทน product.stock
+        const tdStock = document.createElement('td'); tdStock.className = 'admin-cell-center';
+        const sc = document.createElement('span');
+        const _variants = p.variants || [];
+        const _allOpts = _variants.flatMap(g => g.options || []);
+        const _hasOptStock = _allOpts.some(o => o.stock !== undefined && o.stock !== -1);
+        let sk;
+        if (_variants.length > 0 && _hasOptStock) {
+          // ถ้า option ใดเป็น -1 (ไม่จำกัด) → ยังมีสินค้าอยู่ → แสดง ∞
+          const _hasAnyUnlimited = _allOpts.some(o => o.stock === undefined || o.stock === -1);
+          sk = _hasAnyUnlimited ? -1 : _allOpts.reduce((s, o) => s + Number(o.stock), 0);
+        } else if (_variants.length > 0) {
+          sk = -1; // ยังไม่ตั้ง stock ต่อ option เลย
+        } else {
+          sk = (p.stock !== undefined && p.stock !== null) ? Number(p.stock) : -1;
+        }
+        if (sk === -1) {
+          sc.className = 'admin-stock stock-chip s-inf'; sc.innerHTML = '<i class="bi bi-infinity" style="font-size:.65rem"></i>';
+        } else if (sk === 0) {
+          sc.className = 'admin-stock stock-chip s-zero'; sc.innerHTML = '<i class="bi bi-x-circle" style="font-size:.6rem"></i> หมด';
+        } else if (sk <= 5) {
+          sc.className = 'admin-stock stock-chip s-low'; sc.textContent = sk + ' ชิ้น';
+        } else {
+          sc.className = 'admin-stock stock-chip s-ok'; sc.textContent = sk + ' ชิ้น';
+        }
+        tdStock.appendChild(sc); tr.appendChild(tdStock);
+
+        const tdStatus = document.createElement('td'); tdStatus.className = 'admin-cell-center';
+        const saleState = productSaleRuntimeStatus(p);
+        const statusBadge = document.createElement('span');
+        if (saleState === 'disabled') {
+          statusBadge.className = 'admin-status disabled';
+          statusBadge.innerHTML = '<i class="bi bi-dash-circle" style="font-size:.6rem"></i> ปิดขาย';
+        } else if (saleState === 'expired') {
+          statusBadge.className = 'admin-status expired';
+          statusBadge.innerHTML = '<i class="bi bi-x-circle" style="font-size:.6rem"></i> หมดเวลา';
+        } else if (saleState === 'scheduled') {
+          statusBadge.className = 'admin-status scheduled';
+          statusBadge.innerHTML = '<i class="bi bi-clock" style="font-size:.6rem"></i> ตั้งเวลา';
+        } else {
+          statusBadge.className = 'admin-status active';
+          statusBadge.innerHTML = '<i class="bi bi-check-circle" style="font-size:.6rem"></i> เปิดขาย';
+        }
+        tdStatus.appendChild(statusBadge); tr.appendChild(tdStatus);
+
+        const tdAct = document.createElement('td'); tdAct.className = 'text-end';
+        const g = document.createElement('div'); g.className = 'admin-actions';
+        const ed = document.createElement('button'); ed.className = 'admin-action-btn'; ed.setAttribute('data-edit', p.id); ed.title = 'แก้ไข'; ed.innerHTML = '<i class="bi bi-pencil-square"></i>';
+        const de = document.createElement('button'); de.className = 'admin-action-btn is-danger'; de.setAttribute('data-del', p.id); de.title = 'ลบ'; de.innerHTML = '<i class="bi bi-trash"></i>';
+        g.appendChild(ed); g.appendChild(de); tdAct.appendChild(g); tr.appendChild(tdAct);
+
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function fetchPage({ silent = false } = {}) {
+      if (_pgLoading) return;
+      _pgLoading = true;
+      let _refetch = false;
+      _setPgControlsDisabled(true);
+      if (!silent) {
+        if (_firstLoad) renderLoadingRows(_pgSize);
+        else _showOverlay();
+      }
+      try {
+        const q = qEl.value.trim();
+        const sort = _currentSortValue();
+        const res = await _rpc('productListRpc', { q, sort, includeAll: true, offset: (_pgPage - 1) * _pgSize, limit: _pgSize });
+        // {ok:false} resolves through _rpc — surface it as a load error instead of
+        // silently showing an empty product list.
+        if (!res || res.ok === false) throw new Error((res && res.error) || 'โหลดรายการสินค้าไม่สำเร็จ');
+        const newItems = (res && res.items) || [];
+        _pgTotal = Number((res && res.total) || newItems.length);
+
+        if (newItems.length === 0 && _pgTotal > 0) {
+          const _tp = Math.max(1, Math.ceil(_pgTotal / _pgSize));
+          const _cl = Math.max(1, Math.min(_pgPage, _tp));
+          if (_cl !== _pgPage) { _pgPage = _cl; _refetch = true; return; }
+        }
+
+        // pre-warm image cache for current page only
+        const ids = newItems.map(p => p.image_drive_file_id).filter(Boolean);
+        const need = ids.filter(id => !getImgCache()[id]);
+        if (need.length) await Promise.allSettled(need.map(id => driveFileToDataUrl(id)));
+
+        items = newItems;
+        setProdCache(items);
+        isLoading = false;
+        _firstLoad = false;
+        render();
+      } catch (e) {
+        if (!silent) { isLoading = false; tbody.innerHTML = ''; }
+        showToast('โหลดข้อมูลไม่สำเร็จ: ' + (e?.message || e));
+        if (!silent) throw e;
+      } finally {
+        _pgLoading = false;
+        _setPgControlsDisabled(false);
+        _hideOverlay();
+        if (_refetch) fetchPage({ silent });
+      }
+    }
+
+    // Back-compat shim: keep loadFromServer name for existing call sites
+    async function loadFromServer(silent = false) { return fetchPage({ silent }); }
+
+    async function load() {
+      // post-mutation refresh: preserve current page and use overlay (not first-load skeleton)
+      await fetchPage({ silent: false });
+    }
+
+
+    qEl.addEventListener('input', () => {
+      if (_searchDebounce) clearTimeout(_searchDebounce);
+      _searchDebounce = setTimeout(() => { _pgPage = 1; fetchPage(); }, 300);
+    });
+    sortEl.addEventListener('change', () => { _pgPage = 1; fetchPage(); });
+    document.getElementById('pgPrev').addEventListener('click', () => { if (_pgPage > 1 && !_pgLoading) { _pgPage--; fetchPage(); } });
+    document.getElementById('pgNext').addEventListener('click', () => { const _tp = Math.max(1, Math.ceil(_pgTotal / _pgSize)); if (!_pgLoading && _pgPage < _tp) { _pgPage++; fetchPage(); } });
+    document.getElementById('pgSize').addEventListener('change', function() { _pgSize = parseInt(this.value, 10) || 20; _pgPage = 1; fetchPage(); });
+    tbody.addEventListener('click', (e) => {
+      const ed = e.target.closest('[data-edit]'); const de = e.target.closest('[data-del]');
+      if (ed) openEdit(ed.getAttribute('data-edit'));
+      if (de) openDelete(de.getAttribute('data-del'));
+    });
+    async function toPortableItem(p) {
+      const out = {
+        title: p.title || '',
+        desc: p.desc || '',
+        price: p.price || 0,
+        badge: p.badge || '',
+        weight_grams: p.weight_grams || 0,
+        variants: p.variants || []
+        // active และ allowed_shipping_ids ไม่ export — ต้องตั้งค่าใหม่ในร้านปลายทาง
+      };
+      let src = p.image_url || p.image || (p.image_drive_file_id ? driveViewUrl(p.image_drive_file_id) : '');
+      const id = parseDriveId(src);
+      if (id) {
+        try {
+          const map = getImgCache();
+          const dataUrl = map[id] || await driveFileToDataUrl(id);
+          if (dataUrl && dataUrl.startsWith('data:image')) out.image = dataUrl;
+          else out.image_url = driveViewUrl(id);
+        } catch {
+          out.image_url = driveViewUrl(id);
+        }
+      } else if (src && String(src).startsWith('data:image')) {
+        out.image = src;
+      } else if (src) {
+        out.image_url = src;
+      } else {
+        out.image_url = '';
+      }
+      return out;
+    }
+
+    document.getElementById('btnRefresh').onclick = async () => {
+      const icon = document.querySelector('#btnRefresh i');
+      if (icon) { icon.style.transition = 'transform .5s'; icon.style.transform = 'rotate(360deg)'; setTimeout(() => { icon.style.transform = ''; icon.style.transition = ''; }, 500); }
+      showHUD('กำลังรีเฟรช...');
+      try {
+        const deactivateRes = await _rpc('adminDeactivateOrphanedProductsRpc').catch(() => null);
+        await Promise.all([loadFromServer(false), loadShippingCompanies()]);
+        const count = deactivateRes?.deactivated || 0;
+        hideHUD('ok', count > 0 ? `รีเฟรชแล้ว — ปิดสินค้า ${count} รายการที่ไม่มีขนส่ง` : 'รีเฟรชแล้ว');
+        if (count > 0) showToast(`ปิดสินค้าอัตโนมัติ ${count} รายการ เนื่องจากไม่มีวิธีจัดส่งที่ใช้งานได้`);
+      } catch (e) {
+        hideHUD('err', 'รีเฟรชไม่สำเร็จ');
+        showToast('รีเฟรชไม่สำเร็จ: ' + (e?.message || e));
+      }
+    };
+
+    btnExportEl.onclick = async () => {
+      try {
+        showHUD('กำลังเตรียมไฟล์ส่งออก...');
+        const list = await Promise.all(items.map(toPortableItem));
+        const payload = JSON.stringify(list, null, 2);
+        const blob = new Blob([payload], { type: "application/json" });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'products-with-images.json';
+        a.click();
+        hideHUD('ok', 'ส่งออกแล้ว');
+        showToast('ส่งออกไฟล์พร้อมรูปสำเร็จ');
+      } catch (e) {
+        hideHUD('err', 'ส่งออกไม่สำเร็จ');
+        showToast('ส่งออกไม่สำเร็จ: ' + (e?.message || e));
+      }
+    };
+
+
+    fileImportEl.onchange = (e) => {
+      const f = e.target.files?.[0]; if (!f) return;
+      const r = new FileReader();
+      r.onload = async () => {
+        try {
+          const data = JSON.parse(r.result || '[]');
+          const arr = Array.isArray(data) ? data : (Array.isArray(data.products) ? data.products : []);
+          if (!arr.length) throw new Error('ไม่พบรายการสินค้าในไฟล์');
+          showHUD('กำลังนำเข้า...');
+
+          for (const raw of arr) {
+            const payload = {
+              title: raw.title || '',
+              desc: raw.desc || '',
+              price: Number(raw.price || 0),
+              badge: raw.badge || '',
+              weight_grams: Number(raw.weight_grams || 0),
+              sale_mode: 'disabled',
+              sale_starts_at: '',
+              sale_ends_at: '',
+              active: false,
+              variants: Array.isArray(raw.variants) ? raw.variants : [],
+              image: null
+            };
+
+            let srcImage = raw.image || raw.image_url || '';
+            const driveId = raw.image_drive_file_id || parseDriveId(srcImage);
+
+            if (typeof srcImage === 'string' && srcImage.startsWith('data:image')) {
+              const mime = srcImage.substring(5, srcImage.indexOf(';')) || 'image/jpeg';
+              payload.image = { mode: 'file', base64: srcImage, filename: 'import-' + Date.now() + '.' + (mime.split('/')[1] || 'jpg'), contentType: mime };
+            } else if (driveId) {
+              try {
+                const du = await driveFileToDataUrl(driveId);
+                if (du && du.startsWith('data:image')) {
+                  const mime = du.substring(5, du.indexOf(';')) || 'image/jpeg';
+                  payload.image = { mode: 'file', base64: du, filename: 'import-' + driveId + '.' + (mime.split('/')[1] || 'jpg'), contentType: mime };
+                } else {
+                  payload.image = { mode: 'url', url: driveViewUrl(driveId) };
+                }
+              } catch {
+                payload.image = { mode: 'url', url: driveViewUrl(driveId) };
+              }
+            } else if (srcImage) {
+              payload.image = { mode: 'url', url: srcImage };
+            }
+
+            const tempId = 'temp-' + Math.random().toString(36).slice(2);
+            items.unshift({
+              id: tempId,
+              title: payload.title,
+              desc: payload.desc,
+              price: payload.price,
+              badge: payload.badge,
+              sale_mode: payload.sale_mode,
+              sale_starts_at: payload.sale_starts_at,
+              sale_ends_at: payload.sale_ends_at,
+              active: payload.active,
+              sale_enabled: payload.active,
+              variants: payload.variants,
+              image_url: payload.image?.mode === 'url' ? payload.image.url : (payload.image?.mode === 'file' ? payload.image.base64 : ''),
+              image_drive_file_id: ''
+            });
+            render();
+
+            const createRes = await _rpc('productCreateRpc', payload).catch(err => { throw err; });
+            if (!createRes || createRes.ok === false) {
+              const i = items.findIndex(x => String(x.id) === String(tempId)); if (i > -1) { items.splice(i, 1); render(); }
+              throw new Error(createRes?.error || 'สร้างสินค้าไม่สำเร็จ');
+            }
+          }
+
+          await load();
+          hideHUD('ok', 'นำเข้าเสร็จ');
+          showToast('นำเข้าสำเร็จ');
+        } catch (err) {
+          hideHUD('err', 'นำเข้าไม่สำเร็จ');
+          showToast('นำเข้าไม่สำเร็จ: ' + err.message);
+        }
+      };
+      r.readAsText(f);
+    };
+
+
+    let editModal, delModal;
+    try {
+      editModal = new bootstrap.Modal(document.getElementById('editModal'));
+      (function(){
+      })();
+      delModal  = new bootstrap.Modal(document.getElementById('delModal'));
+      console.log('[SCRIPT] Bootstrap modals OK');
+    } catch(e) {
+      console.error('[SCRIPT] Bootstrap Modal init failed:', e);
+    }
+    const form = document.getElementById('formProduct');
+    const preview = document.getElementById('preview');
+    const imageFileInput = document.getElementById('imageFile');
+    const imgUrlWrap = document.getElementById('imgUrlWrap');
+    const imgFileWrap = document.getElementById('imgFileWrap');
+    let imgMode = 'url';
+    let imageDataURL = '';
+    const PRODUCT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+    function _formatBytes(bytes) {
+      if (!bytes && bytes !== 0) return '';
+      if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1).replace(/\.0$/, '') + ' MB';
+      return Math.ceil(bytes / 1024) + ' KB';
+    }
+
+    function _dataUrlByteSize(dataUrl) {
+      const raw = String(dataUrl || '');
+      const comma = raw.indexOf(',');
+      const b64 = comma >= 0 ? raw.slice(comma + 1) : raw;
+      return Math.ceil(b64.length * 0.75);
+    }
+
+    function _showImageSizeAlert(items) {
+      const rows = (items || []).slice(0, 6).map(item =>
+        '<div style="display:flex;gap:.55rem;align-items:flex-start;padding:.45rem .55rem;border:1px solid #fee2e2;background:#fff7f7;border-radius:10px;margin-top:.4rem">' +
+          '<i class="bi bi-exclamation-circle-fill" style="color:#dc2626;margin-top:.08rem"></i>' +
+          '<div><div style="font-weight:700;color:#111827;font-size:.86rem">' + item.label + '</div>' +
+          '<div style="color:#6b7280;font-size:.78rem;line-height:1.45">ขนาดไฟล์ ' + _formatBytes(item.size) + ' เกินขีดจำกัด ' + _formatBytes(PRODUCT_IMAGE_MAX_BYTES) + '</div></div>' +
+        '</div>'
+      ).join('');
+      const more = items.length > 6
+        ? '<div style="font-size:.78rem;color:#6b7280;margin-top:.55rem">และมีรูปภาพเพิ่มเติมอีก ' + (items.length - 6) + ' รายการที่ต้องปรับขนาด</div>'
+        : '';
+      return Swal.fire({
+        icon: 'warning',
+        title: 'รูปภาพมีขนาดใหญ่เกินไป',
+        html:
+          '<div style="text-align:left">' +
+            '<div style="font-size:.86rem;color:#6b7280;line-height:1.6;margin-bottom:.45rem">โปรดลดขนาดไฟล์รูปภาพก่อนบันทึกสินค้า ระบบรองรับไฟล์ละไม่เกิน ' + _formatBytes(PRODUCT_IMAGE_MAX_BYTES) + '</div>' +
+            rows + more +
+          '</div>',
+        confirmButtonText: 'รับทราบ',
+        confirmButtonColor: '#111827',
+        width: 520
+      });
+    }
+
+    function _validateImageFile(file, label) {
+      if (!file || file.size <= PRODUCT_IMAGE_MAX_BYTES) return true;
+      _showImageSizeAlert([{ label: label || file.name || 'รูปภาพ', size: file.size }]);
+      return false;
+    }
+
+    function _collectOversizedSelectedImages() {
+      const found = [];
+      if (imageDataURL) {
+        const size = _dataUrlByteSize(imageDataURL);
+        if (size > PRODUCT_IMAGE_MAX_BYTES) found.push({ label: 'รูปภาพสินค้า', size });
+      }
+      extraImagesState.forEach((img, idx) => {
+        if (!img.dataURL) return;
+        const size = _dataUrlByteSize(img.dataURL);
+        if (size > PRODUCT_IMAGE_MAX_BYTES) found.push({ label: 'รูปภาพเพิ่มเติม #' + (idx + 1), size });
+      });
+      variantGroups.forEach((group, gi) => {
+        (group.options || []).forEach((opt, oi) => {
+          if (!opt.imageDataURL) return;
+          const size = _dataUrlByteSize(opt.imageDataURL);
+          if (size > PRODUCT_IMAGE_MAX_BYTES) {
+            found.push({ label: 'รูปภาพ Variant ' + (group.name || ('กลุ่มที่ ' + (gi + 1))) + ' / ตัวเลือก #' + (oi + 1), size });
+          }
+        });
+      });
+      return found;
+    }
+
+    function _setProductFormSaving(isSaving) {
+      const btn = form.querySelector('button[type="submit"]');
+      if (!btn) return;
+      btn.disabled = !!isSaving;
+      btn.innerHTML = isSaving
+        ? '<span class="spinner-border spinner-border-sm me-1"></span> กำลังบันทึก'
+        : '<i class="bi bi-check2 me-1"></i> บันทึก';
+    }
+
+    function setMode(mode) {
+      imgMode = mode;
+      if (mode === 'url') { imgUrlWrap.classList.remove('d-none'); imgFileWrap.classList.add('d-none') }
+      else { imgFileWrap.classList.remove('d-none'); imgUrlWrap.classList.add('d-none') }
+    }
+    document.getElementById('modeUrl').addEventListener('change', () => setMode('url'));
+    document.getElementById('modeFile').addEventListener('change', () => setMode('file'));
+
+    form.imageUrl?.addEventListener('input', async (e) => {
+      if (imgMode !== 'url') return;
+      const raw = e.target.value.trim();
+      const id = parseDriveId(raw);
+      preview.onload = () => preview.classList.add('loaded');
+      preview.classList.remove('loaded'); preview.src = '';
+      if (id) {
+        const map = getImgCache();
+        if (map[id]) { preview.src = map[id] }
+        else {
+          try { const du = await driveFileToDataUrl(id); preview.src = du || driveViewUrl(id) }
+          catch { preview.src = driveViewUrl(id) }
+        }
+      } else {
+        preview.src = raw || '';
+      }
+    });
+
+    imageFileInput.addEventListener('change', (e) => {
+      const f = e.target.files?.[0]; if (!f) return;
+      if (!_validateImageFile(f, 'รูปภาพสินค้า')) { e.target.value = ''; return; }
+      const fr = new FileReader(); fr.onload = () => { imageDataURL = String(fr.result || ''); preview.classList.remove('loaded'); preview.onload = () => preview.classList.add('loaded'); preview.src = imageDataURL }; fr.readAsDataURL(f);
+    });
+
+    /* ===== Variant Editor ===== */
+    function renderVariantEditor() {
+      const container = document.getElementById('variantEditor');
+      const emptyEl = document.getElementById('variantEmpty');
+      container.innerHTML = '';
+      if (!variantGroups.length) { emptyEl.style.display = ''; _syncProductLevelInputs(); return; }
+      emptyEl.style.display = 'none';
+      variantGroups.forEach((group, gi) => {
+        const card = document.createElement('div');
+        card.className = 'border rounded-3 p-3 bg-white';
+        // header: ชื่อ variant + type + ปุ่มลบ
+        const hdr = document.createElement('div');
+        hdr.className = 'd-flex gap-2 align-items-center mb-2';
+        hdr.innerHTML = '<input type="text" class="form-control form-control-sm" placeholder="ชื่อตัวเลือก เช่น สี, ขนาด"'
+          + ' value="' + escHtml(group.name) + '" data-vi="' + gi + '" data-field="name">'
+          + '<select class="form-select form-select-sm" style="width:120px;flex-shrink:0" data-vi="' + gi + '" data-field="type">'
+          + '<option value="text"' + (group.type === 'text' ? ' selected' : '') + '>ข้อความ</option>'
+          + '<option value="image"' + (group.type === 'image' ? ' selected' : '') + '>รูปภาพ</option>'
+          + '</select>'
+          + '<button type="button" class="btn btn-sm btn-outline-danger pill px-2" data-del-group="' + gi + '" title="ลบ Variant นี้">'
+          + '<i class="bi bi-trash"></i>'
+          + '</button>';
+        card.appendChild(hdr);
+        // options rows
+        const optWrap = document.createElement('div');
+        optWrap.className = 'd-flex flex-column gap-0 mb-2';
+        if (group.options.length === 0) {
+          const hint = document.createElement('div');
+          hint.className = 'text-muted small text-center py-1';
+          hint.textContent = 'ยังไม่มีตัวเลือก';
+          optWrap.appendChild(hint);
+        }
+        group.options.forEach((opt, oi) => {
+          const card = document.createElement('div');
+          card.className = 'opt-card';
+
+          // ── Row 1: image area (image-type only) + label input + delete ──
+          const topRow = document.createElement('div');
+          topRow.className = 'd-flex gap-2 align-items-center mb-2';
+
+          if (group.type === 'image') {
+            const hasSrc = !!(opt.imageDataURL || opt.image_file_id || opt.image);
+
+            // Hidden file input
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = 'image/*';
+            fileInput.className = 'd-none';
+            fileInput.dataset.variantImgFile = gi + '-' + oi;
+            card.appendChild(fileInput);
+
+            // Thumb (48×48)
+            const thumbWrap = document.createElement('div');
+            thumbWrap.style.cssText = 'width:48px;height:48px;border-radius:8px;border:1px solid #dee2e6;flex-shrink:0;position:relative;overflow:hidden;background:#f3f4f6;cursor:pointer';
+            thumbWrap.dataset.triggerVariantImg = gi + '-' + oi;
+            thumbWrap.title = 'คลิกเพื่อเปลี่ยนรูป';
+
+            if (hasSrc) {
+              const shimmer = document.createElement('div');
+              shimmer.className = 'skel';
+              shimmer.style.cssText = 'position:absolute;inset:0;height:100%;border-radius:0;z-index:1';
+              thumbWrap.appendChild(shimmer);
+              const imgEl = document.createElement('img');
+              imgEl.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .3s;z-index:2';
+              imgEl.alt = opt.label || '';
+              imgEl.onload = () => { imgEl.style.opacity = '1'; shimmer.style.display = 'none'; };
+              imgEl.onerror = () => { shimmer.style.display = 'none'; };
+              if (opt.imageDataURL) {
+                imgEl.src = opt.imageDataURL;
+              } else if (opt.image_file_id) {
+                const map = getImgCache();
+                if (map[opt.image_file_id]) {
+                  imgEl.src = map[opt.image_file_id];
+                } else {
+                  driveFileToDataUrl(opt.image_file_id)
+                    .then(u => { imgEl.src = u || driveViewUrl(opt.image_file_id); })
+                    .catch(() => { imgEl.src = driveViewUrl(opt.image_file_id); });
+                }
+              } else if (opt.image) {
+                imgEl.src = opt.image;
+              }
+              thumbWrap.appendChild(imgEl);
+            } else {
+              thumbWrap.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#9ca3af"><i class="bi bi-image" style="font-size:1.1rem"></i></div>';
+            }
+            topRow.appendChild(thumbWrap);
+
+            // Upload / clear buttons stacked
+            const imgBtns = document.createElement('div');
+            imgBtns.className = 'd-flex flex-column gap-1';
+            imgBtns.style.flexShrink = '0';
+            const uploadBtn = document.createElement('button');
+            uploadBtn.type = 'button';
+            uploadBtn.className = 'btn btn-xs btn-outline-secondary pill px-2 py-0';
+            uploadBtn.style.fontSize = '.7rem';
+            uploadBtn.dataset.triggerVariantImg = gi + '-' + oi;
+            uploadBtn.title = 'อัปโหลด';
+            uploadBtn.innerHTML = '<i class="bi bi-upload"></i>';
+            imgBtns.appendChild(uploadBtn);
+            if (hasSrc) {
+              const clearBtn = document.createElement('button');
+              clearBtn.type = 'button';
+              clearBtn.className = 'btn btn-xs btn-outline-danger pill px-2 py-0';
+              clearBtn.style.fontSize = '.7rem';
+              clearBtn.dataset.clearVariantImg = gi + '-' + oi;
+              clearBtn.title = 'ลบรูป';
+              clearBtn.innerHTML = '<i class="bi bi-x"></i>';
+              imgBtns.appendChild(clearBtn);
+            }
+            topRow.appendChild(imgBtns);
+          }
+
+          // Label input (flex:1)
+          const labelInput = document.createElement('input');
+          labelInput.type = 'text';
+          labelInput.className = 'form-control form-control-sm';
+          labelInput.placeholder = 'ชื่อตัวเลือก เช่น แดง, L';
+          labelInput.value = opt.label || '';
+          labelInput.style.flex = '1';
+          labelInput.dataset.vi = gi;
+          labelInput.dataset.oi = oi;
+          labelInput.dataset.field = 'label';
+          topRow.appendChild(labelInput);
+
+          // Delete option button
+          const delOptBtn = document.createElement('button');
+          delOptBtn.type = 'button';
+          delOptBtn.className = 'btn btn-sm btn-outline-danger pill px-2';
+          delOptBtn.style.flexShrink = '0';
+          delOptBtn.dataset.delOpt = gi + '-' + oi;
+          delOptBtn.title = 'ลบตัวเลือกนี้';
+          delOptBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+          topRow.appendChild(delOptBtn);
+
+          card.appendChild(topRow);
+
+          // ── Row 2: price + weight + stock inputs ──
+          const botRow = document.createElement('div');
+          botRow.className = 'd-flex gap-2 align-items-center';
+
+          // ฿ price
+          const priceGroup = document.createElement('div');
+          priceGroup.className = 'input-group input-group-sm flex-grow-1';
+          const priceSpan = document.createElement('span');
+          priceSpan.className = 'input-group-text'; priceSpan.textContent = '฿';
+          const priceInput = document.createElement('input');
+          priceInput.type = 'number'; priceInput.min = '0'; priceInput.step = '1';
+          priceInput.className = 'form-control'; priceInput.placeholder = 'ราคา';
+          priceInput.value = Number(opt.price) || 0;
+          priceInput.dataset.vi = gi; priceInput.dataset.oi = oi; priceInput.dataset.field = 'price';
+          priceGroup.appendChild(priceSpan); priceGroup.appendChild(priceInput);
+          botRow.appendChild(priceGroup);
+
+          // weight ก.
+          const weightGroup = document.createElement('div');
+          weightGroup.className = 'input-group input-group-sm flex-grow-1';
+          const weightInput = document.createElement('input');
+          weightInput.type = 'number'; weightInput.min = '0'; weightInput.step = '1';
+          weightInput.className = 'form-control'; weightInput.placeholder = 'น้ำหนัก';
+          weightInput.value = Number(opt.weight_grams) || 0;
+          weightInput.dataset.vi = gi; weightInput.dataset.oi = oi; weightInput.dataset.field = 'weight_grams';
+          const weightSpan = document.createElement('span');
+          weightSpan.className = 'input-group-text'; weightSpan.textContent = 'ก.';
+          weightGroup.appendChild(weightInput); weightGroup.appendChild(weightSpan);
+          botRow.appendChild(weightGroup);
+
+          // stock ชิ้น
+          const stockGroup = document.createElement('div');
+          stockGroup.className = 'input-group input-group-sm flex-grow-1';
+          const stockInput2 = document.createElement('input');
+          stockInput2.type = 'number'; stockInput2.min = '-1'; stockInput2.step = '1';
+          stockInput2.className = 'form-control'; stockInput2.placeholder = '∞';
+          stockInput2.value = (opt.stock !== undefined && opt.stock !== -1) ? opt.stock : '';
+          stockInput2.dataset.vi = gi; stockInput2.dataset.oi = oi; stockInput2.dataset.field = 'stock';
+          const stockSpan2 = document.createElement('span');
+          stockSpan2.className = 'input-group-text'; stockSpan2.textContent = 'ชิ้น';
+          stockGroup.appendChild(stockInput2); stockGroup.appendChild(stockSpan2);
+          botRow.appendChild(stockGroup);
+
+          card.appendChild(botRow);
+          optWrap.appendChild(card);
+        });
+        card.appendChild(optWrap);
+        // ปุ่มเพิ่มตัวเลือก
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'btn btn-sm btn-outline-secondary pill w-100';
+        addBtn.dataset.addOpt = gi;
+        addBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>เพิ่มตัวเลือก';
+        card.appendChild(addBtn);
+        container.appendChild(card);
+      });
+      _syncProductLevelInputs();
+    }
+
+    function _syncProductLevelInputs() {
+      const hasVariants = variantGroups.length > 0;
+      const weightInput = document.querySelector('[name="weight_grams"]');
+      const stockInput  = document.querySelector('[name="stock"]');
+      let hintEl = document.getElementById('variantLevelHint');
+      if (!hintEl) {
+        hintEl = document.createElement('div');
+        hintEl.id = 'variantLevelHint';
+        hintEl.style.cssText = 'font-size:.72rem;color:#9333ea;margin-top:3px;display:none';
+        hintEl.innerHTML = '<i class="bi bi-info-circle me-1"></i>กำหนดได้ที่ตัวเลือกสินค้า';
+        const stockCol = document.getElementById('stockCol');
+        if (stockCol) stockCol.appendChild(hintEl);
+      }
+      if (weightInput) {
+        weightInput.disabled = hasVariants;
+        weightInput.placeholder = hasVariants ? 'กำหนดที่ตัวเลือก' : '0';
+        if (hasVariants) weightInput.value = '';
+      }
+      if (stockInput) {
+        stockInput.disabled = hasVariants;
+        stockInput.placeholder = hasVariants ? 'กำหนดที่ตัวเลือก' : '-1';
+        if (hasVariants) stockInput.value = '';
+        hintEl.style.display = hasVariants ? '' : 'none';
+      }
+    }
+
+    /* ===== Extra Images Strip ===== */
+    function renderExtraImgStrip() {
+      const strip = document.getElementById('extraImgStrip');
+      if (!strip) return;
+      strip.innerHTML = '';
+      if (!extraImagesState.length) {
+        const hint = document.createElement('div');
+        hint.className = 'text-muted small text-center py-2 w-100 border rounded-3 bg-light d-flex align-items-center justify-content-center';
+        hint.style.minHeight = '84px';
+        hint.innerHTML = '<span><i class="bi bi-images me-1"></i>ยังไม่มีรูปเพิ่มเติม</span>';
+        strip.appendChild(hint);
+        return;
+      }
+      extraImagesState.forEach((img, i) => {
+        const card = document.createElement('div');
+        card.className = 'position-relative flex-shrink-0';
+        card.style.cssText = 'width:84px';
+
+        const imgWrap = document.createElement('div');
+        imgWrap.style.cssText = 'width:84px;height:84px;border-radius:10px;border:1px solid var(--border);overflow:hidden;position:relative;background:#f3f4f6';
+
+        const shimmer = document.createElement('div');
+        shimmer.className = 'skel';
+        shimmer.style.cssText = 'position:absolute;inset:0;height:100%;border-radius:0;z-index:1';
+        imgWrap.appendChild(shimmer);
+
+        const imgEl = document.createElement('img');
+        imgEl.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .3s;z-index:2';
+        imgEl.alt = '';
+        imgEl.onload = () => { imgEl.style.opacity = '1'; shimmer.style.display = 'none'; };
+        imgEl.onerror = () => { shimmer.style.display = 'none'; };
+
+        if (img.dataURL) {
+          imgEl.src = img.dataURL;
+        } else if (img.driveFileId) {
+          const cache = getImgCache();
+          if (cache[img.driveFileId]) {
+            imgEl.src = cache[img.driveFileId];
+          } else {
+            driveFileToDataUrl(img.driveFileId)
+              .then(u => { imgEl.src = u || driveViewUrl(img.driveFileId); })
+              .catch(() => { imgEl.src = driveViewUrl(img.driveFileId); });
+          }
+        } else if (img.url) {
+          imgEl.src = img.url;
+        } else {
+          shimmer.style.display = 'none';
+        }
+
+        imgWrap.appendChild(imgEl);
+
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'btn btn-danger position-absolute top-0 end-0 d-flex align-items-center justify-content-center p-0';
+        rm.style.cssText = 'width:22px;height:22px;border-radius:50%;font-size:10px;transform:translate(6px,-6px);z-index:3';
+        rm.innerHTML = '<i class="bi bi-x-lg"></i>';
+        rm.onclick = (idx => () => { extraImagesState.splice(idx, 1); renderExtraImgStrip(); })(i);
+
+        card.appendChild(imgWrap);
+        card.appendChild(rm);
+        strip.appendChild(card);
+      });
+    }
+
+    document.getElementById('extraImgFileInput').addEventListener('change', e => {
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+      const tooLarge = files.filter(f => f.size > PRODUCT_IMAGE_MAX_BYTES);
+      if (tooLarge.length) {
+        _showImageSizeAlert(tooLarge.map(f => ({ label: f.name || 'รูปภาพเพิ่มเติม', size: f.size })));
+      }
+      const validFiles = files.filter(f => f.size <= PRODUCT_IMAGE_MAX_BYTES);
+      if (!validFiles.length) { e.target.value = ''; return; }
+      let done = 0;
+      validFiles.forEach(f => {
+        const fr = new FileReader();
+        fr.onload = () => {
+          extraImagesState.push({ driveFileId: '', url: '', dataURL: String(fr.result || '') });
+          done++;
+          if (done === validFiles.length) renderExtraImgStrip();
+        };
+        fr.readAsDataURL(f);
+      });
+      e.target.value = '';
+    });
+
+    // event delegation — input sync
+    document.getElementById('variantEditor').addEventListener('input', e => {
+      const el = e.target, vi = el.dataset.vi, oi = el.dataset.oi, field = el.dataset.field;
+      if (vi === undefined || !field) return;
+      if (oi !== undefined) {
+        variantGroups[+vi].options[+oi][field] = (field === 'price' || field === 'weight_grams' || field === 'stock') ? (el.value === '' ? (field === 'stock' ? -1 : 0) : Number(el.value)) : el.value;
+      } else {
+        variantGroups[+vi][field] = el.value;
+      }
+    });
+    // select change (type) + file input change (variant image)
+    document.getElementById('variantEditor').addEventListener('change', e => {
+      const el = e.target;
+      if (el.tagName === 'SELECT' && el.dataset.vi !== undefined && el.dataset.field === 'type') {
+        variantGroups[+el.dataset.vi].type = el.value;
+        renderVariantEditor();
+        return;
+      }
+      if (el.dataset.variantImgFile) {
+        const [vi, oi] = el.dataset.variantImgFile.split('-').map(Number);
+        const f = el.files?.[0]; if (!f) return;
+        if (!_validateImageFile(f, 'รูปภาพ Variant')) { el.value = ''; return; }
+        const fr = new FileReader();
+        fr.onload = () => {
+          variantGroups[vi].options[oi].imageDataURL = String(fr.result || '');
+          renderVariantEditor();
+        };
+        fr.readAsDataURL(f);
+      }
+    });
+    // click — del group / del opt / add opt / variant image upload trigger / clear image
+    document.getElementById('variantEditor').addEventListener('click', e => {
+      const triggerImg = e.target.closest('[data-trigger-variant-img]');
+      if (triggerImg) {
+        const key = triggerImg.dataset.triggerVariantImg;
+        const inp = document.querySelector('[data-variant-img-file="' + key + '"]');
+        if (inp) inp.click();
+        return;
+      }
+      const clearImg = e.target.closest('[data-clear-variant-img]');
+      if (clearImg) {
+        const [vi, oi] = clearImg.dataset.clearVariantImg.split('-').map(Number);
+        variantGroups[vi].options[oi].imageDataURL = '';
+        variantGroups[vi].options[oi].image_file_id = '';
+        variantGroups[vi].options[oi].image = '';
+        renderVariantEditor();
+        return;
+      }
+      const delG = e.target.closest('[data-del-group]');
+      const delO = e.target.closest('[data-del-opt]');
+      const addO = e.target.closest('[data-add-opt]');
+      if (delG) { variantGroups.splice(+delG.dataset.delGroup, 1); renderVariantEditor(); }
+      if (delO) { const [vi, oi] = delO.dataset.delOpt.split('-').map(Number); variantGroups[vi].options.splice(oi, 1); renderVariantEditor(); }
+      if (addO) { variantGroups[+addO.dataset.addOpt].options.push({ label: '', price: 0, weight_grams: 0, stock: -1 }); renderVariantEditor(); }
+    });
+    // ปุ่มเพิ่ม Variant group
+    document.getElementById('btnAddVariant')?.addEventListener('click', () => {
+      variantGroups.push({ name: '', type: 'text', options: [{ label: '', price: 0, weight_grams: 0, stock: -1, image: '' }] });
+      renderVariantEditor();
+    });
+
+    btnAddEl.onclick = () => openAdd();
+    document.getElementById('btnAdd2')?.addEventListener('click', () => openAdd());
+
+    function openAdd() {
+      editingId = null; modalTitleEl.textContent = 'เพิ่มสินค้า';
+      form.reset(); preview.src = ''; preview.classList.remove('loaded'); imageDataURL = '';
+      _updateBadgePreview('');
+      document.getElementById('modeUrl').checked = true; setMode('url');
+      document.getElementById('saleMode').value = 'disabled';
+      document.getElementById('saleStartsAt').value = '';
+      document.getElementById('saleEndsAt').value = '';
+      _onSaleModeChange();
+      variantGroups = []; renderVariantEditor();
+      extraImagesState = []; renderExtraImgStrip();
+      _pendingShippingRestore = null;
+      _restoreShippingSelection([]);
+      _updateShippingWarning();
+      editModal.show();
+    }
+
+    function openEdit(id) {
+      const p = items.find(x => String(x.id) === String(id)); if (!p) return;
+      editingId = id; modalTitleEl.textContent = 'แก้ไขสินค้า';
+      form.title.value = p.title || ''; form.desc.value = p.desc || ''; form.price.value = p.price || 0;
+      form.badge.value = p.badge || '';
+      _updateBadgePreview(p.badge || '');
+      // Sale mode (single source of truth)
+      var _toLocal = function(iso){ if(!iso) return ''; try{ var d=new Date(iso); var pad=function(n){return n<10?'0'+n:n}; return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes()); }catch(_){ return ''; } };
+      var _saleMode = String(p.sale_mode || '').toLowerCase();
+      if (_saleMode !== 'disabled' && _saleMode !== 'always' && _saleMode !== 'scheduled') {
+        // Fallback for any product loaded before backfill ran.
+        if (p.active === false || p.sale_enabled === false) _saleMode = 'disabled';
+        else if (p.sale_starts_at || p.sale_ends_at)        _saleMode = 'scheduled';
+        else                                                _saleMode = 'always';
+      }
+      document.getElementById('saleMode').value = _saleMode;
+      document.getElementById('saleStartsAt').value = _toLocal(p.sale_starts_at);
+      document.getElementById('saleEndsAt').value   = _toLocal(p.sale_ends_at);
+      _onSaleModeChange();
+      form.weight_grams.value = p.weight_grams || 0;
+      form.stock.value = (p.stock !== undefined && p.stock !== -1) ? p.stock : '';
+      const allowedIds = p.allowed_shipping_ids || [];
+      if (_shippingData.length > 0) {
+        _restoreShippingSelection(allowedIds);
+      } else {
+        _pendingShippingRestore = allowedIds;
+      }
+      _updateShippingWarning();
+      variantGroups = (p.variants || []).map(g => ({
+        ...g,
+        options: (g.options || []).map(o => ({
+          ...o,
+          price: o.price !== undefined ? Number(o.price)
+               : (o.delta !== undefined ? Number(p.price||0) + Number(o.delta||0) : Number(p.price||0)),
+          weight_grams: Number(o.weight_grams||0),
+          stock: o.stock !== undefined ? Number(o.stock) : -1
+        }))
+      }));
+      renderVariantEditor();
+      extraImagesState = (p.extra_images || []).map(img => ({ driveFileId: img.drive_file_id || '', url: img.url || '', dataURL: '' }));
+      renderExtraImgStrip();
+      extraImagesState.forEach((img, i) => {
+        if (img.driveFileId) {
+          const map = getImgCache();
+          if (map[img.driveFileId]) { extraImagesState[i].dataURL = map[img.driveFileId]; renderExtraImgStrip(); }
+          else driveFileToDataUrl(img.driveFileId).then(u => { extraImagesState[i].dataURL = u || ''; renderExtraImgStrip(); }).catch(() => {});
+        }
+      });
+      imageDataURL = '';
+      form.dataset.origDriveId = p.image_drive_file_id || '';
+      form.dataset.origUrl = p.image_url || '';
+      const rawSrc = p.image_url || p.image || (p.image_drive_file_id ? driveViewUrl(p.image_drive_file_id) : '');
+      document.getElementById('modeUrl').checked = true; setMode('url');
+      form.imageUrl.value = rawSrc || '';
+      preview.classList.remove('loaded'); preview.onload = () => preview.classList.add('loaded');
+      if (p.image_drive_file_id) {
+        const map = getImgCache();
+        if (map[p.image_drive_file_id]) preview.src = map[p.image_drive_file_id];
+        else driveFileToDataUrl(p.image_drive_file_id).then(u => { preview.src = u || driveViewUrl(p.image_drive_file_id) })
+          .catch(() => { preview.src = driveViewUrl(p.image_drive_file_id) });
+      } else {
+        preview.src = rawSrc || '';
+      }
+      editModal.show();
+    }
+
+    function toggleSelectAll(chk) {
+      document.querySelectorAll('.row-chk').forEach(c => { c.checked = chk.checked; });
+      updateBulkDeleteBar();
+    }
+
+    function updateBulkDeleteBar() {
+      const selected = document.querySelectorAll('.row-chk:checked');
+      const btn = document.getElementById('btnDeleteSelected');
+      const chkAll = document.getElementById('chkSelectAll');
+      document.getElementById('selectedCount').textContent = selected.length;
+      btn.classList.toggle('d-none', selected.length === 0);
+      const all = document.querySelectorAll('.row-chk');
+      chkAll.checked = all.length > 0 && selected.length === all.length;
+      chkAll.indeterminate = selected.length > 0 && selected.length < all.length;
+    }
+
+    async function deleteSelectedProducts() {
+      const ids = Array.from(document.querySelectorAll('.row-chk:checked')).map(c => c.value);
+      if (!ids.length) return;
+      const confirmed = await Swal.fire({
+        title: 'ลบสินค้า ' + ids.length + ' รายการ?',
+        text: 'การดำเนินการนี้ไม่สามารถย้อนกลับได้ รูปภาพทั้งหมดจะถูกลบออกจาก Drive ด้วย',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'ลบ',
+        cancelButtonText: 'ยกเลิก',
+        confirmButtonColor: '#dc3545',
+        cancelButtonColor: '#6b7280'
+      });
+      if (!confirmed.isConfirmed) return;
+      showHUD('กำลังลบ ' + ids.length + ' รายการ...');
+      const backup = ids.map(id => items.find(x => String(x.id) === String(id))).filter(Boolean);
+      ids.forEach(id => {
+        const idx = items.findIndex(x => String(x.id) === String(id));
+        if (idx > -1) items.splice(idx, 1);
+      });
+      render();
+      try {
+        const r = await _rpc('productBulkDeleteRpc', ids);
+        if (!r || r.ok === false) throw new Error(r?.error || 'ลบไม่สำเร็จ');
+        hideHUD('ok', 'ลบ ' + (r.deleted?.length ?? ids.length) + ' รายการแล้ว');
+        showToast('ลบสำเร็จ');
+        await load();
+        updateBulkDeleteBar();
+      } catch (err) {
+        backup.forEach(p => items.push(p));
+        render();
+        hideHUD('err', 'ลบไม่สำเร็จ');
+        showToast('ลบไม่สำเร็จ: ' + err.message);
+      }
+    }
+
+    function openDelete(id) {
+      deletingId = id;
+      const p = items.find(x => String(x.id) === String(id));
+      document.getElementById('delName').textContent = p?.title || 'สินค้า';
+      delModal.show();
+    }
+
+    btnConfirmDelEl.onclick = async () => {
+      if (!deletingId) return;
+      const id = deletingId;
+      const token = beginOp(id);
+      delModal.hide();
+      const idx = items.findIndex(x => String(x.id) === String(id));
+      const backup = idx > -1 ? { ...items[idx] } : null;
+      if (idx > -1) { items.splice(idx, 1); render() }
+      showHUD('กำลังลบ...');
+      try {
+        await _rpc('productDeleteRpc', id);
+        if (!isCurrentOp(id, token)) return;
+        hideHUD('ok', 'ลบแล้ว');
+        showToast('ลบสำเร็จ');
+        await load();
+      } catch (err) {
+        if (isCurrentOp(id, token)) {
+          if (backup) { items.splice(idx, 0, backup); render() }
+          hideHUD('err', 'ลบไม่สำเร็จ');
+          showToast('ลบไม่สำเร็จ: ' + err.message);
+        }
+      } finally {
+        endOp(id, token);
+        if (deletingId === id) deletingId = null;
+      }
+    };
+
+    const REQUIRED_MSG = (t) => swalWarnBlock('ข้อมูลไม่ครบ', t);
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      // สร้าง variants จาก variantGroups (UI state) — filter group/option ที่ไม่มีชื่อออก
+      const variants = variantGroups
+        .filter(g => String(g.name).trim())
+        .map(g => ({
+          name: String(g.name).trim(),
+          type: g.type || 'text',
+          options: (g.options || [])
+            .filter(o => String(o.label).trim())
+            .map(o => {
+              const opt = { label: String(o.label).trim(), price: Number(o.price)||0, weight_grams: Number(o.weight_grams)||0, stock: (o.stock !== undefined ? Number(o.stock) : -1) };
+              if (g.type === 'image') {
+                if (o.imageDataURL) {
+                  const mime = o.imageDataURL.substring(5, o.imageDataURL.indexOf(';')) || 'image/jpeg';
+                  opt.imageUpload = { base64: o.imageDataURL, filename: 'var-img-' + Date.now() + '.' + (mime.split('/')[1] || 'jpg'), contentType: mime };
+                  if (o.image_file_id) opt.old_image_file_id = o.image_file_id;
+                } else if (o.image_file_id) {
+                  opt.image_file_id = o.image_file_id;
+                } else if (o.image) {
+                  opt.image = String(o.image); // legacy URL
+                }
+              }
+              return opt;
+            })
+        }));
+      const extra_images = extraImagesState.map(img => {
+        if (img.dataURL && img.dataURL.startsWith('data:image')) {
+          const mime = img.dataURL.substring(5, img.dataURL.indexOf(';')) || 'image/jpeg';
+          return { mode: 'file', base64: img.dataURL, filename: 'extra-' + Date.now() + '.' + (mime.split('/')[1] || 'jpg'), contentType: mime };
+        } else if (img.driveFileId) {
+          return { mode: 'keep', drive_file_id: img.driveFileId, url: img.url };
+        } else if (img.url) {
+          return { mode: 'url', url: img.url };
+        }
+        return null;
+      }).filter(Boolean);
+      const _checkedShippingIds = Array.from(
+        document.querySelectorAll('#shippingMethodsCheckboxes input[type=checkbox]:checked')
+      ).map(cb => cb.value);
+      const payload = {
+        title: form.title.value.trim(),
+        desc: form.desc.value.trim(),
+        price: Math.max(0, Number(form.price.value || 0)),
+        badge: form.badge.value.trim(),
+        weight_grams: Number(form.weight_grams.value || 0),
+        stock: variants.length > 0 ? 0 : (form.stock.value !== '' ? Number(form.stock.value) : -1),
+        allowed_shipping_ids: _checkedShippingIds,
+        sale_mode: document.getElementById('saleMode').value,
+        sale_starts_at: (function(){
+          if (document.getElementById('saleMode').value !== 'scheduled') return '';
+          var v=document.getElementById('saleStartsAt').value; return v ? new Date(v).toISOString() : '';
+        })(),
+        sale_ends_at: (function(){
+          if (document.getElementById('saleMode').value !== 'scheduled') return '';
+          var v=document.getElementById('saleEndsAt').value; return v ? new Date(v).toISOString() : '';
+        })(),
+        variants,
+        extra_images,
+      };
+      if (!payload.title) { return REQUIRED_MSG('กรุณาใส่ชื่อสินค้า') }
+      if (payload.sale_mode !== 'disabled' && !payload.allowed_shipping_ids.length) {
+        await Swal.fire({ icon:'warning', title:'ยังไม่ได้กำหนดวิธีจัดส่ง',
+          text:'สินค้าที่เปิดขายต้องกำหนดวิธีการจัดส่งอย่างน้อย 1 วิธี',
+          confirmButtonText:'ตกลง', confirmButtonColor:'#111827' });
+        return;
+      }
+      let imagePatch = null;
+      if (imgMode === 'url') {
+        let url = form.imageUrl.value.trim();
+        const id = parseDriveId(url);
+        if (!editingId && !url) { return REQUIRED_MSG('กรุณาใส่ URL รูปภาพ หรืออัปโหลดไฟล์') }
+        if (id) url = driveViewUrl(id);
+        if (url) {
+          if (editingId) {
+            const origUrl = form.dataset.origUrl || '';
+            const origDriveId = form.dataset.origDriveId || '';
+            const sameAsOrigUrl = url === origUrl;
+            const sameAsOrigDrive = origDriveId && url.includes(origDriveId);
+            if (!(sameAsOrigUrl || sameAsOrigDrive)) {
+              imagePatch = { mode: 'url', url };
+            }
+          } else {
+            imagePatch = { mode: 'url', url };
+          }
+        }
+      } else {
+        if (imageDataURL) {
+          const mime = imageDataURL.substring(5, imageDataURL.indexOf(';')) || 'image/jpeg';
+          imagePatch = { mode: 'file', base64: imageDataURL, filename: 'upload-' + Date.now() + '.' + (mime.split('/')[1] || 'jpg'), contentType: mime };
+        } else if (!editingId) {
+          return REQUIRED_MSG('กรุณาเลือกไฟล์รูปภาพ');
+        }
+      }
+      const oversizedImages = _collectOversizedSelectedImages();
+      if (oversizedImages.length) {
+        await _showImageSizeAlert(oversizedImages);
+        return;
+      }
+
+      _setProductFormSaving(true);
+      if (editingId) {
+        const id = editingId;
+        const token = beginOp(id);
+        const i = items.findIndex(x => String(x.id) === String(id));
+        const before = i > -1 ? { ...items[i] } : null;
+        if (i > -1) {
+          items[i] = {
+            ...items[i],
+            title: payload.title,
+            desc: payload.desc,
+            price: payload.price,
+            badge: payload.badge,
+            sale_mode: payload.sale_mode,
+            sale_starts_at: payload.sale_starts_at,
+            sale_ends_at: payload.sale_ends_at,
+            active: payload.sale_mode !== 'disabled',
+            sale_enabled: payload.sale_mode !== 'disabled',
+            variants: payload.variants,
+            extra_images: extraImagesState.map(img => ({ drive_file_id: img.driveFileId, url: img.url || img.dataURL })),
+            ...(imagePatch?.mode === 'url' ? { image_url: imagePatch.url, image_drive_file_id: '' } : {}),
+            ...(imagePatch?.mode === 'file' ? { image_url: imageDataURL, image_drive_file_id: '' } : {}),
+          };
+          render();
+        }
+        showHUD('กำลังบันทึก...');
+        try {
+          const patch = { ...payload };
+          if (imagePatch) patch.image = imagePatch;
+          const res = await _rpc('productUpdateRpc', id, patch);
+          if (!isCurrentOp(id, token)) return;
+          // _rpc only rejects on AUTH_REQUIRED — every other {ok:false} resolves,
+          // so a server-side validation failure must be caught explicitly here
+          // (otherwise a failed save is reported to the admin as success).
+          if (!res || res.ok === false) throw new Error((res && res.error) || 'บันทึกไม่สำเร็จ');
+          // ใช้ record ที่ backend คืนตรงๆ (rebuilt snapshot ใน execution เดียวกัน — ถูกต้องเสมอ)
+          const savedRecord = res && res.record;
+          if (savedRecord) {
+            const idx = items.findIndex(x => String(x.id) === String(id));
+            if (idx > -1) { items[idx] = savedRecord; setProdCache(items); render(); }
+          } else {
+            await load();
+          }
+          hideHUD('ok', 'บันทึกแล้ว');
+          editModal.hide();
+          showToast('บันทึกสำเร็จ');
+        } catch (err) {
+          if (isCurrentOp(id, token)) {
+            if (i > -1 && before) { items[i] = before; render() }
+            hideHUD('err', 'บันทึกไม่สำเร็จ');
+            showToast('บันทึกไม่สำเร็จ: ' + err.message);
+          }
+        } finally {
+          _setProductFormSaving(false);
+          endOp(id, token);
+        }
+      } else {
+        if (!imagePatch) { _setProductFormSaving(false); return REQUIRED_MSG('กรุณาเลือกรูป (URL หรือไฟล์)') }
+        const tempId = 'temp-' + Math.random().toString(36).slice(2);
+        const token = beginOp(tempId);
+        items.unshift({
+          id: tempId, title: payload.title, desc: payload.desc, price: payload.price,
+          badge: payload.badge,
+          sale_mode: payload.sale_mode,
+          sale_starts_at: payload.sale_starts_at,
+          sale_ends_at: payload.sale_ends_at,
+          active: payload.sale_mode !== 'disabled',
+          sale_enabled: payload.sale_mode !== 'disabled',
+          variants: payload.variants,
+          image_url: imagePatch.mode === 'file' ? imageDataURL : (imagePatch.mode === 'url' ? imagePatch.url : ''),
+          image_drive_file_id: '',
+          extra_images: extraImagesState.map(img => ({ drive_file_id: img.driveFileId, url: img.url || img.dataURL })),
+        });
+        render();
+        showHUD('กำลังเพิ่มสินค้า...');
+        try {
+          const created = await _rpc('productCreateRpc', { ...payload, image: imagePatch });
+          if (!isCurrentOp(tempId, token)) return;
+          // {ok:false} resolves through _rpc — catch a server-side rejection here
+          // so a failed create is not reported to the admin as success.
+          if (!created || created.ok === false) throw new Error((created && created.error) || 'เพิ่มสินค้าไม่สำเร็จ');
+          const newId = created?.id;
+          if (newId) {
+            const fresh = await callRpc('productGetRpc', newId);
+            if (!isCurrentOp(tempId, token)) return;
+            const idx = items.findIndex(x => String(x.id) === String(tempId));
+            if (fresh && fresh.record) {
+              if (idx > -1) { items[idx] = fresh.record; setProdCache(items); render() }
+              else { await load() }
+            } else {
+              await load();
+            }
+          } else {
+            await load();
+          }
+          hideHUD('ok', 'บันทึกแล้ว');
+          editModal.hide();
+          showToast('เพิ่มสินค้าสำเร็จ');
+        } catch (err) {
+          if (isCurrentOp(tempId, token)) {
+            const i = items.findIndex(x => String(x.id) === String(tempId)); if (i > -1) { items.splice(i, 1); render() }
+            hideHUD('err', 'เพิ่มไม่สำเร็จ');
+            showToast('เพิ่มไม่สำเร็จ: ' + err.message);
+          }
+        } finally {
+          _setProductFormSaving(false);
+          endOp(tempId, token);
+        }
+      }
+    });
+
+    console.log('[SCRIPT] reached init IIFE');
+    let _shippingData = [];
+    let _pendingShippingRestore = null;
+
+    function loadShippingCompanies() {
+      if (!(window.google && google.script && google.script.run)) return Promise.resolve();
+      return callRpc('getShippingRpc').then(r => {
+        _shippingData = (r.companies || []).filter(c => c.active !== false);
+        _renderShippingUI();
+      }).catch(() => {});
+    }
+
+    function _renderShippingUI() {
+      const container = document.getElementById('shippingMethodsCheckboxes');
+      const noMsg = document.getElementById('noShippingMsg');
+      const companies = _shippingData.filter(c => (c.methods||[]).filter(m => m.active !== false).length > 0);
+
+      if (!companies.length) {
+        container.innerHTML = '';
+        noMsg && (noMsg.style.display = '');
+        return;
+      }
+      noMsg && (noMsg.style.display = 'none');
+
+      // Tab row
+      let html = `<div style="border-bottom:1px solid #e5e7eb;display:flex;flex-wrap:wrap;gap:0">`;
+      companies.forEach(c => {
+        html += `<button type="button" class="shipping-tab-btn" data-cid="${escHtml(c.id)}"
+          style="padding:.55rem 1rem;font-size:.82rem;font-weight:600;background:none;border:none;
+                 border-bottom:2px solid transparent;color:#6b7280;cursor:pointer;white-space:nowrap"
+          >${escHtml(c.name)}</button>`;
+      });
+      html += '</div>';
+
+      // Method panels
+      companies.forEach(c => {
+        const methods = (c.methods||[]).filter(m => m.active !== false);
+        html += `<div class="shipping-method-panel" data-cid="${escHtml(c.id)}" style="display:none;padding:.75rem 1rem">`;
+        methods.forEach(m => {
+          const modeTag = m.mode === 'weight'
+            ? '<span style="background:#f3f4f6;color:#6b7280;border-radius:4px;padding:1px 6px;font-size:.67rem;font-weight:600;margin-left:4px">ตามน้ำหนัก</span>'
+            : '<span style="background:#f3f4f6;color:#6b7280;border-radius:4px;padding:1px 6px;font-size:.67rem;font-weight:600;margin-left:4px">เหมาจ่าย</span>';
+          html += `<label class="d-flex align-items-center gap-2 py-1" style="cursor:pointer;font-size:.85rem;color:#111827">
+            <input type="checkbox" class="form-check-input m-0 flex-shrink-0"
+                   id="shm_${escHtml(m.id)}" value="${escHtml(m.id)}"
+                   name="allowed_shipping_ids" data-company="${escHtml(c.id)}"
+                   onchange="_onShippingCheck(this)">
+            ${escHtml(m.name)}${modeTag}
+          </label>`;
+        });
+        html += '</div>';
+      });
+
+      container.innerHTML = html;
+      _selectShippingTab(companies[0].id);
+
+      if (_pendingShippingRestore !== null) {
+        _restoreShippingSelection(_pendingShippingRestore);
+        _pendingShippingRestore = null;
+      }
+    }
+
+    document.addEventListener('click', function(e) {
+      var tb = e.target.closest('.shipping-tab-btn');
+      if (tb && tb.dataset.cid) _selectShippingTab(tb.dataset.cid);
+    });
+
+    function _selectShippingTab(cid) {
+      document.querySelectorAll('.shipping-tab-btn').forEach(b => {
+        const active = b.dataset.cid === cid;
+        b.style.borderBottomColor = active ? '#111827' : 'transparent';
+        b.style.color = active ? '#111827' : '#6b7280';
+      });
+      document.querySelectorAll('.shipping-method-panel').forEach(p => {
+        p.style.display = p.dataset.cid === cid ? '' : 'none';
+      });
+    }
+
+    function _restoreShippingSelection(allowedIds) {
+      document.querySelectorAll('#shippingMethodsCheckboxes input[name="allowed_shipping_ids"]')
+        .forEach(cb => cb.checked = false);
+      if (!allowedIds || !allowedIds.length) { _updateShippingWarning(); return; }
+
+      // Find which company tab to activate
+      let companyId = null;
+      for (const c of _shippingData) {
+        if ((c.methods||[]).some(m => allowedIds.includes(m.id))) { companyId = c.id; break; }
+      }
+      if (companyId) _selectShippingTab(companyId);
+
+      allowedIds.forEach(mid => {
+        const cb = document.getElementById('shm_' + mid);
+        if (cb) cb.checked = true;
+      });
+      _updateShippingWarning();
+    }
+
+    function _onShippingCheck(cb) {
+      // เมื่อ tick checkbox ของบริษัทใด → uncheck บริษัทอื่นทั้งหมด
+      if (cb.checked) {
+        const cid = cb.dataset.company;
+        document.querySelectorAll('#shippingMethodsCheckboxes input[name="allowed_shipping_ids"]')
+          .forEach(function(other) { if (other.dataset.company !== cid) other.checked = false; });
+      }
+      _updateShippingWarning();
+    }
+
+    function _badgeModFromText(t) {
+      var bl = String(t).toLowerCase();
+      if (bl === 'hot' || bl === 'ฮอต' || bl === 'ยอดนิยม') return 'hot';
+      if (bl === 'new' || bl === 'ใหม่') return 'new';
+      if (bl === 'sale' || bl === 'ลดราคา' || bl === 'ลด') return 'sale';
+      if (bl === 'promo' || bl === 'โปรโมชัน' || bl === 'โปร') return 'promo';
+      if (bl === 'limited' || bl === 'จำกัด' || bl === 'limited edition') return 'lim';
+      return '';
+    }
+    // Load productTags from localStorage store config, populate badge select
+    function _loadAndPopulateTags() {
+      try {
+        const cfg = JSON.parse(localStorage.getItem('SHOP_CONFIG_SIMPLE') || 'null');
+        const tags = cfg?.productTags;
+        if (!Array.isArray(tags) || !tags.length) return;
+        const sel = document.getElementById('badgeSelect');
+        if (!sel) return;
+        // Store tags for preview use
+        sel._configTags = tags;
+        // Collect current preset labels so we only add NEW custom ones
+        const existingLabels = new Set(Array.from(sel.options).map(o => o.value.trim().toLowerCase()));
+        tags.forEach(t => {
+          if (!t.label) return;
+          if (!existingLabels.has(t.label.trim().toLowerCase())) {
+            const opt = document.createElement('option');
+            opt.value = t.label;
+            opt.textContent = t.label;
+            sel.appendChild(opt);
+            existingLabels.add(t.label.trim().toLowerCase());
+          }
+        });
+      } catch (_) {}
+    }
+
+    function _updateBadgePreview(val) {
+      const el = document.getElementById('badgePreview');
+      if (!el) return;
+      if (!val) { el.style.display = 'none'; return; }
+      // Try configured tag colors first
+      const sel = document.getElementById('badgeSelect');
+      const configTags = sel?._configTags || [];
+      const tag = configTags.find(t => t.label === val);
+      if (tag && tag.bg) {
+        el.className = 'badge-soft';
+        el.style.background = tag.bg;
+        el.style.color = tag.text || '#ffffff';
+        el.style.borderColor = 'transparent';
+      } else {
+        const mod = _badgeModFromText(val);
+        el.className = 'badge-soft' + (mod ? ' ' + mod : '');
+        el.style.background = '';
+        el.style.color = '';
+        el.style.borderColor = '';
+      }
+      el.textContent = val;
+      el.style.display = '';
+    }
+
+    function _updateShippingWarning() {
+      const count = document.querySelectorAll('#shippingMethodsCheckboxes input[name="allowed_shipping_ids"]:checked').length;
+      const hasShipping = count > 0;
+      const saleSel  = document.getElementById('saleMode');
+      const lockNote = document.getElementById('activeLockNote');
+      const badge    = document.getElementById('shippingCountBadge');
+
+      // Without shipping the product cannot be sold — force sale_mode to 'disabled' and lock the dropdown.
+      if (saleSel) {
+        if (!hasShipping) {
+          saleSel.value = 'disabled';
+          saleSel.disabled = true;
+          saleSel.style.opacity = '.5';
+        } else {
+          saleSel.disabled = false;
+          saleSel.style.opacity = '';
+        }
+        _onSaleModeChange();
+      }
+      if (lockNote) lockNote.style.display = hasShipping ? 'none' : 'flex';
+      if (badge) { badge.textContent = count + ' วิธี'; badge.style.display = count > 0 ? '' : 'none'; }
+    }
+
+    function _onSaleModeChange() {
+      var mode = document.getElementById('saleMode').value;
+      var fields = document.getElementById('saleScheduleFields');
+      if (fields) fields.style.display = (mode === 'scheduled') ? '' : 'none';
+    }
+
+    function escHtml(s) {
+      return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    (async function () {
+      console.log('[INIT] start');
+      _setupAdminPage();
+
+      if (!(window.google && google.script && google.script.run)) {
+        console.error('[INIT] google.script.run ไม่พร้อม');
+        _dismissPageLoader();
+        await swalErrorBlock('เปิดไม่ถูกที่', 'หน้านี้ต้องเปิดผ่าน Apps Script Web App');
+        return;
+      }
+
+      try {
+        renderLoadingRows(); // แสดง skeleton ใต้ loader ระหว่าง auth
+        console.log('[INIT] _initAuth...');
+        await _initAuth(); // ถ้าไม่มี session → redirect login, loader ค้างไว้ (ผู้ใช้ไม่เห็น UI)
+
+        console.log('[INIT] auth OK, loading...');
+        await load();
+        await loadShippingCompanies();
+        _loadAndPopulateTags();
+        _dismissPageLoader(); // dismiss เฉพาะเมื่อผ่าน auth + โหลดข้อมูลสำเร็จ
+
+        console.log('[INIT] done, items:', items.length);
+      } catch (err) {
+        console.error('[INIT] failed:', err);
+        var authErrs = ['NOT_LOGGED_IN', 'SESSION_INVALID', 'AUTH_REQUIRED'];
+        if (authErrs.indexOf(err.message) === -1) {
+          _dismissPageLoader(); // error จริง (ไม่ใช่ auth) — dismiss แล้วแสดง error
+          await swalErrorBlock('เริ่มทำงานไม่สำเร็จ', err.message || String(err));
+        }
+        // auth error: loader ค้างไว้ระหว่าง redirect → ผู้ใช้ไม่เห็น UI
+      }
+    })();
+  </script>
+
+</body>
+
+</html>

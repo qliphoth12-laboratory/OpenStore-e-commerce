@@ -1,0 +1,858 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>โปรโมชั่น • Open Storefront</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    .pill { border-radius: 999px; }
+    .empty-state { text-align: center; padding: 3rem 1rem; color: var(--muted); }
+    .empty-state > i { font-size: 2.5rem; display: block; margin-bottom: .75rem; opacity: .4; }
+    .empty-state-cta { display:inline-flex; align-items:center; }
+    .empty-state-cta i { font-size:.875rem !important; display:inline !important; opacity:1 !important; margin-bottom:0 !important; }
+    .table-loading-overlay { position:absolute; inset:0; background:rgba(255,255,255,.6); display:flex; align-items:center; justify-content:center; z-index:10; pointer-events:none; }
+    .table-loading-overlay .spinner-border { width:1.75rem; height:1.75rem; border-width:.2rem; color:#6b7280; }
+    .tbl-wrap-pos { position:relative; }
+    tbody.is-loading { opacity:.5; pointer-events:none; }
+    .preview-box { background:#fff7ed; border:1px solid #fdba74; border-radius:12px; padding:12px 14px; font-size:.85rem; color:#9a3412; }
+    .preview-box .num { font-weight:700; }
+    .preview-box .strike { text-decoration:line-through; color:#94a3b8; margin-left:6px; }
+    .product-pick-row { display:flex; align-items:center; gap:8px; padding:6px 8px; border-bottom:1px solid #f3f4f6; }
+    .product-pick-row:last-child { border-bottom:none; }
+    .product-pick-row label { flex:1; font-size:.85rem; cursor:pointer; margin:0; }
+    .variant-key-row { padding-left:24px; font-size:.8rem; color:#475569; }
+    .pick-thumb-wrap { position:relative; width:32px; height:32px; border-radius:6px; background:#f1f5f9; flex-shrink:0; overflow:hidden; }
+    .pick-thumb-wrap::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.6) 50%,transparent 100%); background-size:200% 100%; animation:pickShimmer 1.25s infinite; }
+    .pick-thumb-wrap.loaded::after { display:none; }
+    @keyframes pickShimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+    .pick-thumb { position:absolute; inset:0; width:100%; height:100%; border-radius:6px; object-fit:cover; opacity:0; transition:opacity .2s; }
+    .pick-thumb.is-loaded { opacity:1; }
+    .pick-thumb-icon { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#d1d5db; font-size:.875rem; }
+  </style>
+</head>
+<body>
+<script>window._EXEC_URL = '<?!= execUrl ?>';</script>
+<?!= include('admin-shared') ?>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <img id="brandLogo" alt="logo" style="height:36px;width:36px;object-fit:cover;border-radius:50%;display:none;flex-shrink:0">
+      <div>
+        <div class="fw-bold brand-skeleton" id="brandName"></div>
+        <div class="small text-muted">Dashboard</div>
+      </div>
+    </div>
+    <nav class="side-nav" id="sideNav">
+      <a class="link" data-page="editstore"><i class="bi bi-paint-bucket"></i> ตกแต่งหน้าร้าน</a>
+      <a class="link" data-page="product"><i class="bi bi-boxes"></i> จัดการสินค้า</a>
+      <a class="link" data-page="order"><i class="bi bi-receipt"></i> คำสั่งซื้อ</a>
+      <a class="link" data-page="print-order"><i class="bi bi-printer"></i> พิมพ์ใบขนส่ง</a>
+      <a class="link" data-page="shipping"><i class="bi bi-truck"></i> ขนส่ง</a>
+      <a class="link" data-page="payment"><i class="bi bi-qr-code"></i> ตั้งค่าการชำระเงิน</a>
+      <a class="link active" data-page="promotion"><i class="bi bi-tag"></i> โปรโมชั่น</a>
+      <a class="link" data-page="gift"><i class="bi bi-gift"></i> ของแถม</a>
+      <a class="link" data-page="user"><i class="bi bi-people"></i> ผู้ดูแลระบบ</a>
+      <a class="link" data-page="legal"><i class="bi bi-file-earmark-text"></i> ข้อมูลทางกฎหมาย</a>
+      <a class="link" data-page="system"><i class="bi bi-shield-check"></i> ตั้งค่าระบบ</a>
+    </nav>
+    <div class="sidebar-footer">
+      <button id="btnLogout" class="btn-logout">
+        <i class="bi bi-box-arrow-right"></i> ออกจากระบบ
+      </button>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <div class="wrap">
+        <div class="d-flex align-items-center gap-2">
+          <span class="fw-bold">โปรโมชั่น</span>
+          <span class="text-muted">•</span>
+          <span class="text-muted small">จัดการส่วนลดและแคมเปญ</span>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm pill" id="btnRefresh">
+            <i class="bi bi-arrow-clockwise me-1"></i>รีเฟรช
+          </button>
+          <button class="btn btn-dark btn-sm pill" id="btnAdd">
+            <i class="bi bi-plus-lg me-1"></i>สร้างโปรโมชั่น
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="container py-4">
+      <div class="panel p-3 p-md-4 mb-3">
+        <div class="row g-2 align-items-center">
+          <div class="col-md-6">
+            <input type="search" class="form-control" id="qSearch" placeholder="ค้นหาชื่อโปรโมชั่น…">
+          </div>
+          <div class="col-md-4">
+            <select class="form-select" id="qStatus">
+              <option value="all">สถานะ: ทั้งหมด</option>
+              <option value="active">กำลังใช้งาน</option>
+              <option value="scheduled">ยังไม่เริ่ม</option>
+              <option value="expired">หมดอายุ</option>
+              <option value="disabled">ปิดใช้งาน</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel p-3 p-md-4">
+        <div id="promoPgBar" style="display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border)">
+          <div style="font-size:.8rem;color:#6b7280" id="pgInfo"></div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:.8rem;color:#6b7280">แสดง</span>
+            <select class="form-select form-select-sm" style="width:auto;border-radius:999px" id="pgSize">
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+            <span style="font-size:.8rem;color:#6b7280">รายการ</span>
+            <div class="btn-group btn-group-sm" style="margin-left:8px">
+              <button class="btn btn-outline-secondary" id="pgPrev">‹</button>
+              <button class="btn btn-outline-secondary" id="pgNext">›</button>
+            </div>
+          </div>
+        </div>
+        <div id="promoTableWrap">
+          <div class="text-center py-5">
+            <div class="spinner-border text-secondary" style="width:1.5rem;height:1.5rem;border-width:.2rem" role="status"></div>
+            <div class="text-muted small mt-2">กำลังโหลด…</div>
+          </div>
+        </div>      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Promotion Modal -->
+<div class="modal fade" id="promoModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold" id="promoModalTitle">สร้างโปรโมชั่น</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-12">
+            <label class="form-label fw-semibold" style="font-size:.8rem">ชื่อโปรโมชั่น *</label>
+            <input type="text" class="form-control" id="pmName" maxlength="200" placeholder="เช่น ลดต้อนรับสมาชิกใหม่">
+          </div>
+          <div class="col-md-12">
+            <label class="form-label fw-semibold" style="font-size:.8rem">รายละเอียด</label>
+            <textarea class="form-control" id="pmDesc" rows="2" maxlength="1000"></textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold" style="font-size:.8rem">ประเภทส่วนลด *</label>
+            <select class="form-select" id="pmType">
+              <option value="fixed">ลดเป็นบาท</option>
+              <option value="percent">ลดเป็นเปอร์เซ็นต์</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold" style="font-size:.8rem">จำนวนส่วนลด *</label>
+            <div class="input-group">
+              <input type="number" class="form-control" id="pmValue" min="0" step="1">
+              <span class="input-group-text" id="pmValueUnit">บาท</span>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold" style="font-size:.8rem">วันที่เริ่ม *</label>
+            <input type="datetime-local" class="form-control" id="pmStart">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold" style="font-size:.8rem">วันที่สิ้นสุด</label>
+            <input type="datetime-local" class="form-control" id="pmEnd" disabled>
+            <div class="form-check mt-1">
+              <input class="form-check-input" type="checkbox" id="pmNoEnd" checked>
+              <label class="form-check-label" for="pmNoEnd" style="font-size:.85rem">ไม่มีวันสิ้นสุด</label>
+            </div>
+          </div>
+          <div class="col-md-12">
+            <label class="form-label fw-semibold" style="font-size:.8rem">เป้าหมาย *</label>
+            <div class="d-flex gap-3 flex-wrap">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="pmTarget" id="pmTargetAll" value="all" checked>
+                <label class="form-check-label" for="pmTargetAll">ทั้งร้าน</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="pmTarget" id="pmTargetProduct" value="product">
+                <label class="form-check-label" for="pmTargetProduct">เลือกสินค้า</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="pmTarget" id="pmTargetVariant" value="variant">
+                <label class="form-check-label" for="pmTargetVariant">เลือก Variant</label>
+              </div>
+            </div>
+            <div id="pmPicker" class="mt-2" style="display:none; max-height:240px; overflow:auto; border:1px solid var(--border); border-radius:10px; padding:6px;"></div>
+          </div>
+          <div class="col-md-12">
+            <div id="pmPreview" class="preview-box" style="display:none">
+              <div><span class="text-muted">ตัวอย่างการคำนวณ:</span></div>
+              <div id="pmPreviewBody"></div>
+              <div class="text-muted mt-1" style="font-size:.78rem">* ราคาสุดท้ายปัดเป็นบาทเต็ม</div>
+            </div>
+          </div>
+          <div class="col-md-12">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="pmEnabled" checked>
+              <label class="form-check-label" for="pmEnabled" style="font-size:.875rem">เปิดใช้งาน</label>
+            </div>
+          </div>
+          <div id="pmErr" class="text-danger small d-none"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary pill" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-dark pill" id="btnSavePromo">
+          <span class="spinner-border spinner-border-sm me-1 d-none" id="pmSaveSpinner"></span>
+          บันทึก
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+document.addEventListener('DOMContentLoaded', function(){
+  var noEnd = document.getElementById('pmNoEnd');
+  var endInp = document.getElementById('pmEnd');
+  if (noEnd && endInp) {
+    noEnd.addEventListener('change', function(){
+      if (noEnd.checked) { endInp.disabled = true; endInp.value = ''; }
+      else { endInp.disabled = false; }
+    });
+  }
+});
+
+
+
+/* ---------- Helpers ---------- */
+function escHtml(s){ return String(s||'').replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+function fmtMoney(n){ return '฿' + (Number(n||0)).toLocaleString('th-TH'); }
+function fmtDateTime(iso){ if (!iso) return '—'; var d = new Date(iso); if (isNaN(d.getTime())) return '—'; return d.toLocaleString('th-TH', { dateStyle:'short', timeStyle:'short' }); }
+function _toLocalInput(iso){ if (!iso) return ''; var d = new Date(iso); if (isNaN(d.getTime())) return ''; var pad=function(n){ return String(n).padStart(2,'0'); }; return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes()); }
+function _fromLocalInput(v){ if (!v) return ''; var d = new Date(v); return isNaN(d.getTime()) ? '' : d.toISOString(); }
+function _buildVariantKey(sel){
+  if (!sel || typeof sel !== 'object') return '';
+  return Object.keys(sel).sort().map(function(k){ return k + '=' + String(sel[k]||''); }).join('|');
+}
+
+/* ---------- State ---------- */
+var _editId = null;
+var _modal = null;
+var _promosCache = [];
+var _productsCache = [];
+var _promoOpSeq = 0;
+var _promoInFlight = Object.create(null);
+var _pgPage = 1, _pgSize = 20, _pgTotal = 0, _pgLoading = false, _firstLoad = true, _pgRefetchNeeded = false;
+var _searchDebounce = null;
+var _productsLoaded = false;
+var _pickerImgCache = {};
+
+function _beginPromoOp(id) {
+  var token = ++_promoOpSeq;
+  _promoInFlight[String(id)] = token;
+  return token;
+}
+function _isCurrentPromoOp(id, token) {
+  return _promoInFlight[String(id)] === token;
+}
+function _endPromoOp(id, token) {
+  if (_isCurrentPromoOp(id, token)) delete _promoInFlight[String(id)];
+}
+function _isPromoPending(id) {
+  return _promoInFlight[String(id)] !== undefined;
+}
+function _promoStatus(p) {
+  if (!p || p.enabled === false) return 'disabled';
+  var now = Date.now();
+  var start = p.starts_at ? new Date(p.starts_at).getTime() : 0;
+  var end = p.ends_at ? new Date(p.ends_at).getTime() : 0;
+  if (start && !isNaN(start) && start > now) return 'scheduled';
+  if (!p.no_end_date && end && !isNaN(end) && end < now) return 'expired';
+  return 'active';
+}
+
+/* ---------- Status badge ---------- */
+function statusBadge(s){
+  var map = { active:'กำลังใช้งาน', scheduled:'ยังไม่เริ่ม', expired:'หมดอายุ', disabled:'ปิดใช้งาน' };
+  return '<span class="admin-status ' + s + '">' + (map[s] || s) + '</span>';
+}
+
+/* ---------- Target summary ---------- */
+function summarizeTarget(promo){
+  if (promo.target_type === 'all') return '<span class="admin-tag target-tag">ทั้งร้าน</span>';
+  var arr = Array.isArray(promo.target) ? promo.target : [];
+  if (!arr.length) return '<span class="admin-muted-dash">—</span>';
+  var prodMap = {}; _productsCache.forEach(function(p){ prodMap[p.id] = p; });
+  if (promo.target_type === 'product') {
+    return arr.slice(0, 3).map(function(t){
+      var prod = prodMap[t.product_id];
+      return '<span class="admin-tag target-tag">' + escHtml(prod ? prod.title : t.product_id) + '</span>';
+    }).join('') + (arr.length > 3 ? ' <span class="admin-sub-text">+' + (arr.length-3) + '</span>' : '');
+  }
+  // variant
+  return arr.slice(0, 3).map(function(t){
+    var prod = prodMap[t.product_id];
+    return '<span class="admin-tag target-tag">' + escHtml((prod ? prod.title : t.product_id) + ' / ' + (t.variant_key || '')) + '</span>';
+  }).join('') + (arr.length > 3 ? ' <span class="admin-sub-text">+' + (arr.length-3) + '</span>' : '');
+}
+
+/* ---------- Render table (renders _promosCache, which is current page only) ---------- */
+function _setPgControlsDisabled(disabled) {
+  ['pgPrev','pgNext','pgSize'].forEach(function(id){ var el = document.getElementById(id); if (el) el.disabled = !!disabled; });
+}
+
+function _showSkeletonRows(n) {
+  var wrap = document.getElementById('promoTableWrap');
+  var rows = '';
+  for (var i=0; i<n; i++) {
+    rows += '<tr>'
+      + '<td><div class="skel lg"></div></td>'
+      + '<td><div class="skel" style="width:50px"></div></td>'
+      + '<td><div class="skel" style="width:120px"></div></td>'
+      + '<td><div class="skel pill" style="width:80px"></div></td>'
+      + '<td><div class="skel" style="width:140px"></div></td>'
+      + '<td class="text-end"><div class="skel pill" style="width:120px"></div></td>'
+      + '</tr>';
+  }
+  wrap.innerHTML = '<div class="table-responsive tbl-wrap-pos">'
+    + '<table class="table promo-table admin-list-table align-middle">'
+    + '<thead><tr><th>ชื่อ</th><th>ส่วนลด</th><th class="admin-cell-center">เป้าหมาย</th><th class="admin-cell-center">สถานะ</th><th>ช่วงเวลา</th><th class="text-end">การจัดการ</th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table></div>';
+}
+
+function _showOverlay() {
+  var tbody = document.querySelector('#promoTableWrap tbody');
+  var wrap  = document.querySelector('#promoTableWrap .table-responsive');
+  if (tbody) tbody.classList.add('is-loading');
+  if (wrap && !wrap.querySelector('.table-loading-overlay')) {
+    wrap.classList.add('tbl-wrap-pos');
+    var ov = document.createElement('div');
+    ov.className = 'table-loading-overlay';
+    ov.innerHTML = '<div class="spinner-border" role="status"></div>';
+    wrap.appendChild(ov);
+  }
+}
+function _hideOverlay() {
+  var tbody = document.querySelector('#promoTableWrap tbody');
+  if (tbody) tbody.classList.remove('is-loading');
+  var ov = document.querySelector('#promoTableWrap .table-loading-overlay');
+  if (ov) ov.remove();
+}
+
+function renderTable(){
+  var wrap = document.getElementById('promoTableWrap');
+  var bar  = document.getElementById('promoPgBar');
+  if (!_promosCache.length) {
+    var q = (document.getElementById('qSearch').value || '').toLowerCase();
+    var statusFilter = document.getElementById('qStatus').value;
+    var isFiltered = q || statusFilter !== 'all';
+    var emptyMsg = isFiltered ? 'ไม่พบโปรโมชั่นที่ตรงเงื่อนไข' : 'ยังไม่มีโปรโมชั่น';
+    var ctaHtml = isFiltered ? '' : '<button class="btn btn-dark btn-sm pill mt-3 empty-state-cta" onclick="document.getElementById(\'btnAdd\').click()"><i class="bi bi-plus-lg me-1"></i>เพิ่มโปรโมชั่น</button>';
+    wrap.innerHTML = '<div class="empty-state"><i class="bi bi-tag"></i><div class="fw-semibold">' + emptyMsg + '</div><div class="text-muted small mt-1">กดปุ่ม "เพิ่ม" เพื่อสร้างโปรโมชั่นแรก</div>' + ctaHtml + '</div>';
+    _pgUpdateBar();
+    return;
+  }
+  var html = '<div class="table-responsive tbl-wrap-pos"><table class="table promo-table admin-list-table align-middle">';
+  html += '<thead><tr><th>ชื่อ</th><th>ส่วนลด</th><th class="admin-cell-center">เป้าหมาย</th><th class="admin-cell-center">สถานะ</th><th>ช่วงเวลา</th><th class="text-end">การจัดการ</th></tr></thead><tbody>';
+  _promosCache.forEach(function(p){
+    var pending = _isPromoPending(p.promotion_id);
+    var disabled = pending ? ' disabled' : '';
+    var discountStr = p.discount_type === 'percent' ? (Number(p.discount_value) + '%') : ('฿' + Number(p.discount_value).toLocaleString('th-TH'));
+    html += '<tr>'
+      + '<td><div class="admin-main-text">' + escHtml(p.name) + '</div>' + (p.description ? '<div class="admin-sub-text">' + escHtml(p.description) + '</div>' : '') + '</td>'
+      + '<td>' + escHtml(discountStr) + '</td>'
+      + '<td class="admin-cell-center"><div class="admin-tag-wrap">' + summarizeTarget(p) + '</div></td>'
+      + '<td class="admin-cell-center">' + statusBadge(p.status) + '</td>'
+      + '<td><div class="admin-sub-text">เริ่ม ' + escHtml(fmtDateTime(p.starts_at)) + '</div><div class="admin-sub-text">สิ้นสุด ' + escHtml(fmtDateTime(p.ends_at)) + '</div></td>'
+      + '<td class="text-end"><div class="admin-actions">'
+      + '<button class="admin-action-btn js-promo-edit"' + disabled + ' data-id="' + escAttr(p.promotion_id) + '" title="แก้ไข"><i class="bi bi-pencil-square"></i></button>'
+      + '<button class="admin-action-btn ' + (p.enabled ? 'is-toggle-on' : 'is-toggle-off') + ' js-promo-toggle"' + disabled + ' data-id="' + escAttr(p.promotion_id) + '" data-enabled="' + (p.enabled ? '1' : '0') + '" title="' + (p.enabled?'ปิดใช้งาน':'เปิดใช้งาน') + '"><i class="bi bi-power"></i></button>'
+      + '<button class="admin-action-btn is-danger js-promo-delete"' + disabled + ' data-id="' + escAttr(p.promotion_id) + '" title="ลบ"><i class="bi bi-trash"></i></button>'
+      + '</div></td></tr>';
+  });
+  html += '</tbody></table></div>';
+  wrap.innerHTML = html;
+  _pgUpdateBar();
+}
+
+function _pgUpdateBar(){
+  var bar = document.getElementById('promoPgBar');
+  if (!bar) return;
+  var total = _pgTotal;
+  var totalPages = Math.max(1, Math.ceil(total / _pgSize));
+  _pgPage = Math.max(1, Math.min(_pgPage, totalPages));
+  var start = (_pgPage - 1) * _pgSize;
+  var from = total === 0 ? 0 : start + 1;
+  var to = Math.min(start + _pgSize, total);
+  bar.style.display = total > 0 ? 'flex' : 'none';
+  var info = document.getElementById('pgInfo'); if (info) info.textContent = 'แสดง ' + from + '–' + to + ' จาก ' + total + ' รายการ';
+  var prev = document.getElementById('pgPrev'); if (prev) prev.disabled = _pgPage <= 1 || _pgLoading;
+  var next = document.getElementById('pgNext'); if (next) next.disabled = _pgPage >= totalPages || _pgLoading;
+}
+
+function fetchPage(){
+  if (_pgLoading) return Promise.resolve();
+  _pgLoading = true;
+  _setPgControlsDisabled(true);
+  if (_firstLoad) _showSkeletonRows(_pgSize); else _showOverlay();
+  var q = (document.getElementById('qSearch').value || '').trim();
+  var statusFilter = document.getElementById('qStatus').value;
+  var opts = { q: q, status: statusFilter || 'all', offset: (_pgPage - 1) * _pgSize, limit: _pgSize };
+  return _rpc('listPromotionsRpc', opts).then(function(r){
+    _promosCache = r.promotions || [];
+    _pgTotal = Number(r.total)||0;
+    if (_promosCache.length === 0 && _pgTotal > 0) {
+      var _tp = Math.max(1, Math.ceil(_pgTotal / _pgSize));
+      var _cl = Math.max(1, Math.min(_pgPage, _tp));
+      if (_cl !== _pgPage) { _pgPage = _cl; _pgRefetchNeeded = true; return; }
+    }
+    _firstLoad = false;
+    renderTable();
+  }).catch(function(err){
+    if (err && err.message === 'AUTH_REQUIRED') return;
+    document.getElementById('promoTableWrap').innerHTML = '<div class="empty-state"><i class="bi bi-exclamation-circle"></i>โหลดข้อมูลไม่สำเร็จ</div>';
+    _firstLoad = true;
+  }).finally(function(){
+    _pgLoading = false;
+    _setPgControlsDisabled(false);
+    _hideOverlay();
+    if (_pgRefetchNeeded) { _pgRefetchNeeded = false; fetchPage(); }
+  });
+}
+
+/* ---------- Load data ---------- */
+function loadAll(){
+  var pProducts = _productsLoaded ? Promise.resolve(null) : _rpc('productListRpc').then(function(prRes){
+    _productsCache = (prRes && prRes.ok) ? (prRes.items || []) : [];
+    _productsLoaded = true;
+  });
+  return pProducts.then(function(){ return fetchPage(); });
+}
+
+/* ---------- Picker rendering ---------- */
+function renderPicker(targetType, selected){
+  var box = document.getElementById('pmPicker');
+  if (targetType === 'all') { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = '';
+  if (!_productsCache.length) { box.innerHTML = '<div class="text-muted small p-2">ยังไม่มีสินค้า</div>'; return; }
+  var selSet = {};
+  (selected || []).forEach(function(t){
+    var k = String(t.product_id) + '|' + String(t.variant_key || '');
+    selSet[k] = true;
+  });
+  var html = '';
+  _productsCache.forEach(function(p){
+    var prodKey = String(p.id) + '|';
+    var thumbHtml = '<div class="pick-thumb-wrap"><img class="pick-thumb" id="pthumb_' + escAttr(p.id) + '" data-fid="' + escAttr(p.image_drive_file_id||'') + '" data-furl="' + escAttr(p.image_url||'') + '" alt=""></div>';
+    if (targetType === 'product') {
+      html += '<div class="product-pick-row">' + thumbHtml + '<input type="checkbox" id="pp_' + p.id + '" data-pid="' + p.id + '" ' + (selSet[prodKey] ? 'checked' : '') + '><label for="pp_' + p.id + '">' + escHtml(p.title) + ' <span class="text-muted small">฿' + Number(p.price||0).toLocaleString('th-TH') + '</span></label></div>';
+    } else {
+      // variant: enumerate combos
+      var combos = enumerateCombos(p);
+      if (!combos.length) {
+        html += '<div class="product-pick-row">' + thumbHtml + '<span class="text-muted small">' + escHtml(p.title) + ' (ไม่มี variant)</span></div>';
+      } else {
+        html += '<div class="product-pick-row" style="border-bottom:1px solid #f3f4f6">' + thumbHtml + '<span class="fw-semibold">' + escHtml(p.title) + '</span></div>';
+        combos.forEach(function(c){
+          var vk = c.variant_key;
+          var k = String(p.id) + '|' + vk;
+          var labelTxt = Object.keys(c.sel).map(function(g){ return g+': '+c.sel[g]; }).join(', ');
+          html += '<div class="product-pick-row variant-key-row"><input type="checkbox" id="vp_' + p.id + '_' + escAttr(vk) + '" data-pid="' + p.id + '" data-vk="' + escAttr(vk) + '" ' + (selSet[k] ? 'checked' : '') + '><label for="vp_' + p.id + '_' + escAttr(vk) + '">' + escHtml(labelTxt) + '</label></div>';
+        });
+      }
+    }
+  });
+  box.innerHTML = html;
+  box.querySelectorAll('img.pick-thumb[data-fid]').forEach(function(img) {
+    _loadPickerThumb(img, img.getAttribute('data-fid'), img.getAttribute('data-furl'));
+  });
+  box.querySelectorAll('input[type=checkbox]').forEach(function(cb){
+    cb.addEventListener('change', updatePreview);
+  });
+}
+
+function _loadPickerThumb(img, fileId, fallbackUrl) {
+  if (!img) return;
+  var wrap = img.closest ? img.closest('.pick-thumb-wrap') : null;
+  function _showFallback() {
+    img.style.display = 'none';
+    if (wrap) { wrap.classList.add('loaded'); wrap.insertAdjacentHTML('beforeend', '<i class="bi bi-box pick-thumb-icon"></i>'); }
+  }
+  function _applySrc(src) {
+    if (!src) { _showFallback(); return; }
+    img.onload = function() {
+      img.classList.add('is-loaded');
+      if (wrap) wrap.classList.add('loaded');
+    };
+    img.onerror = function() { _showFallback(); };
+    img.src = src;
+  }
+  if (!fileId) {
+    if (fallbackUrl) _applySrc(fallbackUrl);
+    else _showFallback();
+    return;
+  }
+  if (_pickerImgCache[fileId]) { _applySrc(_pickerImgCache[fileId]); return; }
+  if (!GAS_ENV) {
+    if (fallbackUrl) _applySrc(fallbackUrl);
+    else _showFallback();
+    return;
+  }
+  callRpc('getFileDataUrlRpc', fileId).then(function(r) {
+    var dataUrl = r && r.dataUrl;
+    if (dataUrl) { _pickerImgCache[fileId] = dataUrl; _applySrc(dataUrl); }
+    else if (fallbackUrl) _applySrc(fallbackUrl);
+    else _showFallback();
+  }).catch(function() {
+    if (fallbackUrl) _applySrc(fallbackUrl);
+    else _showFallback();
+  });
+}
+
+function enumerateCombos(product){
+  var groups = (product && product.variants) || [];
+  if (!groups.length) return [];
+  var combos = [{ sel:{}, basePrice: Number(product.price||0) }];
+  for (var i=0; i<groups.length; i++){
+    var g = groups[i];
+    var name = String(g.name||'');
+    var opts = g.options || [];
+    var next = [];
+    for (var c=0; c<combos.length; c++){
+      for (var o=0; o<opts.length; o++){
+        var sel = {}; for (var k in combos[c].sel) sel[k] = combos[c].sel[k];
+        sel[name] = String(opts[o].label || '');
+        var bp = Number(product.price||0);
+        // last-wins option price
+        var optsChosen = (combos[c].optsChosen || []).concat([opts[o]]);
+        for (var xi=0; xi<optsChosen.length; xi++){
+          var op = optsChosen[xi];
+          if (op.price !== undefined) bp = Number(op.price);
+          else if (op.delta !== undefined) bp = Number(product.price||0) + Number(op.delta||0);
+        }
+        next.push({ sel: sel, basePrice: bp, optsChosen: optsChosen });
+      }
+    }
+    combos = next;
+  }
+  return combos.map(function(c){ return { sel: c.sel, basePrice: c.basePrice, variant_key: _buildVariantKey(c.sel) }; });
+}
+
+function readPickerSelection(targetType){
+  var box = document.getElementById('pmPicker');
+  var out = [];
+  box.querySelectorAll('input[type=checkbox]:checked').forEach(function(cb){
+    if (targetType === 'product') out.push({ product_id: cb.dataset.pid });
+    else out.push({ product_id: cb.dataset.pid, variant_key: cb.dataset.vk });
+  });
+  return out;
+}
+
+/* ---------- Live preview ---------- */
+function updatePreview(){
+  var tType = document.querySelector('input[name=pmTarget]:checked').value;
+  var dType = document.getElementById('pmType').value;
+  var dVal = Number(document.getElementById('pmValue').value || 0);
+  var box = document.getElementById('pmPreview');
+  if (!dVal) { box.style.display = 'none'; return; }
+  var sample;
+  if (tType === 'all') {
+    sample = { base: 500 };
+  } else {
+    var sel = readPickerSelection(tType);
+    if (!sel.length) { box.style.display = 'none'; return; }
+    var first = sel[0];
+    var prod = _productsCache.filter(function(p){ return String(p.id) === String(first.product_id); })[0];
+    if (!prod) { box.style.display = 'none'; return; }
+    var base = Number(prod.price || 0);
+    if (tType === 'variant' && first.variant_key) {
+      var combos = enumerateCombos(prod);
+      var match = combos.filter(function(c){ return c.variant_key === first.variant_key; })[0];
+      if (match) base = match.basePrice;
+    }
+    sample = { base: base, title: prod.title };
+  }
+  var raw = dType === 'percent' ? (sample.base * (1 - dVal/100)) : (sample.base - dVal);
+  var finalP = Math.max(0, Math.round(raw));
+  var html = (sample.title ? '<div>' + escHtml(sample.title) + '</div>' : '')
+    + '<div>ราคาปกติ <span class="strike num">' + fmtMoney(Math.round(sample.base)) + '</span> → ราคาหลังลด <span class="num">' + fmtMoney(finalP) + '</span></div>';
+  document.getElementById('pmPreviewBody').innerHTML = html;
+  box.style.display = '';
+}
+
+/* ---------- Modal handling ---------- */
+function openCreate(){
+  _editId = null;
+  document.getElementById('promoModalTitle').textContent = 'สร้างโปรโมชั่น';
+  document.getElementById('pmName').value = '';
+  document.getElementById('pmDesc').value = '';
+  document.getElementById('pmType').value = 'fixed';
+  document.getElementById('pmValueUnit').textContent = 'บาท';
+  document.getElementById('pmValue').value = '';
+  var now = new Date(); var end = new Date(Date.now() + 7*86400000);
+  document.getElementById('pmStart').value = _toLocalInput(now.toISOString());
+  document.getElementById('pmEnd').value   = '';
+  document.getElementById('pmEnd').disabled = true;
+  document.getElementById('pmNoEnd').checked = true;
+  document.getElementById('pmTargetAll').checked = true;
+  document.getElementById('pmEnabled').checked = true;
+  document.getElementById('pmErr').classList.add('d-none');
+  document.getElementById('pmPreview').style.display = 'none';
+  renderPicker('all', []);
+  _modal.show();
+}
+
+/* Delegated handlers — replace inline onclick with promotion_id interpolation */
+document.addEventListener('click', function(e) {
+  var tb = e.target.closest('.js-promo-toggle');
+  if (tb) { toggleEnabled(tb.dataset.id, tb.dataset.enabled !== '1'); return; }
+  var eb = e.target.closest('.js-promo-edit');
+  if (eb) { openEdit(eb.dataset.id); return; }
+  var db = e.target.closest('.js-promo-delete');
+  if (db) { deletePromo(db.dataset.id); return; }
+});
+
+function openEdit(promotionId){
+  if (_isPromoPending(promotionId)) return;
+  var p = _promosCache.filter(function(x){ return x.promotion_id === promotionId; })[0];
+  if (!p) return;
+  _editId = promotionId;
+  document.getElementById('promoModalTitle').textContent = 'แก้ไขโปรโมชั่น';
+  document.getElementById('pmName').value = p.name || '';
+  document.getElementById('pmDesc').value = p.description || '';
+  document.getElementById('pmType').value = p.discount_type;
+  document.getElementById('pmValueUnit').textContent = p.discount_type === 'percent' ? '%' : 'บาท';
+  document.getElementById('pmValue').value = p.discount_value;
+  document.getElementById('pmStart').value = _toLocalInput(p.starts_at);
+  var pmNoEndChk = document.getElementById('pmNoEnd');
+  var pmEndInp = document.getElementById('pmEnd');
+  if (p.no_end_date) {
+    pmNoEndChk.checked = true;
+    pmEndInp.value = '';
+    pmEndInp.disabled = true;
+  } else {
+    pmNoEndChk.checked = false;
+    pmEndInp.disabled = false;
+    pmEndInp.value = _toLocalInput(p.ends_at);
+  }
+  document.querySelector('input[name=pmTarget][value=' + p.target_type + ']').checked = true;
+  document.getElementById('pmEnabled').checked = !!p.enabled;
+  document.getElementById('pmErr').classList.add('d-none');
+  renderPicker(p.target_type, p.target || []);
+  updatePreview();
+  _modal.show();
+}
+
+function savePromo(){
+  var payload = {
+    name: document.getElementById('pmName').value.trim(),
+    description: document.getElementById('pmDesc').value.trim(),
+    discount_type: document.getElementById('pmType').value,
+    discount_value: Number(document.getElementById('pmValue').value || 0),
+    starts_at: _fromLocalInput(document.getElementById('pmStart').value),
+    ends_at:   document.getElementById('pmNoEnd').checked ? '' : _fromLocalInput(document.getElementById('pmEnd').value),
+    no_end_date: document.getElementById('pmNoEnd').checked,
+    target_type: document.querySelector('input[name=pmTarget]:checked').value,
+    enabled: document.getElementById('pmEnabled').checked
+  };
+  payload.target = payload.target_type === 'all' ? [] : readPickerSelection(payload.target_type);
+
+  var errEl = document.getElementById('pmErr');
+  errEl.classList.add('d-none');
+
+  var btn = document.getElementById('btnSavePromo');
+  if (btn.disabled) return;
+  var spinner = document.getElementById('pmSaveSpinner');
+  btn.disabled = true; spinner.classList.remove('d-none');
+  showHUD('กำลังบันทึก…');
+
+  var opId = _editId || ('temp-promo-' + Math.random().toString(36).slice(2));
+  var token = _beginPromoOp(opId);
+  var before = null, beforeIndex = -1;
+  var optimisticRecord = Object.assign({}, payload, {
+    promotion_id: opId,
+    status: _promoStatus(payload)
+  });
+  if (_editId) {
+    beforeIndex = _promosCache.findIndex(function(x){ return String(x.promotion_id) === String(_editId); });
+    before = beforeIndex >= 0 ? Object.assign({}, _promosCache[beforeIndex]) : null;
+    if (beforeIndex >= 0) _promosCache[beforeIndex] = Object.assign({}, _promosCache[beforeIndex], optimisticRecord);
+  } else {
+    _promosCache.unshift(optimisticRecord);
+  }
+  renderTable();
+
+  var p = _editId
+    ? _rpc('updatePromotionRpc', _editId, payload)
+    : _rpc('createPromotionRpc', payload);
+  p.then(function(res){
+    if (!_isCurrentPromoOp(opId, token)) return;
+    if (!res || res.ok === false) {
+      var _msg = translateRpcError(res, MSG.error.save);
+      if (_editId) {
+        if (beforeIndex >= 0 && before) _promosCache[beforeIndex] = before;
+      } else {
+        _promosCache = _promosCache.filter(function(x){ return String(x.promotion_id) !== String(opId); });
+      }
+      renderTable();
+      errEl.textContent = _msg;
+      errEl.classList.remove('d-none');
+      hideHUD('err', _msg);
+      return;
+    }
+    if (!_editId && res.promotion_id) {
+      var tmpIdx = _promosCache.findIndex(function(x){ return String(x.promotion_id) === String(opId); });
+      if (tmpIdx >= 0) _promosCache[tmpIdx].promotion_id = res.promotion_id;
+    }
+    _modal.hide();
+    hideHUD('ok', MSG.success.save);
+    return loadAll();
+  }).catch(function(err){
+    if (err && err.message === 'AUTH_REQUIRED') return;
+    if (_isCurrentPromoOp(opId, token)) {
+      if (_editId) {
+        if (beforeIndex >= 0 && before) _promosCache[beforeIndex] = before;
+      } else {
+        _promosCache = _promosCache.filter(function(x){ return String(x.promotion_id) !== String(opId); });
+      }
+      renderTable();
+    }
+    var _msg = translateRpcError(err, MSG.error.save);
+    errEl.textContent = _msg;
+    errEl.classList.remove('d-none');
+    hideHUD('err', _msg);
+  }).finally(function(){
+    _endPromoOp(opId, token);
+    btn.disabled = false; spinner.classList.add('d-none');
+  });
+}
+
+// In-flight guard: prevents rapid double-toggle from firing multiple RPCs.
+var _toggleInFlight = Object.create(null);
+function toggleEnabled(promotionId, newEnabled){
+  if (_toggleInFlight[promotionId] || _isPromoPending(promotionId)) return;
+  _toggleInFlight[promotionId] = true;
+  var token = _beginPromoOp(promotionId);
+  var idx = _promosCache.findIndex(function(x){ return String(x.promotion_id) === String(promotionId); });
+  var before = idx >= 0 ? Object.assign({}, _promosCache[idx]) : null;
+  if (idx >= 0) {
+    _promosCache[idx] = Object.assign({}, _promosCache[idx], { enabled: !!newEnabled });
+    _promosCache[idx].status = _promoStatus(_promosCache[idx]);
+    renderTable();
+  }
+  showHUD(newEnabled ? MSG.loading.toggleOn : MSG.loading.toggleOff);
+  _rpc('togglePromotionRpc', promotionId, !!newEnabled).then(function(res){
+    if (!_isCurrentPromoOp(promotionId, token)) return;
+    if (!res || !res.ok) {
+      if (idx >= 0 && before) { _promosCache[idx] = before; renderTable(); }
+      hideHUD('err', translateRpcError(res, MSG.error.update));
+      return;
+    }
+    hideHUD('ok', newEnabled ? MSG.success.toggleOn : MSG.success.toggleOff);
+    return loadAll();
+  }).catch(function(err){
+    if (err && err.message === 'AUTH_REQUIRED') return;
+    if (_isCurrentPromoOp(promotionId, token) && idx >= 0 && before) {
+      _promosCache[idx] = before;
+      renderTable();
+    }
+    hideHUD('err', translateRpcError(err, MSG.error.update));
+  }).finally(function(){
+    _endPromoOp(promotionId, token);
+    delete _toggleInFlight[promotionId];
+  });
+}
+
+function deletePromo(promotionId){
+  if (_isPromoPending(promotionId)) return;
+  confirmDanger({ title:'ยืนยันการลบโปรโมชั่น', text:'การดำเนินการนี้ไม่สามารถย้อนกลับได้' }).then(function(ok){
+    if (!ok) return;
+    var token = _beginPromoOp(promotionId);
+    var idx = _promosCache.findIndex(function(x){ return String(x.promotion_id) === String(promotionId); });
+    var backup = idx >= 0 ? _promosCache[idx] : null;
+    if (idx >= 0) {
+      _promosCache.splice(idx, 1);
+      renderTable();
+    }
+    showHUD(MSG.loading.delete);
+    _rpc('deletePromotionRpc', promotionId).then(function(res){
+      if (!_isCurrentPromoOp(promotionId, token)) return;
+      if (!res || res.ok === false) throw res;
+      hideHUD('ok', MSG.success.delete);
+      return loadAll();
+    }).catch(function(err){
+      if (err && err.message === 'AUTH_REQUIRED') return;
+      if (_isCurrentPromoOp(promotionId, token) && backup) {
+        _promosCache.splice(Math.min(idx, _promosCache.length), 0, backup);
+        renderTable();
+      }
+      hideHUD('err', translateRpcError(err, MSG.error.delete));
+    }).finally(function(){
+      _endPromoOp(promotionId, token);
+    });
+  });
+}
+
+/* ---------- Event wiring ---------- */
+document.addEventListener('DOMContentLoaded', function(){
+  _modal = new bootstrap.Modal(document.getElementById('promoModal'));
+  document.getElementById('btnAdd').addEventListener('click', openCreate);
+  document.getElementById('btnRefresh').addEventListener('click', function(){
+    showHUD(MSG.loading.fetch);
+    loadAll().then(function(){ hideHUD('ok', MSG.success.fetch); })
+             .catch(function(err){ hideHUD('err', translateRpcError(err, MSG.error.fetch)); });
+  });
+  document.getElementById('btnSavePromo').addEventListener('click', savePromo);
+  document.getElementById('qSearch').addEventListener('input', function(){
+    if (_searchDebounce) clearTimeout(_searchDebounce);
+    _searchDebounce = setTimeout(function(){ _pgPage = 1; fetchPage(); }, 300);
+  });
+  document.getElementById('qStatus').addEventListener('change', function(){ _pgPage = 1; fetchPage(); });
+  document.getElementById('pgPrev').addEventListener('click', function(){ if (_pgPage > 1 && !_pgLoading) { _pgPage--; fetchPage(); } });
+  document.getElementById('pgNext').addEventListener('click', function(){ var _tp = Math.max(1, Math.ceil(_pgTotal / _pgSize)); if (!_pgLoading && _pgPage < _tp) { _pgPage++; fetchPage(); } });
+  document.getElementById('pgSize').addEventListener('change', function(){ _pgSize = parseInt(this.value, 10) || 20; _pgPage = 1; fetchPage(); });
+  document.getElementById('pmType').addEventListener('change', function(){
+    document.getElementById('pmValueUnit').textContent = this.value === 'percent' ? '%' : 'บาท';
+    updatePreview();
+  });
+  document.getElementById('pmValue').addEventListener('input', updatePreview);
+  document.querySelectorAll('input[name=pmTarget]').forEach(function(r){
+    r.addEventListener('change', function(){ renderPicker(this.value, []); updatePreview(); });
+  });
+});
+
+/* ---------- Init ---------- */
+(async function init(){
+  _setupAdminPage();
+  if (!GAS_ENV) {
+    _dismissPageLoader();
+    document.getElementById('promoTableWrap').innerHTML = '<div class="empty-state"><i class="bi bi-exclamation-circle"></i>โหมดดูตัวอย่าง — ต้องเปิดผ่าน GAS Web App</div>';
+    return;
+  }
+  try {
+    await _initAuth();
+    await loadAll();
+    _dismissPageLoader();
+  } catch(err) {
+    _dismissPageLoader();
+    var authErrs = ['AUTH_REQUIRED','NOT_LOGGED_IN','SESSION_INVALID'];
+    if (authErrs.indexOf(err && err.message) !== -1) return;
+    document.getElementById('promoTableWrap').innerHTML = '<div class="empty-state"><i class="bi bi-exclamation-circle"></i>โหลดข้อมูลไม่สำเร็จ</div>';
+  }
+})();
+
+</script>
+</body>
+</html>

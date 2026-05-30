@@ -1,0 +1,25 @@
+{
+  "targetUrl": "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec",
+  "pagePath": "",
+  "queryParams": {
+    "page": "index"
+  },
+  "mode": "smoke",
+  "concurrentUsers": 5,
+  "durationSeconds": 30,
+  "rampUpSeconds": 10,
+  "requestTimeoutMs": 15000,
+  "outputFile": "",
+  "thresholds": {
+    "maxErrorRatePercent": 5,
+    "maxP95Ms": 3000
+  },
+  "stepTest": {
+    "startUsers": 5,
+    "stepUsers": 10,
+    "maxUsers": 100,
+    "durationSeconds": 30,
+    "rampUpSeconds": 10,
+    "cooldownSeconds": 5
+  }
+}

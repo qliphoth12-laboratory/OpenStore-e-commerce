@@ -1,0 +1,1113 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ตั้งค่าระบบ • Open Storefront</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    /* ===== SYSTEM PAGE — specific styles only ===== */
+    .sys-card { background:#fff; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+    .sys-card-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:.9rem 1.25rem; border-bottom:1px solid var(--border); background:#fafafa; }
+    .sys-card-title { font-size:.75rem; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); display:flex; align-items:center; gap:10px; }
+    .sys-card-desc { font-size:.81rem; color:#9ca3af; margin-top:4px; line-height:1.55; }
+    .sys-card-body { padding:1.25rem; }
+
+    /* Card icon badges */
+    .sys-card-icon { width:34px; height:34px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; font-size:1rem; background:#f3f4f6; color:#4b5563; border:1px solid #e5e7eb; }
+    .sys-card-icon.blue,
+    .sys-card-icon.gray,
+    .sys-card-icon.purple,
+    .sys-card-icon.green,
+    .sys-card-icon.orange,
+    .sys-card-icon.indigo,
+    .sys-card-icon.red { background:#f3f4f6; color:#4b5563; }
+
+    /* Health grid */
+    .health-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; }
+    .health-card { border-radius:12px; border:1px solid var(--border); border-left:3px solid var(--border); padding:12px 14px; background:#fff; display:flex; flex-direction:column; gap:4px; }
+    .health-card.is-ok   { border-left-color:#16a34a; }
+    .health-card.is-fail { border-left-color:#dc2626; }
+    .health-card .hc-label  { font-size:.7rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+    .health-card .hc-status { font-size:.8rem; font-weight:600; display:flex; align-items:center; gap:5px; margin-top:2px; }
+    .health-card .hc-value  { font-size:.7rem; color:var(--muted); font-family:monospace; word-break:break-all; margin-top:1px; }
+    .hc-icon { font-size:1.1rem; margin-bottom:2px; }
+    .hc-ok   { color:#16a34a; }
+    .hc-fail { color:#dc2626; }
+    .hc-dot { display:inline-block; width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+    .hc-dot-ok   { background:#16a34a; }
+    .hc-dot-fail { background:#dc2626; }
+
+    /* API key status badge */
+    .api-badge { display:inline-flex; align-items:center; gap:5px; background:#f8fafc; color:#475569; border:1px solid #e2e8f0; font-size:.72rem; font-weight:700; border-radius:999px; padding:.2rem .7rem; white-space:nowrap; flex-shrink:0; }
+    .api-badge i { font-size:.75rem; }
+
+    /* Field rows */
+    .field-row { display:flex; flex-direction:column; gap:5px; }
+    .field-row + .field-row { margin-top:1rem; }
+    .field-label { font-size:.82rem; font-weight:600; color:#374151; display:flex; align-items:center; gap:6px; }
+    .field-hint  { font-size:.75rem; color:#9ca3af; }
+    .field-readonly { background:#f8fafc !important; color:#6b7280 !important; cursor:default; }
+
+    /* URL bar */
+    .url-bar { display:flex; align-items:center; gap:8px; background:#f8fafc; border:1px solid var(--border); border-radius:10px; padding:8px 12px; }
+    .url-bar-text { font-size:.76rem; font-family:monospace; color:#374151; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+    /* Warning strip */
+    .warn-strip { display:flex; align-items:flex-start; gap:10px; background:#f8fafc; border:1px solid #e5e7eb; border-radius:10px; padding:.75rem 1rem; font-size:.81rem; color:#4b5563; line-height:1.5; }
+    .warn-strip i { flex-shrink:0; margin-top:1px; color:#6b7280; }
+
+    /* Sidebar sticky */
+    .sidebar { height:100vh; position:sticky; top:0; }
+  </style>
+</head>
+<body>
+<script>window._EXEC_URL = '<?!= execUrl ?>';</script>
+<?!= include('admin-shared') ?>
+
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <img id="brandLogo" alt="logo" style="height:36px;width:36px;object-fit:cover;border-radius:50%;display:none;flex-shrink:0">
+      <div>
+        <div class="fw-bold brand-skeleton" id="brandName"></div>
+        <div class="small text-muted">Dashboard</div>
+      </div>
+    </div>
+    <nav class="side-nav" id="sideNav">
+      <a class="link" data-page="editstore"><i class="bi bi-paint-bucket"></i> ตกแต่งหน้าร้าน</a>
+      <a class="link" data-page="product"><i class="bi bi-boxes"></i> จัดการสินค้า</a>
+      <a class="link" data-page="order"><i class="bi bi-receipt"></i> คำสั่งซื้อ</a>
+      <a class="link" data-page="print-order"><i class="bi bi-printer"></i> พิมพ์ใบขนส่ง</a>
+      <a class="link" data-page="shipping"><i class="bi bi-truck"></i> ขนส่ง</a>
+      <a class="link" data-page="payment"><i class="bi bi-qr-code"></i> ตั้งค่าการชำระเงิน</a>
+      <a class="link" data-page="promotion"><i class="bi bi-tag"></i> โปรโมชั่น</a>
+      <a class="link" data-page="gift"><i class="bi bi-gift"></i> ของแถม</a>
+      <a class="link" data-page="user"><i class="bi bi-people"></i> ผู้ดูแลระบบ</a>
+      <a class="link" data-page="legal"><i class="bi bi-file-earmark-text"></i> ข้อมูลทางกฎหมาย</a>
+      <a class="link active" data-page="system"><i class="bi bi-shield-check"></i> ตั้งค่าระบบ</a>
+    </nav>
+    <div class="sidebar-footer">
+      <button id="btnLogout" class="btn-logout">
+        <i class="bi bi-box-arrow-right"></i> ออกจากระบบ
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main>
+    <div class="topbar">
+      <div class="wrap">
+        <div class="d-flex align-items-center gap-2">
+          <span class="fw-bold">ตั้งค่าระบบ</span>
+          <span class="text-muted">•</span>
+          <span class="text-muted small">ตรวจสอบสถานะและกำหนดค่าการทำงาน</span>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm pill" id="btnRefresh">
+            <i class="bi bi-arrow-clockwise me-1"></i>รีเฟรช
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="p-3 d-flex flex-column gap-3">
+
+      <!-- 1. Health Dashboard -->
+      <div class="sys-card">
+        <div class="sys-card-header">
+          <div class="sys-card-title">
+            <span class="sys-card-icon blue"><i class="bi bi-activity"></i></span>
+            สถานะระบบ
+          </div>
+        </div>
+        <div class="sys-card-body">
+          <div class="health-grid" id="healthGrid">
+            <div class="text-center py-4 text-muted small" style="grid-column:1/-1">
+              <div class="spinner-border text-secondary" style="width:1.2rem;height:1.2rem;border-width:.2rem" role="status"></div>
+              <div class="mt-2">กำลังตรวจสอบ…</div>
+            </div>
+          </div>
+          <div class="mt-3" id="execUrlWrap" style="display:none">
+            <div style="font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Web App URL</div>
+            <div class="url-bar">
+              <span class="url-bar-text" id="execUrlText"></span>
+              <button class="btn btn-sm btn-outline-secondary pill" id="btnCopyUrl" title="คัดลอก">
+                <i class="bi bi-clipboard"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 1b. Payment Configuration Status -->
+      <div class="sys-card" id="paymentStatusCard">
+        <div class="sys-card-header">
+          <div>
+            <div class="sys-card-title">
+              <span class="sys-card-icon"><i class="bi bi-qr-code"></i></span>
+              การชำระเงิน (พร้อมเพย์)
+            </div>
+            <div class="sys-card-desc">สถานะการตั้งค่าบัญชีรับเงินที่แสดงให้ลูกค้าในหน้าคำสั่งซื้อ — หากยังไม่ได้ตั้งค่า ลูกค้าจะไม่เห็น QR สำหรับชำระเงิน</div>
+          </div>
+          <span id="paymentStatusBadge" class="api-badge" style="display:none"></span>
+        </div>
+        <div class="sys-card-body">
+          <div id="paymentStatusLoading" class="text-muted small">
+            <span class="spinner-border text-secondary" style="width:1rem;height:1rem;border-width:.18rem" role="status"></span>
+            <span class="ms-1">กำลังตรวจสอบ…</span>
+          </div>
+          <div id="paymentStatusWarn" class="warn-strip mb-3" style="display:none;border-color:#fde68a;background:#fffbeb;color:#92400e">
+            <i class="bi bi-exclamation-triangle-fill" style="color:#d97706"></i>
+            <span id="paymentStatusWarnText"></span>
+          </div>
+          <div id="paymentStatusOk" class="warn-strip mb-3" style="display:none">
+            <i class="bi bi-check-circle-fill" style="color:#16a34a"></i>
+            <span>ตั้งค่าการชำระเงินเรียบร้อยแล้ว ระบบพร้อมรับชำระเงินจากลูกค้า</span>
+          </div>
+          <div id="paymentStatusChecks" class="health-grid" style="display:none"></div>
+          <div class="mt-3">
+            <button class="btn btn-dark btn-sm pill" id="btnGoPayment">
+              <i class="bi bi-gear me-1"></i>ไปที่หน้าตั้งค่าการชำระเงิน
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. System Config (owner-only) -->
+      <div class="sys-card">
+        <div class="sys-card-header">
+          <div class="sys-card-title">
+            <span class="sys-card-icon gray"><i class="bi bi-gear-fill"></i></span>
+            ตั้งค่าระบบ
+          </div>
+        </div>
+        <div class="sys-card-body">
+          <div id="bannerNonOwner" class="d-flex align-items-center gap-2 mb-3 p-3"
+               style="display:none!important;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;font-size:.83rem;color:#4b5563">
+            <i class="bi bi-lock-fill flex-shrink-0"></i>
+            <span>การแก้ไขตั้งค่าระบบจำกัดเฉพาะ <strong>เจ้าของระบบ</strong> เท่านั้น</span>
+          </div>
+          <div class="field-row">
+            <label class="field-label">Sheet ID <span class="text-danger">*</span></label>
+            <input type="text" id="cfgSheetId" class="form-control form-control-sm" placeholder="Spreadsheet ID จาก URL ของ Google Sheets" disabled>
+            <span class="field-hint">docs.google.com/spreadsheets/d/<strong>ID</strong>/edit</span>
+          </div>
+          <div class="field-row">
+            <label class="field-label">Drive Folder ID <span class="text-danger">*</span></label>
+            <input type="text" id="cfgFolderId" class="form-control form-control-sm" placeholder="Drive Folder ID" disabled>
+            <span class="field-hint">drive.google.com/drive/folders/<strong>ID</strong></span>
+          </div>
+          <div class="field-row">
+            <label class="field-label">Owner Email</label>
+            <input type="email" id="cfgOwnerEmail" class="form-control form-control-sm field-readonly" readonly>
+            <span class="field-hint">email ของผู้ deploy script ไม่สามารถเปลี่ยนได้</span>
+          </div>
+          <div class="field-row" id="encKeyRow" style="display:none">
+            <label class="field-label">Encryption Key</label>
+            <div class="d-flex align-items-center gap-2">
+              <input type="text" id="cfgEncKey" class="form-control form-control-sm font-monospace field-readonly" readonly>
+              <span id="encKeyBadge" class="badge rounded-pill" style="font-size:.72rem;white-space:nowrap;flex-shrink:0"></span>
+            </div>
+            <span class="field-hint">Key ที่ใช้เข้ารหัสข้อมูลลูกค้า (ชื่อ-ที่อยู่-เบอร์โทร) ใน orders sheet</span>
+          </div>
+          <div class="mt-3">
+            <button class="btn btn-dark btn-sm pill" id="btnSaveConfig" style="display:none">
+              <i class="bi bi-shield-lock me-1"></i>บันทึกด้วย OTP
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. AfterShip API Key -->
+      <div class="sys-card">
+        <div class="sys-card-header">
+          <div>
+            <div class="sys-card-title">
+              <span class="sys-card-icon purple"><i class="bi bi-radar"></i></span>
+              ติดตามพัสดุ (AfterShip)
+            </div>
+            <div class="sys-card-desc">ดึงสถานะพัสดุ real-time แสดงบนหน้าคำสั่งซื้อของลูกค้า<br>
+              <span style="color:#c4c9d4">รองรับ Kerry · Flash · J&amp;T · BEST · ไปรษณีย์ไทย · DHL</span>
+            </div>
+          </div>
+          <span id="aftershipStatusBadge" class="api-badge" style="display:none">
+            <i class="bi bi-check-circle-fill"></i>ตั้งค่าแล้ว
+          </span>
+        </div>
+        <div class="sys-card-body">
+          <div id="aftershipKeySetRow" style="display:none">
+            <div class="field-row">
+              <label class="field-label">AfterShip API Key</label>
+              <input type="text" id="cfgAftershipKeyMasked" class="form-control form-control-sm font-monospace field-readonly" readonly>
+            </div>
+            <div class="d-flex gap-2 mt-3">
+              <button class="btn btn-outline-secondary btn-sm pill" id="btnChangeAftershipKey">
+                <i class="bi bi-pencil me-1"></i>เปลี่ยน Key
+              </button>
+              <button class="btn btn-outline-danger btn-sm pill" id="btnClearAftershipKey">
+                <i class="bi bi-trash me-1"></i>ลบ Key
+              </button>
+            </div>
+          </div>
+          <div id="aftershipKeyInputRow">
+            <div class="field-row">
+              <label class="field-label">AfterShip API Key</label>
+              <input type="text" id="cfgAftershipKey" class="form-control form-control-sm font-monospace"
+                     placeholder="at_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off">
+              <span class="field-hint">สมัครฟรีได้ที่ <a href="https://www.aftership.com" target="_blank">aftership.com</a> — Free tier: 100 trackings/เดือน</span>
+            </div>
+            <div class="d-flex gap-2 mt-3">
+              <button class="btn btn-dark btn-sm pill" id="btnSaveAftershipKey">
+                <i class="bi bi-check-lg me-1"></i>บันทึก Key
+              </button>
+              <button class="btn btn-outline-secondary btn-sm pill d-none" id="btnCancelAftershipKey">ยกเลิก</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Thailand Post API Token -->
+      <div class="sys-card">
+        <div class="sys-card-header">
+          <div>
+            <div class="sys-card-title">
+              <span class="sys-card-icon green"><i class="bi bi-envelope-fill"></i></span>
+              ติดตามพัสดุ (ไปรษณีย์ไทย)
+            </div>
+            <div class="sys-card-desc">ใช้ Thailand Post API ดึงสถานะพัสดุ real-time สำหรับขนส่งไปรษณีย์ไทย</div>
+          </div>
+          <span id="thaipostStatusBadge" class="api-badge" style="display:none">
+            <i class="bi bi-check-circle-fill"></i>ตั้งค่าแล้ว
+          </span>
+        </div>
+        <div class="sys-card-body">
+          <div id="thaipostTokenSetRow" style="display:none">
+            <div class="field-row">
+              <label class="field-label">Static Token (ไปรษณีย์ไทย)</label>
+              <input type="text" id="cfgThaipostTokenMasked" class="form-control form-control-sm font-monospace field-readonly" readonly>
+            </div>
+            <div class="d-flex gap-2 mt-3">
+              <button class="btn btn-outline-secondary btn-sm pill" id="btnChangeThaipostToken">
+                <i class="bi bi-pencil me-1"></i>เปลี่ยน Token
+              </button>
+              <button class="btn btn-outline-danger btn-sm pill" id="btnClearThaipostToken">
+                <i class="bi bi-trash me-1"></i>ลบ Token
+              </button>
+            </div>
+          </div>
+          <div id="thaipostTokenInputRow">
+            <div class="field-row">
+              <label class="field-label">Static Token (ไปรษณีย์ไทย)</label>
+              <input type="text" id="cfgThaipostToken" class="form-control form-control-sm font-monospace"
+                     placeholder="Token จาก Thailand Post API" autocomplete="off">
+              <span class="field-hint">ขอได้จากพอร์ทัล Thailand Post Developer</span>
+            </div>
+            <div class="d-flex gap-2 mt-3">
+              <button class="btn btn-dark btn-sm pill" id="btnSaveThaipostToken">
+                <i class="bi bi-check-lg me-1"></i>บันทึก Token
+              </button>
+              <button class="btn btn-outline-secondary btn-sm pill d-none" id="btnCancelThaipostToken">ยกเลิก</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. ETracking API Key -->
+      <div class="sys-card">
+        <div class="sys-card-header">
+          <div>
+            <div class="sys-card-title">
+              <span class="sys-card-icon orange"><i class="bi bi-truck"></i></span>
+              ติดตามพัสดุ (ETracking)
+            </div>
+            <div class="sys-card-desc">ใช้ ETracking API สำหรับขนส่งเอกชน — Kerry · Flash · J&amp;T · BEST · DHL</div>
+          </div>
+          <span id="etrackStatusBadge" class="api-badge" style="display:none">
+            <i class="bi bi-check-circle-fill"></i>ตั้งค่าแล้ว
+          </span>
+        </div>
+        <div class="sys-card-body">
+          <div id="etrackKeySetRow" style="display:none">
+            <div class="field-row">
+              <label class="field-label">ETracking API Key</label>
+              <input type="text" id="cfgEtrackKeyMasked" class="form-control form-control-sm font-monospace field-readonly" readonly>
+            </div>
+            <div class="d-flex gap-2 mt-3">
+              <button class="btn btn-outline-secondary btn-sm pill" id="btnChangeEtrackKey">
+                <i class="bi bi-pencil me-1"></i>เปลี่ยน Key
+              </button>
+              <button class="btn btn-outline-danger btn-sm pill" id="btnClearEtrackKey">
+                <i class="bi bi-trash me-1"></i>ลบ Key
+              </button>
+            </div>
+          </div>
+          <div id="etrackKeyInputRow">
+            <div class="field-row">
+              <label class="field-label">API Key</label>
+              <input type="text" id="cfgEtrackKey" class="form-control form-control-sm font-monospace"
+                     placeholder="ETracking API Key" autocomplete="off">
+            </div>
+            <div class="field-row mt-2">
+              <label class="field-label">Key Secret</label>
+              <input type="text" id="cfgEtrackSecret" class="form-control form-control-sm font-monospace"
+                     placeholder="ETracking Key Secret" autocomplete="off">
+              <span class="field-hint">ขอได้จากพอร์ทัล ETracking — etrackings.com</span>
+            </div>
+            <div class="d-flex gap-2 mt-3">
+              <button class="btn btn-dark btn-sm pill" id="btnSaveEtrackKey">
+                <i class="bi bi-check-lg me-1"></i>บันทึก Key
+              </button>
+              <button class="btn btn-outline-secondary btn-sm pill d-none" id="btnCancelEtrackKey">ยกเลิก</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6. Order Link Expiry -->
+      <div class="sys-card">
+        <div class="sys-card-header">
+          <div>
+            <div class="sys-card-title">
+              <span class="sys-card-icon indigo"><i class="bi bi-clock-history"></i></span>
+              อายุลิงก์คำสั่งซื้อ
+            </div>
+            <div class="sys-card-desc">จำนวนวันที่ลูกค้าสามารถเปิดลิงก์ดูรายละเอียดคำสั่งซื้อได้ — ตั้งเป็น <strong style="color:#374151">0</strong> = ไม่หมดอายุ</div>
+          </div>
+        </div>
+        <div class="sys-card-body">
+          <div class="field-row" style="max-width:200px">
+            <label class="field-label">หมดอายุภายใน (วัน)</label>
+            <input type="number" id="cfgOrderExpireDays" class="form-control form-control-sm"
+                   min="0" max="3650" value="90" placeholder="90">
+          </div>
+          <div class="mt-3">
+            <button class="btn btn-dark btn-sm pill" id="btnSaveOrderExpiry" onclick="saveOrderExpiryConfig()">
+              <i class="bi bi-floppy me-1"></i>บันทึกและอัปเดต orders ทั้งหมด
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7. Key Rotation (owner only) -->
+      <div class="sys-card" id="keyRotatePanel" style="display:none">
+        <div class="sys-card-header">
+          <div>
+            <div class="sys-card-title">
+              <span class="sys-card-icon red"><i class="bi bi-arrow-repeat"></i></span>
+              หมุนเวียน Encryption Key
+            </div>
+            <div class="sys-card-desc">สร้างคีย์เข้ารหัสใหม่และเข้ารหัสข้อมูลลูกค้าทั้งหมดอัตโนมัติ ใช้เมื่อคีย์ปัจจุบันอาจถูกเปิดเผย</div>
+          </div>
+        </div>
+        <div class="sys-card-body">
+          <div class="warn-strip mb-3">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <span>การหมุนเวียนคีย์เข้ารหัสจะเข้ารหัสข้อมูลใหม่ในทุกคำสั่งซื้อ <strong>ไม่สามารถยกเลิกได้</strong> — ระบบจะหยุดรับคำสั่งซื้อชั่วคราวระหว่างดำเนินการ</span>
+          </div>
+          <div id="rotateProgress" style="display:none" class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1" style="font-size:.79rem">
+              <span class="text-muted">กำลังเข้ารหัสข้อมูลใหม่…</span>
+              <span id="rotateProgressLabel" class="fw-semibold text-muted">0 / 0</span>
+            </div>
+            <div class="progress" style="height:6px;border-radius:999px;background:#f1f5f9">
+              <div id="rotateProgressBar" class="progress-bar bg-dark" role="progressbar" style="width:0%;transition:width .4s"></div>
+            </div>
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-outline-danger btn-sm pill" id="btnRotateKey">
+              <i class="bi bi-arrow-repeat me-1"></i>หมุนเวียน Key ด้วย OTP
+            </button>
+            <button class="btn btn-outline-secondary btn-sm pill" id="btnEmergencyUnlock" style="display:none">
+              <i class="bi bi-unlock me-1"></i>ปลดล็อกฉุกเฉิน
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 8. Activity Logging (owner only) -->
+      <div class="sys-card" id="loggingPanel" style="display:none">
+        <div class="sys-card-header">
+          <div>
+            <div class="sys-card-title">
+              <span class="sys-card-icon gray"><i class="bi bi-journal-text"></i></span>
+              ระบบบันทึก Log
+            </div>
+            <div class="sys-card-desc">บันทึกกิจกรรม (เข้าสู่ระบบ · คำสั่งซื้อ · การชำระเงิน · การตั้งค่า) เป็นไฟล์ใน Drive<br>
+              <span style="color:#c4c9d4">เป็นโหมดเสริมสำหรับ production — การติดตั้งใหม่จะปิดไว้โดยค่าเริ่มต้น</span>
+            </div>
+          </div>
+        </div>
+        <div class="sys-card-body">
+          <div class="warn-strip mb-3">
+            <i class="bi bi-info-circle-fill"></i>
+            <span>เมื่อเปิดใช้งาน ระบบจะบันทึก hash ของผู้ใช้/เซสชัน · user agent · ข้อมูลกิจกรรม ลงโฟลเดอร์ <strong>/log</strong> ใน Drive (เก็บ 90 วัน) — โฟลเดอร์นี้เป็นข้อมูลส่วนบุคคล ควรเก็บเป็นส่วนตัว</span>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" id="logEnabledSwitch">
+            <label class="form-check-label field-label" for="logEnabledSwitch">เปิดใช้งานระบบบันทึก Log</label>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" id="logIpObsSwitch">
+            <label class="form-check-label field-label" for="logIpObsSwitch">เก็บ IP ลูกค้าผ่านผู้ให้บริการภายนอก (ipify)</label>
+          </div>
+          <div class="field-hint mb-3">การเก็บ IP จะให้เบราว์เซอร์ของลูกค้าดึง IP สาธารณะจาก ipify แล้วส่งกลับมา — เป็น IP ที่ลูกค้าดึงเอง <strong>ไม่ใช่</strong> IP ที่เซิร์ฟเวอร์ตรวจสอบ และมีการส่งข้อมูลให้บริการภายนอก แนะนำให้เปิดเฉพาะเมื่อจำเป็น</div>
+          <div id="logStatsRow" class="field-hint mb-3" style="display:none"></div>
+          <button class="btn btn-dark btn-sm pill" id="btnSaveLogging">
+            <i class="bi bi-floppy me-1"></i>บันทึกการตั้งค่า Log
+          </button>
+        </div>
+      </div>
+
+    </div><!-- /p-3 -->
+  </main>
+</div><!-- /app -->
+
+<script>
+var _isOwnerGlobal = false;
+
+/* ==========================================
+   Health rendering
+========================================== */
+function renderHealthCards(health, execUrl) {
+  var grid = document.getElementById('healthGrid');
+  var checks = [
+    { icon:'bi-table',        label:'Google Sheet',   ok:health.sheetId.ok,  status:health.sheetId.ok  ? 'เชื่อมต่อแล้ว'         : 'เชื่อมต่อล้มเหลว',    value:health.sheetId.value },
+    { icon:'bi-folder',       label:'Drive Folder',   ok:health.folderId.ok, status:health.folderId.ok ? 'เชื่อมต่อแล้ว'         : 'เชื่อมต่อล้มเหลว',    value:health.folderId.value },
+    { icon:'bi-key',          label:'Encryption Key', ok:health.encKey.ok,   status:health.encKey.ok   ? 'ตั้งค่าแล้ว'           : 'ยังไม่ได้ตั้งค่า',    value:health.encKey.value },
+    { icon:'bi-alarm',        label:'Time Trigger',   ok:health.trigger.ok,  status:health.trigger.ok  ? 'กำลังทำงาน'            : 'ไม่พบ — รัน setupAll()', value:'' },
+    { icon:'bi-person-badge', label:'ผู้ดูแลระบบ',    ok:health.users.ok,    status:health.users.ok    ? health.users.count + ' บัญชี' : 'ยังไม่มีผู้ใช้', value:'' },
+    { icon:'bi-lock',         label:'Rotation Lock',
+      ok:     health.rotateLock ? !health.rotateLock.locked : true,
+      status: health.rotateLock && health.rotateLock.locked ? 'ล็อกอยู่ — กำลัง rotate' : 'ปกติ', value:'' }
+  ];
+  grid.innerHTML = checks.map(function(c) {
+    return '<div class="health-card ' + (c.ok ? 'is-ok' : 'is-fail') + '">'
+      + '<i class="bi ' + c.icon + ' hc-icon ' + (c.ok ? 'hc-ok' : 'hc-fail') + '"></i>'
+      + '<div class="hc-label">' + c.label + '</div>'
+      + '<div class="hc-status">'
+      + '<span class="hc-dot ' + (c.ok ? 'hc-dot-ok' : 'hc-dot-fail') + '"></span>'
+      + '<span class="' + (c.ok ? 'hc-ok' : 'hc-fail') + '">' + escHtml(c.status) + '</span>'
+      + '</div>'
+      + (c.value ? '<div class="hc-value">' + escHtml(c.value) + '</div>' : '')
+      + '</div>';
+  }).join('');
+
+  if (execUrl) {
+    document.getElementById('execUrlText').textContent = execUrl;
+    document.getElementById('execUrlWrap').style.display = '';
+  }
+}
+
+/* ==========================================
+   System info load
+========================================== */
+function loadSystemInfo() {
+  return callRpc('getSystemInfoRpc', _getAdminToken()).then(function(r) {
+    if (!r || !r.ok) {
+      document.getElementById('healthGrid').innerHTML =
+        '<div class="alert alert-danger small mb-0" style="grid-column:1/-1">'
+        + escHtml((r && r.error) || 'โหลดข้อมูลล้มเหลว') + '</div>';
+      return;
+    }
+    _isOwnerGlobal = !!r.isOwner;
+    renderHealthCards(r.health, r.execUrl);
+
+    var banner = document.getElementById('bannerNonOwner');
+    var btn    = document.getElementById('btnSaveConfig');
+
+    if (r.isOwner && r.config) {
+      document.getElementById('cfgSheetId').value    = r.config.sheetId    || '';
+      document.getElementById('cfgFolderId').value   = r.config.folderId   || '';
+      document.getElementById('cfgOwnerEmail').value = r.config.ownerEmail || '';
+      ['cfgSheetId','cfgFolderId'].forEach(function(id) {
+        document.getElementById(id).disabled = false;
+      });
+      btn.style.display = '';
+      banner.style.removeProperty('display');
+      banner.style.display = 'none';
+
+      var encKeyRow = document.getElementById('encKeyRow');
+      if (encKeyRow && r.config.encKeyMasked !== undefined) {
+        document.getElementById('cfgEncKey').value = r.config.encKeyMasked || '(ยังไม่ได้ตั้งค่า)';
+        var badge = document.getElementById('encKeyBadge');
+        if (r.config.encKeyOk) {
+          badge.textContent = 'ตั้งค่าแล้ว'; badge.className = 'badge rounded-pill bg-success';
+        } else {
+          badge.textContent = 'ไม่พบ Key'; badge.className = 'badge rounded-pill bg-danger';
+        }
+        encKeyRow.style.display = '';
+      }
+
+      var shipBadge = document.getElementById('aftershipStatusBadge');
+      if (r.config.aftershipKeyOk) {
+        document.getElementById('cfgAftershipKeyMasked').value = r.config.aftershipKeyMasked || '';
+        document.getElementById('aftershipKeySetRow').style.display = '';
+        document.getElementById('aftershipKeyInputRow').style.display = 'none';
+        if (shipBadge) shipBadge.style.display = '';
+      } else {
+        document.getElementById('aftershipKeySetRow').style.display = 'none';
+        document.getElementById('aftershipKeyInputRow').style.display = '';
+        if (shipBadge) shipBadge.style.display = 'none';
+      }
+
+      var thpBadge = document.getElementById('thaipostStatusBadge');
+      if (r.config.thaipostTokenOk) {
+        document.getElementById('cfgThaipostTokenMasked').value = r.config.thaipostTokenMasked || '';
+        document.getElementById('thaipostTokenSetRow').style.display = '';
+        document.getElementById('thaipostTokenInputRow').style.display = 'none';
+        if (thpBadge) thpBadge.style.display = '';
+      } else {
+        document.getElementById('thaipostTokenSetRow').style.display = 'none';
+        document.getElementById('thaipostTokenInputRow').style.display = '';
+        if (thpBadge) thpBadge.style.display = 'none';
+      }
+
+      var etBadge = document.getElementById('etrackStatusBadge');
+      if (r.config.etrackKeyOk) {
+        document.getElementById('cfgEtrackKeyMasked').value = r.config.etrackKeyMasked || '';
+        document.getElementById('etrackKeySetRow').style.display = '';
+        document.getElementById('etrackKeyInputRow').style.display = 'none';
+        if (etBadge) etBadge.style.display = '';
+      } else {
+        document.getElementById('etrackKeySetRow').style.display = 'none';
+        document.getElementById('etrackKeyInputRow').style.display = '';
+        if (etBadge) etBadge.style.display = 'none';
+      }
+
+      callRpc('getSiteConfigBundle').then(function(br) {
+        if (br && br.ok && br.config) {
+          var days = br.config.order_token_expires_days !== undefined ? br.config.order_token_expires_days : 90;
+          document.getElementById('cfgOrderExpireDays').value = Number(days);
+        }
+      }).catch(function() {});
+
+      document.getElementById('loggingPanel').style.display = '';
+      loadLoggingConfig();
+
+      document.getElementById('keyRotatePanel').style.display = '';
+      var isLocked = r.health && r.health.rotateLock && r.health.rotateLock.locked;
+      document.getElementById('btnRotateKey').disabled = isLocked;
+      document.getElementById('btnEmergencyUnlock').style.display = isLocked ? '' : 'none';
+      if (isLocked) {
+        document.getElementById('rotateProgress').style.display = '';
+        _startRotatePolling();
+      }
+    } else {
+      btn.style.display = 'none';
+      banner.style.removeProperty('display');
+      banner.style.display = 'flex';
+    }
+  }).catch(function(err) {
+    document.getElementById('healthGrid').innerHTML =
+      '<div class="text-danger small" style="grid-column:1/-1"><i class="bi bi-exclamation-circle me-1"></i>'
+      + escHtml(translateRpcError(err, MSG.error.fetch)) + '</div>';
+  });
+}
+
+/* ==========================================
+   AfterShip Key handlers
+========================================== */
+document.getElementById('btnSaveAftershipKey').addEventListener('click', function() {
+  var key = document.getElementById('cfgAftershipKey').value.trim();
+  if (!key) return;
+  showHUD('กำลังบันทึก…');
+  _rpc('saveAftershipKeyRpc', key).then(function(r) {
+    if (r && r.ok) { hideHUD('ok', '✓ บันทึก AfterShip Key สำเร็จ'); loadSystemInfo(); }
+    else hideHUD('err', '✗ บันทึกไม่สำเร็จ');
+  }).catch(function(err) { hideHUD('err', translateRpcError(err, MSG.error.generic)); });
+});
+
+document.getElementById('btnClearAftershipKey').addEventListener('click', function() {
+  Swal.fire({
+    title:'ลบ AfterShip API Key?', icon:'warning',
+    text:'บริษัทขนส่งที่เปิดการติดตามอัตโนมัติจะไม่สามารถดึงข้อมูล real-time ได้',
+    showCancelButton:true, confirmButtonText:'ลบ', cancelButtonText:'ยกเลิก', confirmButtonColor:'#dc2626'
+  }).then(function(res) {
+    if (!res.isConfirmed) return;
+    showHUD('กำลังลบ…');
+    _rpc('clearAftershipKeyRpc').then(function(r) {
+      if (r && r.ok) { hideHUD('ok', '✓ ลบ AfterShip Key แล้ว'); loadSystemInfo(); }
+      else hideHUD('err', '✗ ลบไม่สำเร็จ');
+    }).catch(function(err) { hideHUD('err', translateRpcError(err, MSG.error.generic)); });
+  });
+});
+
+document.getElementById('btnChangeAftershipKey').addEventListener('click', function() {
+  document.getElementById('aftershipKeySetRow').style.display = 'none';
+  document.getElementById('aftershipKeyInputRow').style.display = '';
+  document.getElementById('cfgAftershipKey').value = '';
+  document.getElementById('cfgAftershipKey').focus();
+  document.getElementById('btnCancelAftershipKey').classList.remove('d-none');
+  var b = document.getElementById('aftershipStatusBadge');
+  if (b) b.style.display = 'none';
+});
+
+document.getElementById('btnCancelAftershipKey').addEventListener('click', function() {
+  document.getElementById('aftershipKeyInputRow').style.display = 'none';
+  document.getElementById('aftershipKeySetRow').style.display = '';
+  document.getElementById('btnCancelAftershipKey').classList.add('d-none');
+  var b = document.getElementById('aftershipStatusBadge');
+  if (b) b.style.display = '';
+});
+
+/* ==========================================
+   Thailand Post Token handlers
+========================================== */
+document.getElementById('btnSaveThaipostToken').addEventListener('click', function() {
+  var token = document.getElementById('cfgThaipostToken').value.trim();
+  if (!token) return;
+  showHUD('กำลังบันทึก…');
+  _rpc('saveThaipostTokenRpc', token).then(function(r) {
+    if (r && r.ok) { hideHUD('ok', '✓ บันทึก Thailand Post Token สำเร็จ'); loadSystemInfo(); }
+    else hideHUD('err', '✗ บันทึกไม่สำเร็จ: ' + (r && r.error || ''));
+  }).catch(function(err) { hideHUD('err', translateRpcError(err, MSG.error.generic)); });
+});
+
+document.getElementById('btnClearThaipostToken').addEventListener('click', function() {
+  Swal.fire({
+    title:'ลบ Thailand Post Token?', icon:'warning',
+    text:'ขนส่งไปรษณีย์ไทยที่ตั้งค่าผู้ให้บริการเป็น "ไปรษณีย์ไทย API" จะไม่สามารถดึงข้อมูล real-time ได้',
+    showCancelButton:true, confirmButtonText:'ลบ', cancelButtonText:'ยกเลิก', confirmButtonColor:'#dc2626'
+  }).then(function(res) {
+    if (!res.isConfirmed) return;
+    showHUD('กำลังลบ…');
+    _rpc('clearThaipostTokenRpc').then(function(r) {
+      if (r && r.ok) { hideHUD('ok', '✓ ลบ Thailand Post Token แล้ว'); loadSystemInfo(); }
+      else hideHUD('err', '✗ ลบไม่สำเร็จ');
+    }).catch(function(err) { hideHUD('err', translateRpcError(err, MSG.error.generic)); });
+  });
+});
+
+document.getElementById('btnChangeThaipostToken').addEventListener('click', function() {
+  document.getElementById('thaipostTokenSetRow').style.display = 'none';
+  document.getElementById('thaipostTokenInputRow').style.display = '';
+  document.getElementById('cfgThaipostToken').value = '';
+  document.getElementById('cfgThaipostToken').focus();
+  document.getElementById('btnCancelThaipostToken').classList.remove('d-none');
+  var b = document.getElementById('thaipostStatusBadge');
+  if (b) b.style.display = 'none';
+});
+
+document.getElementById('btnCancelThaipostToken').addEventListener('click', function() {
+  document.getElementById('thaipostTokenInputRow').style.display = 'none';
+  document.getElementById('thaipostTokenSetRow').style.display = '';
+  document.getElementById('btnCancelThaipostToken').classList.add('d-none');
+  var b = document.getElementById('thaipostStatusBadge');
+  if (b) b.style.display = '';
+});
+
+/* ==========================================
+   ETracking Key handlers
+========================================== */
+document.getElementById('btnSaveEtrackKey').addEventListener('click', function() {
+  var apiKey    = document.getElementById('cfgEtrackKey').value.trim();
+  var keySecret = document.getElementById('cfgEtrackSecret').value.trim();
+  if (!apiKey || !keySecret) {
+    Swal.fire({ toast:true, icon:'warning', title:'กรุณาระบุ API Key และ Key Secret', position:'top-end', timer:2200, showConfirmButton:false });
+    return;
+  }
+  showHUD('กำลังบันทึก…');
+  _rpc('saveEtrackKeyRpc', apiKey, keySecret).then(function(r) {
+    if (r && r.ok) { hideHUD('ok', '✓ บันทึก ETracking Key สำเร็จ'); loadSystemInfo(); }
+    else hideHUD('err', '✗ บันทึกไม่สำเร็จ: ' + (r && r.error || ''));
+  }).catch(function(err) { hideHUD('err', translateRpcError(err, MSG.error.generic)); });
+});
+
+document.getElementById('btnClearEtrackKey').addEventListener('click', function() {
+  Swal.fire({
+    title:'ลบ ETracking API Key?', icon:'warning',
+    text:'ขนส่งที่ตั้งค่าผู้ให้บริการเป็น "ETracking" จะไม่สามารถดึงข้อมูล real-time ได้',
+    showCancelButton:true, confirmButtonText:'ลบ', cancelButtonText:'ยกเลิก', confirmButtonColor:'#dc2626'
+  }).then(function(res) {
+    if (!res.isConfirmed) return;
+    showHUD('กำลังลบ…');
+    _rpc('clearEtrackKeyRpc').then(function(r) {
+      if (r && r.ok) { hideHUD('ok', '✓ ลบ ETracking Key แล้ว'); loadSystemInfo(); }
+      else hideHUD('err', '✗ ลบไม่สำเร็จ');
+    }).catch(function(err) { hideHUD('err', translateRpcError(err, MSG.error.generic)); });
+  });
+});
+
+document.getElementById('btnChangeEtrackKey').addEventListener('click', function() {
+  document.getElementById('etrackKeySetRow').style.display = 'none';
+  document.getElementById('etrackKeyInputRow').style.display = '';
+  document.getElementById('cfgEtrackKey').value = '';
+  document.getElementById('cfgEtrackSecret').value = '';
+  document.getElementById('cfgEtrackKey').focus();
+  document.getElementById('btnCancelEtrackKey').classList.remove('d-none');
+  var b = document.getElementById('etrackStatusBadge');
+  if (b) b.style.display = 'none';
+});
+
+document.getElementById('btnCancelEtrackKey').addEventListener('click', function() {
+  document.getElementById('etrackKeyInputRow').style.display = 'none';
+  document.getElementById('etrackKeySetRow').style.display = '';
+  document.getElementById('btnCancelEtrackKey').classList.add('d-none');
+  var b = document.getElementById('etrackStatusBadge');
+  if (b) b.style.display = '';
+});
+
+/* ==========================================
+   Order Expiry Config Save
+========================================== */
+async function saveOrderExpiryConfig() {
+  var days = parseInt(document.getElementById('cfgOrderExpireDays').value, 10);
+  if (isNaN(days) || days < 0) days = 90;
+  var btn = document.getElementById('btnSaveOrderExpiry');
+  btn.disabled = true;
+  showHUD('กำลังบันทึก…');
+  try {
+    var bundleR = await callRpc('getSiteConfigBundle');
+    var cfg = (bundleR && bundleR.ok && bundleR.config) ? bundleR.config : {};
+    delete cfg.products;
+    delete cfg.shipping_companies;
+    cfg.order_token_expires_days = days;
+    var r = await callRpc('publishSiteConfig', _getAdminToken(), cfg);
+    if (!r || !r.ok) { hideHUD('err', r ? r.error : 'บันทึกล้มเหลว'); return; }
+    var upd = await callRpc('updateOrdersTokenExpiryRpc', _getAdminToken(), days);
+    hideHUD('ok', 'บันทึกสำเร็จ' + (upd && upd.ok ? ' · อัปเดต ' + upd.updated + ' orders' : ''));
+  } catch(err) {
+    hideHUD('err', translateRpcError(err, MSG.error.generic));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ==========================================
+   Save System Config with OTP
+========================================== */
+document.getElementById('btnSaveConfig').addEventListener('click', function() {
+  if (!_isOwnerGlobal) return;
+  var sheetId  = document.getElementById('cfgSheetId').value.trim();
+  var folderId = document.getElementById('cfgFolderId').value.trim();
+  if (!sheetId || !folderId) {
+    Swal.fire({ icon:'warning', title:'ข้อมูลไม่ครบ', text:'กรุณากรอก Sheet ID และ Folder ID', confirmButtonText:'ตกลง' });
+    return;
+  }
+  var payload = { sheetId: sheetId, folderId: folderId };
+  showHUD('กำลังส่ง OTP…');
+  callRpc('sendSystemOtpRpc', _getAdminToken()).then(function(r) {
+    if (!r || !r.ok) { hideHUD('err', r ? r.error : 'ส่ง OTP ล้มเหลว'); return Promise.reject(null); }
+    hideHUD('ok', 'ส่ง OTP แล้ว');
+    var quotaHtml = (r.remainingQuota !== undefined)
+      ? '<br><span style="font-size:.78rem;color:#9ca3af"><i class="bi bi-envelope me-1"></i>โควต้าการส่ง OTP เหลืออีก <strong style="color:#374151">' + r.remainingQuota + '</strong> ครั้ง</span>'
+      : '';
+    return Swal.fire({
+      title:'ยืนยันตัวตน',
+      html:'ส่งรหัส OTP ไปที่ <strong>' + escHtml(r.maskedEmail) + '</strong> แล้ว<br>'
+        + '<span style="font-size:.82rem;color:#6b7280">รหัสมีอายุ 10 นาที</span>' + quotaHtml,
+      input:'text', inputPlaceholder:'กรอกรหัส 6 หลัก',
+      inputAttributes:{ maxlength:'6', autocomplete:'one-time-code', inputmode:'numeric', style:'text-align:center;letter-spacing:.4em;font-size:1.5rem;font-weight:700' },
+      inputValidator:function(v){ if (!v || v.trim().length < 4) return 'กรุณากรอกรหัส OTP'; },
+      showCancelButton:true, confirmButtonText:'ยืนยัน', cancelButtonText:'ยกเลิก', confirmButtonColor:'#111827'
+    });
+  }).then(function(result) {
+    if (!result || result.isDismissed) return Promise.reject(null);
+    showHUD('กำลังบันทึก…');
+    return callRpc('verifySystemOtpAndSaveRpc', _getAdminToken(), result.value, payload);
+  }).then(function(r) {
+    if (!r) return;
+    if (r.ok) { hideHUD('ok', 'บันทึกสำเร็จ'); loadSystemInfo(); }
+    else hideHUD('err', r.error || 'บันทึกล้มเหลว');
+  }).catch(function(err) {
+    if (err) hideHUD('err', translateRpcError(err, MSG.error.generic));
+  });
+});
+
+/* ==========================================
+   Key Rotation + Progress Polling
+========================================== */
+var _rotatePollTimer = null;
+
+function _updateRotateProgressUI(total, processed) {
+  var pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+  document.getElementById('rotateProgressBar').style.width = pct + '%';
+  document.getElementById('rotateProgressLabel').textContent = processed + ' / ' + total + ' orders (' + pct + '%)';
+}
+
+function _startRotatePolling() {
+  clearInterval(_rotatePollTimer);
+  document.getElementById('rotateProgress').style.display = '';
+  document.getElementById('btnRotateKey').disabled = true;
+  document.getElementById('btnEmergencyUnlock').style.display = _isOwnerGlobal ? '' : 'none';
+  _rotatePollTimer = setInterval(function() {
+    callRpc('getRotateLockStatusRpc').then(function(r) {
+      if (!r) return;
+      if (r.locked) {
+        _updateRotateProgressUI(r.total || 0, r.processed || 0);
+      } else {
+        clearInterval(_rotatePollTimer);
+        document.getElementById('rotateProgress').style.display = 'none';
+        document.getElementById('btnRotateKey').disabled = false;
+        document.getElementById('btnEmergencyUnlock').style.display = 'none';
+        loadSystemInfo();
+      }
+    }).catch(function() {});
+  }, 2000);
+}
+
+document.getElementById('btnRotateKey').addEventListener('click', function() {
+  if (!_isOwnerGlobal) return;
+  Swal.fire({
+    icon:'warning', title:'หมุนเวียน Encryption Key?',
+    html:'ระบบจะ <strong>re-encrypt ข้อมูลลูกค้าทั้งหมด</strong> ด้วย key ใหม่<br>'
+      + '<span style="color:#6b7280;font-size:.87rem">key เก่าจะถูกลบถาวร — ดำเนินการต่อเมื่อ key ปัจจุบันถูกเปิดเผยเท่านั้น</span>',
+    showCancelButton:true, confirmButtonText:'ดำเนินการต่อ', cancelButtonText:'ยกเลิก', confirmButtonColor:'#b91c1c'
+  }).then(function(result) {
+    if (!result.isConfirmed) return;
+    showHUD('กำลังส่ง OTP…');
+    callRpc('sendKeyRotateOtpRpc', _getAdminToken()).then(function(r) {
+      if (!r || !r.ok) { hideHUD('err', r ? r.error : 'ส่ง OTP ล้มเหลว'); return Promise.reject(null); }
+      hideHUD('ok', 'ส่ง OTP แล้ว');
+      var quotaHtml = (r.remainingQuota !== undefined)
+        ? '<br><span style="font-size:.78rem;color:#9ca3af"><i class="bi bi-envelope me-1"></i>โควต้าการส่ง OTP เหลืออีก <strong style="color:#374151">' + r.remainingQuota + '</strong> ครั้ง</span>'
+        : '';
+      return Swal.fire({
+        title:'ยืนยันตัวตน',
+        html:'ส่งรหัส OTP ไปที่ <strong>' + escHtml(r.maskedEmail) + '</strong> แล้ว<br>'
+          + '<span style="font-size:.82rem;color:#6b7280">รหัสมีอายุ 10 นาที</span>' + quotaHtml,
+        input:'text', inputPlaceholder:'กรอกรหัส 6 หลัก',
+        inputAttributes:{ maxlength:'6', autocomplete:'one-time-code', inputmode:'numeric', style:'text-align:center;letter-spacing:.4em;font-size:1.5rem;font-weight:700' },
+        inputValidator:function(v){ if (!v || v.trim().length < 4) return 'กรุณากรอกรหัส OTP'; },
+        showCancelButton:true, confirmButtonText:'ยืนยันและหมุนเวียน Key', cancelButtonText:'ยกเลิก', confirmButtonColor:'#b91c1c'
+      });
+    }).then(function(result) {
+      if (!result || result.isDismissed) return Promise.reject(null);
+      showHUD('กำลังเข้ารหัสข้อมูลใหม่…');
+      _startRotatePolling();
+      return callRpc('verifyAndRotateKeyRpc', _getAdminToken(), result.value);
+    }).then(function(r) {
+      if (!r) return;
+      clearInterval(_rotatePollTimer);
+      document.getElementById('rotateProgress').style.display = 'none';
+      document.getElementById('btnRotateKey').disabled = false;
+      document.getElementById('btnEmergencyUnlock').style.display = 'none';
+      if (r.ok) {
+        hideHUD('ok', 'เข้ารหัสข้อมูลใหม่เรียบร้อยแล้ว');
+        Swal.fire({
+          icon:'success', title:'หมุนเวียน Key สำเร็จ',
+          html:'เข้ารหัสข้อมูลใหม่เรียบร้อยแล้ว <strong>' + (r.rowsProcessed || 0) + ' คำสั่งซื้อ</strong><br>'
+            + '<span style="font-size:.85rem;color:#6b7280">key ใหม่ถูกบันทึกแล้ว</span>',
+          confirmButtonText:'ปิด', confirmButtonColor:'#111827'
+        });
+        loadSystemInfo();
+      } else {
+        hideHUD('err', r.error || 'หมุนเวียน Key ล้มเหลว');
+      }
+    }).catch(function(err) {
+      clearInterval(_rotatePollTimer);
+      document.getElementById('rotateProgress').style.display = 'none';
+      document.getElementById('btnRotateKey').disabled = false;
+      document.getElementById('btnEmergencyUnlock').style.display = 'none';
+      if (err) hideHUD('err', translateRpcError(err, MSG.error.generic));
+    });
+  });
+});
+
+document.getElementById('btnEmergencyUnlock').addEventListener('click', function() {
+  if (!_isOwnerGlobal) return;
+  Swal.fire({
+    icon:'warning', title:'ปลดล็อกฉุกเฉิน?',
+    html:'ใช้เมื่อ rotation ค้างและต้องการปลดล็อกด้วยตนเอง<br>'
+      + '<span style="color:#b91c1c;font-size:.85rem">⚠️ หากข้อมูลยังเข้ารหัสใหม่ไม่ครบ อาจเกิดความเสียหายได้</span>',
+    showCancelButton:true, confirmButtonText:'ปลดล็อก', cancelButtonText:'ยกเลิก', confirmButtonColor:'#b45309'
+  }).then(function(r) {
+    if (!r.isConfirmed) return;
+    showHUD('กำลังปลดล็อก…');
+    callRpc('releaseRotateLockRpc', _getAdminToken()).then(function(res) {
+      clearInterval(_rotatePollTimer);
+      document.getElementById('rotateProgress').style.display = 'none';
+      document.getElementById('btnRotateKey').disabled = false;
+      document.getElementById('btnEmergencyUnlock').style.display = 'none';
+      if (res && res.ok) { hideHUD('ok', 'ปลดล็อกแล้ว'); loadSystemInfo(); }
+      else hideHUD('err', (res && res.error) || 'ปลดล็อกล้มเหลว');
+    }).catch(function(err) { hideHUD('err', translateRpcError(err, MSG.error.generic)); });
+  });
+});
+
+/* ==========================================
+   Activity Logging config
+========================================== */
+function loadLoggingConfig() {
+  callRpc('getLoggingConfigRpc', _getAdminToken()).then(function(r) {
+    if (!r || !r.ok) return;
+    document.getElementById('logEnabledSwitch').checked = !!r.loggingEnabled;
+    document.getElementById('logIpObsSwitch').checked   = !!r.ipObservation;
+    var stats = document.getElementById('logStatsRow');
+    var parts = [];
+    if (r.lastFlush)   parts.push('flush ล่าสุด: ' + new Date(r.lastFlush).toLocaleString('th-TH'));
+    if (r.lastCleanup) parts.push('cleanup ล่าสุด: ' + new Date(r.lastCleanup).toLocaleString('th-TH'));
+    if (r.dropCount)   parts.push('เหตุการณ์ที่ถูกข้าม (drop): ' + r.dropCount);
+    if (parts.length) { stats.textContent = parts.join(' · '); stats.style.display = ''; }
+    else stats.style.display = 'none';
+  }).catch(function() {});
+}
+
+document.getElementById('btnSaveLogging').addEventListener('click', function() {
+  if (!_isOwnerGlobal) return;
+  var payload = {
+    loggingEnabled: document.getElementById('logEnabledSwitch').checked,
+    ipObservation:  document.getElementById('logIpObsSwitch').checked
+  };
+  showHUD('กำลังบันทึก…');
+  _rpc('saveLoggingConfigRpc', payload).then(function(r) {
+    if (r && r.ok) { hideHUD('ok', '✓ บันทึกการตั้งค่า Log สำเร็จ'); loadLoggingConfig(); }
+    else hideHUD('err', '✗ บันทึกไม่สำเร็จ: ' + (r && r.error || ''));
+  }).catch(function(err) { hideHUD('err', translateRpcError(err, MSG.error.generic)); });
+});
+
+/* ==========================================
+   Payment configuration status
+   (admin-gated RPC; we render only booleans — never the raw number)
+========================================== */
+function loadPaymentStatus() {
+  var loading = document.getElementById('paymentStatusLoading');
+  var warn    = document.getElementById('paymentStatusWarn');
+  var okBox   = document.getElementById('paymentStatusOk');
+  var badge   = document.getElementById('paymentStatusBadge');
+  var checks  = document.getElementById('paymentStatusChecks');
+  if (loading) loading.style.display = '';
+  if (warn)  warn.style.display = 'none';
+  if (okBox) okBox.style.display = 'none';
+  if (badge) badge.style.display = 'none';
+  if (checks) checks.style.display = 'none';
+
+  return callRpc('getPaymentConfigRpc', _getAdminToken()).then(function(r) {
+    if (loading) loading.style.display = 'none';
+    if (!r || !r.ok) {
+      if (warn) {
+        document.getElementById('paymentStatusWarnText').textContent =
+          (r && r.error === 'AUTH_REQUIRED')
+            ? 'ไม่มีสิทธิ์ตรวจสอบการตั้งค่าการชำระเงิน'
+            : 'ไม่สามารถตรวจสอบการตั้งค่าการชำระเงินได้ กรุณาลองรีเฟรชอีกครั้ง';
+        warn.style.display = '';
+      }
+      return;
+    }
+    var p = r.payment || {};
+    var hasNumber = !!(String(p.promptpay_number || '').replace(/\D/g, ''));
+    var hasName   = !!(String(p.promptpay_name || '').trim());
+    var hasBg     = !!(p.bg_drive_id || p.bg_url);
+
+    // Status badge
+    if (badge) {
+      if (hasNumber) {
+        badge.innerHTML = '<i class="bi bi-check-circle-fill"></i>ตั้งค่าแล้ว';
+        badge.style.color = '#16a34a'; badge.style.borderColor = '#bbf7d0'; badge.style.background = '#f0fdf4';
+      } else {
+        badge.innerHTML = '<i class="bi bi-exclamation-circle-fill"></i>ยังไม่ได้ตั้งค่า';
+        badge.style.color = '#b45309'; badge.style.borderColor = '#fde68a'; badge.style.background = '#fffbeb';
+      }
+      badge.style.display = '';
+    }
+
+    // Detail checks (no sensitive values shown — only configured / not)
+    if (checks) {
+      var rows = [
+        { label:'เลขพร้อมเพย์', ok:hasNumber,
+          status: hasNumber ? 'ตั้งค่าแล้ว' : 'ยังไม่ได้ตั้งค่า (จำเป็น)' },
+        { label:'ชื่อบัญชี', ok:hasName,
+          status: hasName ? 'ตั้งค่าแล้ว' : 'ยังไม่ได้ตั้งค่า (แนะนำ)' },
+        { label:'รูปพื้นหลัง QR', ok:hasBg,
+          status: hasBg ? 'ตั้งค่าแล้ว' : 'ใช้รูปแบบมาตรฐาน (ไม่บังคับ)' }
+      ];
+      checks.innerHTML = rows.map(function(c) {
+        return '<div class="health-card ' + (c.ok ? 'is-ok' : 'is-fail') + '">'
+          + '<div class="hc-label">' + escHtml(c.label) + '</div>'
+          + '<div class="hc-status">'
+          + '<span class="hc-dot ' + (c.ok ? 'hc-dot-ok' : 'hc-dot-fail') + '"></span>'
+          + '<span class="' + (c.ok ? 'hc-ok' : 'hc-fail') + '">' + escHtml(c.status) + '</span>'
+          + '</div></div>';
+      }).join('');
+      checks.style.display = '';
+    }
+
+    // Warning / OK strip
+    if (!hasNumber) {
+      if (warn) {
+        document.getElementById('paymentStatusWarnText').innerHTML =
+          'ยังไม่ได้ตั้งค่าการชำระเงิน — <strong>ลูกค้าจะยังชำระเงินไม่ได้</strong> '
+          + 'กรุณาตั้งค่าเลขพร้อมเพย์ในหน้า “ตั้งค่าการชำระเงิน” ให้เรียบร้อยก่อนเปิดรับคำสั่งซื้อจริง';
+        warn.style.display = '';
+      }
+    } else if (!hasName) {
+      if (warn) {
+        document.getElementById('paymentStatusWarnText').innerHTML =
+          'ตั้งค่าเลขพร้อมเพย์แล้ว แต่<strong>ยังไม่ได้ระบุชื่อบัญชี</strong> '
+          + 'แนะนำให้ระบุชื่อบัญชีเพื่อให้ลูกค้าตรวจสอบความถูกต้องก่อนโอนเงิน';
+        warn.style.display = '';
+      }
+    } else {
+      if (okBox) okBox.style.display = '';
+    }
+  }).catch(function(err) {
+    if (loading) loading.style.display = 'none';
+    if (warn) {
+      document.getElementById('paymentStatusWarnText').textContent =
+        translateRpcError(err, 'ไม่สามารถตรวจสอบการตั้งค่าการชำระเงินได้');
+      warn.style.display = '';
+    }
+  });
+}
+
+document.getElementById('btnGoPayment').addEventListener('click', function() {
+  _showPageNavigating('กำลังเปิดหน้า…');
+  setTimeout(function() { _nav(_adminPageUrl('payment')); }, 90);
+});
+
+/* ==========================================
+   Refresh + Copy URL
+========================================== */
+document.getElementById('btnRefresh').addEventListener('click', function() {
+  document.getElementById('healthGrid').innerHTML =
+    '<div class="text-center py-4 text-muted small" style="grid-column:1/-1">'
+    + '<div class="spinner-border text-secondary" style="width:1.2rem;height:1.2rem;border-width:.2rem" role="status"></div>'
+    + '<div class="mt-2">กำลังตรวจสอบ…</div></div>';
+  loadSystemInfo();
+  loadPaymentStatus();
+});
+
+document.getElementById('btnCopyUrl').addEventListener('click', function() {
+  var url = document.getElementById('execUrlText').textContent;
+  navigator.clipboard.writeText(url).then(function() {
+    hideHUD('ok', 'คัดลอก URL แล้ว');
+  }).catch(function() {
+    prompt('Web App URL:', url);
+  });
+});
+
+/* ==========================================
+   Init
+========================================== */
+(function init() {
+  _setupAdminPage();
+  if (!GAS_ENV) {
+    _dismissPageLoader();
+    document.getElementById('healthGrid').innerHTML =
+      '<div class="alert alert-warning small mb-0" style="grid-column:1/-1">'
+      + 'ไม่ได้เชื่อมต่อ GAS — เปิดผ่าน Web App เท่านั้น</div>';
+    var _payLoad = document.getElementById('paymentStatusLoading');
+    if (_payLoad) _payLoad.innerHTML = '<span class="text-muted">ไม่ได้เชื่อมต่อ GAS — เปิดผ่าน Web App เท่านั้น</span>';
+    return;
+  }
+  _initAuth().then(function() {
+    return loadSystemInfo();
+  }).then(function() {
+    loadPaymentStatus();
+    _dismissPageLoader();
+  }).catch(function(err) {
+    var authErrs = ['NOT_LOGGED_IN', 'SESSION_INVALID', 'AUTH_REQUIRED'];
+    if (authErrs.indexOf(err && err.message) !== -1) return;
+    _dismissPageLoader();
+  });
+})();
+</script>
+</body>
+</html>

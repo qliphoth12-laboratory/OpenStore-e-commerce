@@ -1,0 +1,1480 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ของแถม • Open Storefront</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    .gift-thumb-wrap { position:relative; width:56px; height:56px; border-radius:12px; background:#f3f4f6; flex-shrink:0; overflow:hidden; }
+    .gift-thumb-wrap::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.6) 50%,transparent 100%); background-size:200% 100%; animation:giftShimmer 1.25s infinite; }
+    .gift-thumb-wrap.loaded::after { display:none; }
+    @keyframes giftShimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+    .gift-thumb { position:absolute; inset:0; width:100%; height:100%; border-radius:12px; object-fit:cover; opacity:0; transition:opacity .2s; }
+    .gift-thumb.is-loaded { opacity:1; }
+    .gift-thumb-icon { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#d1d5db; font-size:1.5rem; }
+    .nav-tabs .nav-link.active { background:#111827; color:#fff; border-color:#111827; }
+    .nav-tabs .nav-link { color:#374151; }
+
+    /* Visual pickers */
+    .picker-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; max-height:340px; overflow-y:auto; padding:4px; }
+    .picker-card { border:2px solid var(--border); border-radius:12px; padding:8px; background:#fff; cursor:pointer; transition:border-color .15s, transform .1s; display:flex; flex-direction:column; gap:6px; }
+    .picker-card:hover { border-color:#9ca3af; }
+    .picker-card.selected { border-color:#111827; background:#f9fafb; }
+    .picker-card.disabled { opacity:.5; cursor:not-allowed; }
+    .picker-thumb-wrap { position:relative; aspect-ratio:1/1; border-radius:8px; background:#f3f4f6; overflow:hidden; }
+    .picker-thumb-wrap::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.6) 50%,transparent 100%); background-size:200% 100%; animation:giftShimmer 1.25s infinite; }
+    .picker-thumb-wrap.loaded::after { display:none; }
+    .picker-thumb { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0; transition:opacity .2s; }
+    .picker-thumb.is-loaded { opacity:1; }
+    .picker-thumb-icon { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#d1d5db; font-size:1.5rem; }
+    .picker-name { font-size:.78rem; font-weight:600; color:#111827; line-height:1.25; word-break:normal; overflow-wrap:anywhere; }
+    .picker-meta { font-size:.7rem; color:var(--muted); }
+    .selected-chip { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1.5px solid #111827; border-radius:10px; background:#f9fafb; }
+    .selected-chip .picker-thumb-wrap { width:42px; height:42px; aspect-ratio:auto; flex-shrink:0; }
+    .cond-row { display:flex; align-items:center; gap:8px; padding:8px; border:1px solid var(--border); border-radius:10px; background:#fff; margin-bottom:6px; }
+    .cond-row .picker-thumb-wrap { width:42px; height:42px; aspect-ratio:auto; flex-shrink:0; }
+    .skel.lg { height:18px; min-width:160px; }
+    .skel.pill { border-radius:999px; height:20px; }
+    .table-loading-overlay { position:absolute; inset:0; background:rgba(255,255,255,.6); display:flex; align-items:center; justify-content:center; z-index:10; pointer-events:none; }
+    .table-loading-overlay .spinner-border { width:1.75rem; height:1.75rem; border-width:.2rem; color:#6b7280; }
+    .tbl-wrap-pos { position:relative; }
+    tbody.is-loading { opacity:.5; pointer-events:none; }
+  </style>
+</head>
+<body>
+<script>window._EXEC_URL = '<?!= execUrl ?>';</script>
+<?!= include('admin-shared') ?>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <img id="brandLogo" alt="logo" style="height:36px;width:36px;object-fit:cover;border-radius:50%;display:none">
+      <div><div class="fw-bold" id="brandName">…</div><div class="small text-muted">Dashboard</div></div>
+    </div>
+    <nav class="side-nav">
+      <a class="link" data-page="editstore"><i class="bi bi-paint-bucket"></i> ตกแต่งหน้าร้าน</a>
+      <a class="link" data-page="product"><i class="bi bi-boxes"></i> จัดการสินค้า</a>
+      <a class="link" data-page="order"><i class="bi bi-receipt"></i> คำสั่งซื้อ</a>
+      <a class="link" data-page="print-order"><i class="bi bi-printer"></i> พิมพ์ใบขนส่ง</a>
+      <a class="link" data-page="shipping"><i class="bi bi-truck"></i> ขนส่ง</a>
+      <a class="link" data-page="payment"><i class="bi bi-qr-code"></i> ตั้งค่าการชำระเงิน</a>
+      <a class="link" data-page="promotion"><i class="bi bi-tag"></i> โปรโมชั่น</a>
+      <a class="link active" data-page="gift"><i class="bi bi-gift"></i> ของแถม</a>
+      <a class="link" data-page="user"><i class="bi bi-people"></i> ผู้ดูแลระบบ</a>
+      <a class="link" data-page="legal"><i class="bi bi-file-earmark-text"></i> ข้อมูลทางกฎหมาย</a>
+      <a class="link" data-page="system"><i class="bi bi-shield-check"></i> ตั้งค่าระบบ</a>
+    </nav>
+    <div class="sidebar-footer">
+      <button id="btnLogout" class="btn-logout"><i class="bi bi-box-arrow-right"></i> ออกจากระบบ</button>
+    </div>
+  </aside>
+  <main>
+    <div class="topbar">
+      <div class="wrap">
+        <div class="d-flex align-items-center gap-2">
+          <span class="fw-bold">ของแถม</span>
+          <span class="text-muted">•</span>
+          <span class="text-muted small">จัดการรายการของแถมและเงื่อนไข</span>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm pill" id="btnRefresh"><i class="bi bi-arrow-clockwise me-1"></i>รีเฟรช</button>
+          <button class="btn btn-dark btn-sm pill" id="btnAdd"><i class="bi bi-plus-lg me-1"></i>เพิ่ม</button>
+        </div>
+      </div>
+    </div>
+    <div class="container py-4">
+      <ul class="nav nav-tabs mb-3" role="tablist">
+        <li class="nav-item"><a class="nav-link active" data-tab="items" href="#"><i class="bi bi-box-seam me-1"></i>ของแถม</a></li>
+        <li class="nav-item"><a class="nav-link" data-tab="rules" href="#"><i class="bi bi-list-check me-1"></i>เงื่อนไขของแถม</a></li>
+      </ul>
+      <div class="panel p-3 p-md-4 mb-3">
+        <div class="row g-2 align-items-center">
+          <div class="col-md-6">
+            <input type="search" class="form-control" id="giftSearchQ" placeholder="ค้นหาชื่อ…">
+          </div>
+          <div class="col-md-4" id="giftRulesStatusWrap" style="display:none">
+            <select class="form-select" id="giftRulesStatus">
+              <option value="all">สถานะ: ทั้งหมด</option>
+              <option value="active">กำลังใช้งาน</option>
+              <option value="scheduled">ยังไม่เริ่ม</option>
+              <option value="expired">หมดอายุ</option>
+              <option value="disabled">ปิดใช้งาน</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="panel p-3 p-md-4">
+        <div id="giftPgBar" style="display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border)">
+          <div style="font-size:.8rem;color:#6b7280" id="giftPgInfo"></div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:.8rem;color:#6b7280">แสดง</span>
+            <select class="form-select form-select-sm" style="width:auto;border-radius:999px" id="giftPgSize">
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+            <span style="font-size:.8rem;color:#6b7280">รายการ</span>
+            <div class="btn-group btn-group-sm" style="margin-left:8px">
+              <button class="btn btn-outline-secondary" id="giftPgPrev">‹</button>
+              <button class="btn btn-outline-secondary" id="giftPgNext">›</button>
+            </div>
+          </div>
+        </div>
+        <div id="tableWrap"><div class="text-center py-5 text-muted small">กำลังโหลด…</div></div>      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Gift Item Modal -->
+<div class="modal fade" id="itemModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title fw-bold" id="itemModalTitle">เพิ่มของแถม</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-12"><label class="form-label fw-semibold">ชื่อของแถม *</label><input class="form-control" id="giName" maxlength="200"></div>
+          <div class="col-md-12"><label class="form-label fw-semibold">รายละเอียด</label><textarea class="form-control" id="giDesc" rows="2"></textarea></div>
+          <div class="col-md-6"><label class="form-label fw-semibold">สต็อก</label>
+            <input type="number" class="form-control" id="giStock" value="-1">
+            <div class="form-text" style="font-size:.7rem">-1 = ไม่จำกัด</div>
+          </div>
+          <div class="col-md-6"><label class="form-label fw-semibold">เปิดใช้งาน</label>
+            <div class="form-check form-switch mt-2"><input class="form-check-input" type="checkbox" id="giEnabled" checked><label class="form-check-label" for="giEnabled">เปิดใช้งาน</label></div>
+          </div>
+          <div class="col-md-12">
+            <label class="form-label d-flex align-items-center justify-content-between mb-2">
+              <span class="fw-semibold">รูปภาพ</span>
+              <div class="btn-group btn-group-sm" role="group" aria-label="gift image source">
+                <input type="radio" class="btn-check" name="giImgMode" id="giModeUrl" value="url" checked>
+                <label class="btn btn-outline-dark" for="giModeUrl"><i class="bi bi-link-45deg"></i> URL</label>
+                <input type="radio" class="btn-check" name="giImgMode" id="giModeFile" value="file">
+                <label class="btn btn-outline-dark" for="giModeFile"><i class="bi bi-upload"></i> ไฟล์</label>
+              </div>
+            </label>
+            <div class="d-flex gap-3 align-items-start">
+              <div style="width:96px;height:96px;border-radius:12px;border:1.5px solid var(--border);background:#f3f4f6;overflow:hidden;position:relative;flex-shrink:0">
+                <img id="giPreview" style="width:100%;height:100%;object-fit:cover;display:none">
+                <div id="giPreviewEmpty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:1.4rem">
+                  <i class="bi bi-image"></i>
+                </div>
+              </div>
+              <div class="flex-grow-1" style="min-width:0">
+                <div id="giImgUrlWrap">
+                  <input type="url" class="form-control" id="giImageUrl" placeholder="https://... หรือ Google Drive file id/link">
+                  <div class="form-text" style="font-size:.7rem">ใส่ลิงก์ภาพจาก CDN หรือวางลิงก์/ไฟล์ไอดีของ Google Drive ก็ได้</div>
+                </div>
+                <div id="giImgFileWrap" class="d-none">
+                  <input type="file" class="form-control" id="giFile" accept="image/*">
+                  <div class="form-text" style="font-size:.7rem">รองรับ .jpg .png .webp และอัปโหลดไป Drive โฟลเดอร์ <code>gift</code></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="giErr" class="text-danger small d-none col-12"></div>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-outline-secondary pill" data-bs-dismiss="modal">ยกเลิก</button><button class="btn btn-dark pill" id="btnSaveItem">บันทึก</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Gift Rule Modal -->
+<div class="modal fade" id="ruleModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title fw-bold" id="ruleModalTitle">เพิ่มเงื่อนไข</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-12"><label class="form-label fw-semibold">ชื่อกฎ *</label><input class="form-control" id="grName" maxlength="200"></div>
+          <div class="col-md-12"><label class="form-label fw-semibold">รายละเอียด</label><textarea class="form-control" id="grDesc" rows="2"></textarea></div>
+          <div class="col-md-12">
+            <label class="form-label fw-semibold">เลือกของแถม *</label>
+            <input type="hidden" id="grGiftId">
+            <div id="grGiftSelected" class="mb-2" style="display:none"></div>
+            <button type="button" class="btn btn-outline-secondary btn-sm pill" id="btnPickGift">
+              <i class="bi bi-gift me-1"></i><span id="btnPickGiftLabel">เลือกของแถม</span>
+            </button>
+          </div>
+          <div class="col-md-6"><label class="form-label fw-semibold">จำนวนของแถม</label>
+            <input type="number" class="form-control" id="grQty" value="1" min="1">
+          </div>
+          <div class="col-md-6"><label class="form-label fw-semibold">ประเภทเงื่อนไข *</label>
+            <select class="form-select" id="grType">
+              <option value="min_subtotal">ซื้อครบยอดที่กำหนด</option>
+              <option value="required_products">ซื้อสินค้าที่กำหนด</option>
+              <option value="required_variants">ซื้อรุ่น/ตัวเลือกที่กำหนด</option>
+            </select>
+          </div>
+          <div class="col-md-12" id="grCondMinSubtotal">
+            <label class="form-label">ยอดขั้นต่ำ (บาท) — คำนวณจากยอดรวมหลังหักโปรโมชั่น ก่อนค่าส่ง</label>
+            <input type="number" class="form-control" id="grMinSubtotal" min="0">
+          </div>
+          <div class="col-md-12 d-none" id="grCondProducts">
+            <label class="form-label d-flex align-items-center justify-content-between">
+              <span>สินค้าที่ต้องซื้อ</span>
+              <button type="button" class="btn btn-outline-dark btn-sm pill" id="btnAddProductCond"><i class="bi bi-plus-lg me-1"></i>เพิ่มสินค้า</button>
+            </label>
+            <div id="grProductsList" class="mt-1"><div class="text-muted small">— ยังไม่ได้เลือกสินค้า —</div></div>
+          </div>
+          <div class="col-md-12 d-none" id="grCondVariants">
+            <label class="form-label d-flex align-items-center justify-content-between">
+              <span>รุ่น/ตัวเลือกที่ต้องซื้อ</span>
+              <button type="button" class="btn btn-outline-dark btn-sm pill" id="btnAddVariantCond"><i class="bi bi-plus-lg me-1"></i>เพิ่มรุ่น</button>
+            </label>
+            <div id="grVariantsList" class="mt-1"><div class="text-muted small">— ยังไม่ได้เลือกรุ่น —</div></div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">วันที่เริ่ม</label>
+            <input type="datetime-local" class="form-control" id="grStart">
+            <div class="form-text" style="font-size:.7rem">ว่าง = เริ่มทันที</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">วันที่สิ้นสุด</label>
+            <input type="datetime-local" class="form-control" id="grEnd">
+            <div class="form-text" style="font-size:.7rem">ว่าง = ไม่มีวันสิ้นสุด</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">ลำดับความสำคัญ</label>
+            <input type="number" class="form-control" id="grPriority" value="0">
+          </div>
+          <div class="col-md-6"><label class="form-label">เปิดใช้งาน</label>
+            <div class="form-check form-switch mt-2"><input class="form-check-input" type="checkbox" id="grEnabled" checked><label class="form-check-label" for="grEnabled">เปิดใช้งาน</label></div>
+          </div>
+          <div id="grErr" class="text-danger small d-none col-12"></div>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-outline-secondary pill" data-bs-dismiss="modal">ยกเลิก</button><button class="btn btn-dark pill" id="btnSaveRule">บันทึก</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Gift Picker Modal -->
+<div class="modal fade" id="giftPickerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title fw-bold">เลือกของแถม</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="text" class="form-control mb-2" id="giftPickerSearch" placeholder="ค้นหา…">
+        <div id="giftPickerGrid" class="picker-grid"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Product Picker Modal (used for both required_products and required_variants) -->
+<div class="modal fade" id="productPickerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title fw-bold">เลือกสินค้า</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="text" class="form-control mb-2" id="productPickerSearch" placeholder="ค้นหาชื่อสินค้า…">
+        <div id="productPickerGrid" class="picker-grid"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+var _currentTab = 'items';
+var _itemsCache = [];
+var _rulesCache = [];
+var _productsCache = []; // admin-fetched product list for the rule condition builder
+var _editId = null;
+var _pgItemsPage = 1, _pgItemsSize = 20, _pgItemsTotal = 0;
+var _pgRulesPage = 1, _pgRulesSize = 20, _pgRulesTotal = 0;
+var _firstLoadItems = true, _firstLoadRules = true;
+var _giftLoading = false;
+var _giftRefetchItems = false, _giftRefetchRules = false;
+var _giftSearchQ = '', _giftRulesStatusFilter = 'all';
+var _productsLoaded = false;
+var _giftOpSeq = 0;
+var _giftInFlight = Object.create(null);
+var _itemModal = null, _ruleModal = null, _giftPickerModal = null, _productPickerModal = null;
+var _giImageData = null;
+// Live state of the visual condition builder
+var _grProductRows = []; // [{product_id, min_qty}]
+var _grVariantRows = []; // [{product_id, variant_key, selected_variants:{...}, min_qty}]
+var _productPickerCb = null; // callback set when opening the product picker
+var _giOriginalImageUrl = '';
+var _giOriginalDriveId = '';
+
+function _beginGiftOp(id) {
+  var token = ++_giftOpSeq;
+  _giftInFlight[String(id)] = token;
+  return token;
+}
+function _isCurrentGiftOp(id, token) {
+  return _giftInFlight[String(id)] === token;
+}
+function _endGiftOp(id, token) {
+  if (_isCurrentGiftOp(id, token)) delete _giftInFlight[String(id)];
+}
+function _isGiftPending(id) {
+  return _giftInFlight[String(id)] !== undefined;
+}
+function _renderCurrentGiftTab() {
+  if (_currentTab === 'items') renderItemsTable();
+  else renderRulesTable();
+}
+function _cloneGiftItem(g) {
+  return g ? Object.assign({}, g) : null;
+}
+function _cloneGiftRule(r) {
+  return r ? Object.assign({}, r, { condition_json: JSON.parse(JSON.stringify(r.condition_json || {})) }) : null;
+}
+function _giftRuleStatus(r) {
+  if (!r || r.enabled === false) return 'disabled';
+  var now = Date.now();
+  var start = r.starts_at ? new Date(r.starts_at).getTime() : 0;
+  var end = r.ends_at ? new Date(r.ends_at).getTime() : 0;
+  if (start && !isNaN(start) && start > now) return 'scheduled';
+  if (!r.no_end_date && end && !isNaN(end) && end < now) return 'expired';
+  return 'active';
+}
+
+// Image cache mirrors product.html: memory for this session + IndexedDB for later visits.
+var _imgMem = {};
+var _driveInFlight = {};
+function getImgCache() { return _imgMem; }
+var _idb = (function() {
+  var _dbP = null;
+  var DB = 'OpenStorefrontImgCache', ST = 'imgs';
+  function open() {
+    if (!_dbP) _dbP = new Promise(function(resolve) {
+      var r;
+      try { r = indexedDB.open(DB, 1); }
+      catch(_) { resolve(null); return; }
+      r.onupgradeneeded = function(e) { e.target.result.createObjectStore(ST); };
+      r.onsuccess = function(e) { resolve(e.target.result); };
+      r.onerror = function() { resolve(null); };
+    }).catch(function() { return null; });
+    return _dbP;
+  }
+  return {
+    get: function(k) {
+      return open().then(function(db) {
+        if (!db) return null;
+        return new Promise(function(resolve) {
+          var q = db.transaction(ST).objectStore(ST).get(k);
+          q.onsuccess = function() { resolve(q.result || null); };
+          q.onerror = function() { resolve(null); };
+        });
+      }).catch(function() { return null; });
+    },
+    set: function(k, v) {
+      open().then(function(db) {
+        if (!db) return;
+        db.transaction(ST, 'readwrite').objectStore(ST).put(v, k);
+      }).catch(function() {});
+    }
+  };
+})();
+
+function driveFileToDataUrl(fileId) {
+  if (!fileId) return Promise.resolve('');
+  if (_imgMem[fileId]) return Promise.resolve(_imgMem[fileId]);
+  if (_driveInFlight[fileId]) return _driveInFlight[fileId];
+  var p = _idb.get(fileId).then(function(fromIdb) {
+    if (fromIdb) { _imgMem[fileId] = fromIdb; return fromIdb; }
+    return callRpc('getFileDataUrlRpc', fileId).then(function(r) {
+      if (r && r.dataUrl) {
+        _imgMem[fileId] = r.dataUrl;
+        _idb.set(fileId, r.dataUrl);
+        return r.dataUrl;
+      }
+      return '';
+    }).catch(function() { return ''; });
+  }).then(function(v) {
+    delete _driveInFlight[fileId];
+    return v || '';
+  }).catch(function() {
+    delete _driveInFlight[fileId];
+    return '';
+  });
+  _driveInFlight[fileId] = p;
+  return p;
+}
+
+function _parseDriveFileId(input) {
+  var s = String(input || '').trim();
+  if (!s) return '';
+  if (/^[A-Za-z0-9_-]{20,}$/.test(s)) return s;
+  var m = s.match(/\/file\/d\/([^/?#]+)/);
+  if (m) return m[1];
+  m = s.match(/[?&]id=([^&#]+)/);
+  if (m) return m[1];
+  return '';
+}
+
+function _normalizeGiftImageUrlInput(value) {
+  var s = String(value || '').trim();
+  if (!s) return '';
+  var fid = _parseDriveFileId(s);
+  if (fid && !/^https?:\/\//i.test(s)) {
+    return 'https://drive.google.com/uc?export=view&id=' + encodeURIComponent(fid);
+  }
+  return s;
+}
+
+function _giftDriveViewUrl(fileId) {
+  return fileId ? 'https://drive.google.com/uc?export=view&id=' + encodeURIComponent(fileId) : '';
+}
+
+function _setGiftPreviewSrc(src) {
+  var p = document.getElementById('giPreview');
+  var empty = document.getElementById('giPreviewEmpty');
+  if (!p) return;
+  p.onload = function(){ if (empty) empty.style.display = 'none'; };
+  p.onerror = function(){ p.style.display = 'none'; if (empty) empty.style.display = 'flex'; };
+  if (!src) {
+    p.src = '';
+    p.style.display = 'none';
+    if (empty) empty.style.display = 'flex';
+    return;
+  }
+  p.src = src;
+  p.style.display = '';
+}
+
+function _setGiftImageMode(mode) {
+  var m = mode === 'file' ? 'file' : 'url';
+  var urlRadio = document.getElementById('giModeUrl');
+  var fileRadio = document.getElementById('giModeFile');
+  var urlWrap = document.getElementById('giImgUrlWrap');
+  var fileWrap = document.getElementById('giImgFileWrap');
+  if (urlRadio) urlRadio.checked = m === 'url';
+  if (fileRadio) fileRadio.checked = m === 'file';
+  if (urlWrap) urlWrap.classList.toggle('d-none', m !== 'url');
+  if (fileWrap) fileWrap.classList.toggle('d-none', m !== 'file');
+}
+
+function _loadAdminImg(imgEl, driveFileId, fallbackUrl) {
+  if (!imgEl) return;
+  var fid = driveFileId || _parseDriveFileId(fallbackUrl || '');
+  var rawUrl = String(fallbackUrl || '').trim();
+  var directUrl = fid ? '' : rawUrl;
+  var wrap = imgEl.closest ? (imgEl.closest('.gift-thumb-wrap') || imgEl.closest('.picker-thumb-wrap')) : null;
+  var previewEmpty = imgEl.id === 'giPreview' ? document.getElementById('giPreviewEmpty') : null;
+  function _showFallbackIcon() {
+    imgEl.style.display = 'none';
+    if (previewEmpty) previewEmpty.style.display = 'flex';
+    if (wrap) { wrap.classList.add('loaded'); wrap.innerHTML = '<i class="bi bi-gift gift-thumb-icon picker-thumb-icon"></i>'; }
+  }
+  function _applySrc(src) {
+    if (!src) { _showFallbackIcon(); return; }
+    imgEl.onload = function() {
+      imgEl.classList.add('is-loaded');
+      if (wrap) wrap.classList.add('loaded');
+      if (previewEmpty) previewEmpty.style.display = 'none';
+    };
+    imgEl.onerror = function() {
+      _showFallbackIcon();
+    };
+    imgEl.src = src;
+    imgEl.style.display = '';
+  }
+  if (!fid) {
+    if (directUrl) _applySrc(directUrl);
+    else _showFallbackIcon();
+    return;
+  }
+  if (_imgMem[fid]) { _applySrc(_imgMem[fid] || rawUrl); return; }
+  if (!GAS_ENV) { _applySrc(rawUrl); return; }
+  driveFileToDataUrl(fid).then(function(dataUrl) {
+    _applySrc(dataUrl || rawUrl);
+  }).catch(function() {
+    _applySrc(rawUrl);
+  });
+}
+
+function _toLocalInput(iso){ if (!iso) return ''; var d = new Date(iso); if (isNaN(d.getTime())) return ''; var pad=function(n){return String(n).padStart(2,'0')}; return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes()); }
+function _fromLocalInput(v){ if (!v) return ''; var d = new Date(v); return isNaN(d.getTime()) ? '' : d.toISOString(); }
+
+function statusBadge(s){
+  var map = { active:'เปิดใช้งาน', scheduled:'ยังไม่เริ่มใช้งาน', expired:'หมดอายุ', disabled:'ปิดใช้งาน' };
+  return '<span class="admin-status ' + s + '">' + (map[s] || s) + '</span>';
+}
+function stockBadge(stock){
+  var n = Number(stock);
+  if (n === -1) return '<span class="admin-stock stock-chip s-inf"><i class="bi bi-infinity" style="font-size:.65rem"></i></span>';
+  if (n === 0) return '<span class="admin-stock stock-chip s-zero"><i class="bi bi-x-circle" style="font-size:.6rem"></i> หมด</span>';
+  if (n <= 5) return '<span class="admin-stock stock-chip s-low">' + n + ' ชิ้น</span>';
+  return '<span class="admin-stock stock-chip s-ok">' + n + ' ชิ้น</span>';
+}
+
+function _collectDriveImageIds() {
+  var ids = [];
+  function add(v) {
+    var fid = _parseDriveFileId(v || '');
+    if (fid && ids.indexOf(fid) < 0 && !_imgMem[fid]) ids.push(fid);
+  }
+  _itemsCache.forEach(function(g) {
+    add(g.image_drive_file_id);
+    add(g.image_url);
+  });
+  _productsCache.forEach(function(p) {
+    add(p.image_drive_file_id);
+    add(p.image_url);
+  });
+  return ids;
+}
+
+function _prewarmImageCache() {
+  var ids = _collectDriveImageIds().slice(0, 200);
+  if (!ids.length || !GAS_ENV) return Promise.resolve();
+  return Promise.allSettled(ids.map(function(id) { return driveFileToDataUrl(id); })).then(function(){});
+}
+
+function _giftPgUpdateBar(total, page, size) {
+  var bar  = document.getElementById('giftPgBar');
+  var info = document.getElementById('giftPgInfo');
+  var prev = document.getElementById('giftPgPrev');
+  var next = document.getElementById('giftPgNext');
+  if (!bar) return;
+  if (!total) { bar.style.display = 'none'; return; }
+  var totalPages = Math.max(1, Math.ceil(total / size));
+  var start = (page - 1) * size;
+  var from = start + 1;
+  var to = Math.min(start + size, total);
+  bar.style.display = 'flex';
+  if (info) info.textContent = 'แสดง ' + from + '–' + to + ' จาก ' + total + ' รายการ';
+  if (prev) prev.disabled = page <= 1;
+  if (next) next.disabled = page >= totalPages;
+}
+
+function _giftShowSkeletonRows(n, kind){
+  var w = document.getElementById('tableWrap');
+  var rows = '';
+  var cols = kind === 'rules' ? 6 : 6;
+  for (var i=0; i<n; i++) {
+    var tds = '';
+    for (var c=0; c<cols; c++) tds += '<td><div class="skel" style="width:90%"></div></td>';
+    rows += '<tr>' + tds + '</tr>';
+  }
+  var head = kind === 'rules'
+    ? '<thead><tr><th>ชื่อ</th><th>ของแถม</th><th>ประเภท</th><th>ช่วงเวลา</th><th class="admin-cell-center">สถานะ</th><th class="text-end">การจัดการ</th></tr></thead>'
+    : '<thead><tr><th>รูป</th><th>ชื่อ</th><th>คำอธิบาย</th><th class="admin-cell-center">สต็อก</th><th class="admin-cell-center">สถานะ</th><th class="text-end">การจัดการ</th></tr></thead>';
+  w.innerHTML = '<div class="table-responsive tbl-wrap-pos"><table class="table gift-table admin-list-table mb-0">' + head + '<tbody>' + rows + '</tbody></table></div>';
+}
+function _giftShowOverlay(){
+  var tb = document.querySelector('#tableWrap tbody');
+  var wrap = tb ? tb.closest('.table-responsive') : null;
+  if (tb) tb.classList.add('is-loading');
+  if (wrap && !wrap.querySelector('.table-loading-overlay')) {
+    wrap.classList.add('tbl-wrap-pos');
+    var ov = document.createElement('div');
+    ov.className = 'table-loading-overlay';
+    ov.innerHTML = '<div class="spinner-border" role="status"></div>';
+    wrap.appendChild(ov);
+  }
+}
+function _giftHideOverlay(){
+  var tb = document.querySelector('#tableWrap tbody');
+  if (tb) tb.classList.remove('is-loading');
+  var ov = document.querySelector('#tableWrap .table-loading-overlay');
+  if (ov) ov.remove();
+}
+function _setGiftPgControlsDisabled(disabled) {
+  ['giftPgPrev','giftPgNext','giftPgSize'].forEach(function(id){ var el = document.getElementById(id); if (el) el.disabled = !!disabled; });
+}
+
+function renderItemsTable(){
+  var w = document.getElementById('tableWrap');
+  var total = _pgItemsTotal;
+  if (!_itemsCache.length){
+    var _iq = _giftSearchQ.trim();
+    var _iMsg = _iq ? 'ไม่พบของแถมที่ตรงกับการค้นหา' : 'ยังไม่มีของแถม';
+    var _iCta = _iq ? '' : '<button class="btn btn-dark btn-sm pill mt-3 empty-state-cta" onclick="document.getElementById(\'btnAdd\').click()"><i class="bi bi-plus-lg me-1"></i>เพิ่มของแถม</button>';
+    w.innerHTML = '<div class="empty-state"><i class="bi bi-gift"></i><div class="fw-semibold">' + _iMsg + '</div>' + _iCta + '</div>';
+    _giftPgUpdateBar(0, _pgItemsPage, _pgItemsSize); return;
+  }
+  var pageItems = _itemsCache;
+  var html = '<div class="table-responsive tbl-wrap-pos"><table class="table gift-table admin-list-table mb-0">'
+    + '<thead><tr><th>รูป</th><th>ชื่อ</th><th>คำอธิบาย</th><th class="admin-cell-center">สต็อก</th><th class="admin-cell-center">สถานะ</th><th class="text-end">การจัดการ</th></tr></thead><tbody>';
+  pageItems.forEach(function(g){
+    var fid = g.image_drive_file_id || _parseDriveFileId(g.image_url || '');
+    var hasImg = !!(fid || g.image_url);
+    var img = '<div class="gift-thumb-wrap">'
+      + (hasImg ? '<img class="gift-thumb" data-fid="'+escHtml(fid)+'" data-url="'+escHtml(g.image_url||'')+'" style="display:none">' : '<i class="bi bi-gift gift-thumb-icon"></i>')
+      + '</div>';
+    var stockStr = stockBadge(g.stock);
+    var stat = g.enabled ? 'active' : 'disabled';
+    html += '<tr>'
+      + '<td>' + img + '</td>'
+      + '<td><div class="admin-main-text">'+escHtml(g.name)+'</div></td>'
+      + '<td><div class="admin-sub-text">'+escHtml((g.description||'').slice(0,80))+'</div></td>'
+      + '<td class="admin-cell-center">'+stockStr+'</td>'
+      + '<td class="admin-cell-center">'+statusBadge(stat)+'</td>'
+      + '<td class="text-end"><div class="admin-actions">'
+      + '<button class="admin-action-btn" data-edit-item="'+escAttr(g.gift_id)+'" title="แก้ไข"><i class="bi bi-pencil-square"></i></button>'
+      + '<button class="admin-action-btn '+(g.enabled?'is-toggle-on':'is-toggle-off')+'" data-toggle-item="'+escAttr(g.gift_id)+'" data-enabled="'+(g.enabled?'1':'0')+'" title="'+(g.enabled?'ปิดใช้งาน':'เปิดใช้งาน')+'"><i class="bi bi-power"></i></button>'
+      + '<button class="admin-action-btn is-danger" data-del-item="'+escAttr(g.gift_id)+'" title="ลบ"><i class="bi bi-trash"></i></button>'
+      + '</div></td></tr>';
+  });
+  html += '</tbody></table></div>';
+  w.innerHTML = html;
+  w.querySelectorAll('.gift-thumb-wrap:not(.loaded)').forEach(function(wrap) {
+    var img = wrap.querySelector('img[data-fid], img[data-url]');
+    if (img) _loadAdminImg(img, img.dataset.fid, img.dataset.url);
+    else wrap.classList.add('loaded');
+  });
+  _giftPgUpdateBar(total, _pgItemsPage, _pgItemsSize);
+}
+
+function renderRulesTable(){
+  var w = document.getElementById('tableWrap');
+  var total = _pgRulesTotal;
+  if (!_rulesCache.length){
+    var _rq = _giftSearchQ.trim() || (_giftRulesStatusFilter && _giftRulesStatusFilter !== 'all');
+    var _rMsg = _rq ? 'ไม่พบเงื่อนไขที่ตรงกับการค้นหา' : 'ยังไม่มีเงื่อนไขของแถม';
+    var _rCta = _rq ? '' : '<button class="btn btn-dark btn-sm pill mt-3 empty-state-cta" onclick="document.getElementById(\'btnAdd\').click()"><i class="bi bi-plus-lg me-1"></i>เพิ่มเงื่อนไข</button>';
+    w.innerHTML = '<div class="empty-state"><i class="bi bi-list-check"></i><div class="fw-semibold">' + _rMsg + '</div>' + _rCta + '</div>';
+    _giftPgUpdateBar(0, _pgRulesPage, _pgRulesSize); return;
+  }
+  var pageRules = _rulesCache;
+  var giftMap = {}; _itemsCache.forEach(function(g){ giftMap[g.gift_id]=g; });
+  var html = '<div class="table-responsive tbl-wrap-pos"><table class="table gift-table admin-list-table mb-0">'
+    + '<thead><tr><th>ชื่อ</th><th>ของแถม</th><th>ประเภท</th><th>ช่วงเวลา</th><th class="admin-cell-center">สถานะ</th><th class="text-end">การจัดการ</th></tr></thead><tbody>';
+  pageRules.forEach(function(r){
+    var gName = giftMap[r.gift_id] ? giftMap[r.gift_id].name : '—';
+    var typeLabel = ({min_subtotal:'ยอดขั้นต่ำ',required_products:'สินค้าที่กำหนด',required_variants:'รุ่นที่กำหนด'})[r.condition_type]||r.condition_type;
+    var period = '<div class="admin-sub-text">เริ่ม '+escHtml(fmtDateTime(r.starts_at))+'</div>';
+    period += '<div class="admin-sub-text">' + (r.no_end_date ? 'ไม่มีวันสิ้นสุด' : ('สิ้นสุด '+escHtml(fmtDateTime(r.ends_at)))) + '</div>';
+    html += '<tr>'
+      + '<td><div class="admin-main-text">'+escHtml(r.name)+'</div></td>'
+      + '<td>'+escHtml(gName)+' × '+r.gift_qty+'</td>'
+      + '<td>'+typeLabel+'</td>'
+      + '<td>'+period+'</td>'
+      + '<td class="admin-cell-center">'+statusBadge(r.status||(r.enabled?'active':'disabled'))+'</td>'
+      + '<td class="text-end"><div class="admin-actions">'
+      + '<button class="admin-action-btn" data-edit-rule="'+escAttr(r.rule_id)+'" title="แก้ไข"><i class="bi bi-pencil-square"></i></button>'
+      + '<button class="admin-action-btn '+(r.enabled?'is-toggle-on':'is-toggle-off')+'" data-toggle-rule="'+escAttr(r.rule_id)+'" data-enabled="'+(r.enabled?'1':'0')+'" title="'+(r.enabled?'ปิดใช้งาน':'เปิดใช้งาน')+'"><i class="bi bi-power"></i></button>'
+      + '<button class="admin-action-btn is-danger" data-del-rule="'+escAttr(r.rule_id)+'" title="ลบ"><i class="bi bi-trash"></i></button>'
+      + '</div></td></tr>';
+  });
+  html += '</tbody></table></div>';
+  w.innerHTML = html;
+  _giftPgUpdateBar(total, _pgRulesPage, _pgRulesSize);
+}
+
+function fetchItemsPage(opts){
+  opts = opts || {};
+  var silent = !!opts.silent;
+  if (_giftLoading) return Promise.resolve();
+  _giftLoading = true;
+  _setGiftPgControlsDisabled(true);
+  if (!silent) {
+    if (_firstLoadItems) _giftShowSkeletonRows(_pgItemsSize, 'items'); else _giftShowOverlay();
+  }
+  return _rpc('listGiftItemsRpc', { q: _giftSearchQ || '', offset: (_pgItemsPage-1)*_pgItemsSize, limit: _pgItemsSize }).then(function(r){
+    if (!r || !r.ok) throw new Error((r && r.error) || 'โหลดของแถมไม่สำเร็จ');
+    _itemsCache = r.items || [];
+    _pgItemsTotal = Number(r.total)||0;
+    if (_itemsCache.length === 0 && _pgItemsTotal > 0) {
+      var _tp = Math.max(1, Math.ceil(_pgItemsTotal / _pgItemsSize));
+      var _cl = Math.max(1, Math.min(_pgItemsPage, _tp));
+      if (_cl !== _pgItemsPage) { _pgItemsPage = _cl; _giftRefetchItems = true; return Promise.resolve(); }
+    }
+    _firstLoadItems = false;
+    return _prewarmImageCache().then(function(){ if (_currentTab === 'items') renderItemsTable(); });
+  }).catch(function(e){
+    if (!silent) hideHUD('err', e.message||String(e));
+    _firstLoadItems = true;
+  }).then(function(){
+    _giftLoading = false;
+    _setGiftPgControlsDisabled(false);
+    _giftHideOverlay();
+    if (_giftRefetchItems) { _giftRefetchItems = false; fetchItemsPage(opts); }
+  });
+}
+
+function fetchRulesPage(opts){
+  opts = opts || {};
+  var silent = !!opts.silent;
+  if (_giftLoading) return Promise.resolve();
+  _giftLoading = true;
+  _setGiftPgControlsDisabled(true);
+  if (!silent) {
+    if (_firstLoadRules) _giftShowSkeletonRows(_pgRulesSize, 'rules'); else _giftShowOverlay();
+  }
+  return _rpc('listGiftRulesRpc', { q: _giftSearchQ || '', status: _giftRulesStatusFilter || 'all', offset: (_pgRulesPage-1)*_pgRulesSize, limit: _pgRulesSize }).then(function(r){
+    if (!r || !r.ok) throw new Error((r && r.error) || 'โหลดเงื่อนไขไม่สำเร็จ');
+    _rulesCache = r.rules || [];
+    _pgRulesTotal = Number(r.total)||0;
+    if (_rulesCache.length === 0 && _pgRulesTotal > 0) {
+      var _tp = Math.max(1, Math.ceil(_pgRulesTotal / _pgRulesSize));
+      var _cl = Math.max(1, Math.min(_pgRulesPage, _tp));
+      if (_cl !== _pgRulesPage) { _pgRulesPage = _cl; _giftRefetchRules = true; return; }
+    }
+    _firstLoadRules = false;
+    if (_currentTab === 'rules') renderRulesTable();
+  }).catch(function(e){
+    if (!silent) hideHUD('err', e.message||String(e));
+    _firstLoadRules = true;
+  }).then(function(){
+    _giftLoading = false;
+    _setGiftPgControlsDisabled(false);
+    _giftHideOverlay();
+    if (_giftRefetchRules) { _giftRefetchRules = false; fetchRulesPage(opts); }
+  });
+}
+
+function _loadProductsOnce(){
+  if (_productsLoaded) return Promise.resolve();
+  return _rpc('productListRpc', { includeAll: true }).then(function(r){
+    _productsCache = (r && r.ok) ? (r.items||[]) : [];
+    _productsLoaded = true;
+  });
+}
+
+function refresh(opts){
+  opts = opts || {};
+  var useHud = opts.showHud !== false;
+  if (useHud) showHUD(opts.loadingText || 'กำลังโหลดข้อมูล…');
+  return _loadProductsOnce()
+    .then(function(){ return fetchItemsPage({ silent: true }); })
+    .then(function(){ return fetchRulesPage({ silent: true }); })
+    .then(function(){
+      if (_currentTab === 'items') renderItemsTable(); else renderRulesTable();
+      if (useHud) hideHUD('ok', opts.successText || 'โหลดข้อมูลสำเร็จ');
+    })
+    .catch(function(e){
+      if (useHud) hideHUD('err', e.message||String(e));
+    });
+}
+
+// Mirror of backend _buildVariantKey: stable "groupName=optionLabel|..." with sorted group names.
+function _buildVariantKey(selected) {
+  var keys = Object.keys(selected || {}).filter(function(k){ return selected[k]; }).sort();
+  return keys.map(function(k){ return k + '=' + selected[k]; }).join('|');
+}
+function _findProduct(id) { return _productsCache.filter(function(p){ return String(p.id) === String(id); })[0] || null; }
+function _findGift(id)    { return _itemsCache.filter(function(g){ return String(g.gift_id) === String(id); })[0] || null; }
+function _formatVariantKeyLabel(key) {
+  if (!key) return '';
+  return key.split('|').map(function(seg){ return seg.replace('=', ': '); }).join(' • ');
+}
+
+function openAddItem(){
+  _editId = null;
+  document.getElementById('itemModalTitle').textContent = 'เพิ่มของแถม';
+  document.getElementById('giName').value = '';
+  document.getElementById('giDesc').value = '';
+  document.getElementById('giStock').value = '-1';
+  document.getElementById('giEnabled').checked = true;
+  _setGiftPreviewSrc('');
+  _setGiftImageMode('url');
+  document.getElementById('giFile').value = '';
+  document.getElementById('giImageUrl').value = '';
+  _giImageData = null;
+  _giOriginalImageUrl = '';
+  _giOriginalDriveId = '';
+  _itemModal.show();
+}
+
+function openEditItem(id){
+  if (_isGiftPending(id)) return;
+  var g = _itemsCache.filter(function(x){ return x.gift_id === id; })[0];
+  if (!g) return;
+  _editId = id;
+  document.getElementById('itemModalTitle').textContent = 'แก้ไขของแถม';
+  document.getElementById('giName').value = g.name;
+  document.getElementById('giDesc').value = g.description||'';
+  document.getElementById('giStock').value = g.stock;
+  document.getElementById('giEnabled').checked = g.enabled;
+  var _fid = g.image_drive_file_id || _parseDriveFileId(g.image_url || '');
+  var imageUrl = g.image_url || (_fid ? _giftDriveViewUrl(_fid) : '');
+  _setGiftPreviewSrc('');
+  if (_fid || imageUrl) _loadAdminImg(document.getElementById('giPreview'), _fid, imageUrl);
+  _setGiftImageMode('url');
+  document.getElementById('giFile').value = '';
+  document.getElementById('giImageUrl').value = imageUrl;
+  _giImageData = null;
+  _giOriginalDriveId = g.image_drive_file_id || '';
+  _giOriginalImageUrl = _normalizeGiftImageUrlInput(imageUrl);
+  _itemModal.show();
+}
+
+function saveItem(){
+  var name = document.getElementById('giName').value.trim();
+  if (!name){ document.getElementById('giErr').textContent = 'กรุณาระบุชื่อของแถม'; document.getElementById('giErr').classList.remove('d-none'); return; }
+  document.getElementById('giErr').classList.add('d-none');
+  var payload = {
+    name: name,
+    description: document.getElementById('giDesc').value.trim(),
+    stock: Number(document.getElementById('giStock').value || -1),
+    enabled: document.getElementById('giEnabled').checked
+  };
+  var imgMode = (document.querySelector('input[name="giImgMode"]:checked') || {}).value || 'url';
+  if (imgMode === 'file' && _giImageData){
+    payload.image = { mode:'file', base64:_giImageData.base64, filename:_giImageData.filename, contentType:_giImageData.contentType };
+  } else if (imgMode === 'url') {
+    var imgUrl = _normalizeGiftImageUrlInput(document.getElementById('giImageUrl').value);
+    if (imgUrl && imgUrl !== _giOriginalImageUrl) {
+      payload.image = { mode:'url', url: imgUrl };
+    }
+  }
+  var editingId = _editId;
+  var saveBtn = document.getElementById('btnSaveItem');
+  if (saveBtn.disabled) return;
+  showHUD(editingId ? 'Saving gift item...' : 'Adding gift item...');
+  _setButtonBusy(saveBtn, true, 'Saving');
+  var opId = editingId || ('temp-gift-' + Math.random().toString(36).slice(2));
+  var token = _beginGiftOp(opId);
+  var beforeIndex = editingId ? _itemsCache.findIndex(function(x){ return String(x.gift_id) === String(editingId); }) : -1;
+  var before = beforeIndex >= 0 ? _cloneGiftItem(_itemsCache[beforeIndex]) : null;
+  var imageUrl = before ? (before.image_url || '') : '';
+  var imageDriveId = before ? (before.image_drive_file_id || '') : '';
+  if (payload.image && payload.image.mode === 'file') { imageUrl = _giImageData ? _giImageData.base64 : imageUrl; imageDriveId = ''; }
+  else if (payload.image && payload.image.mode === 'url') { imageUrl = payload.image.url || ''; imageDriveId = ''; }
+  var optimisticItem = Object.assign({}, before || {}, {
+    gift_id: opId, name: payload.name, description: payload.description || '',
+    stock: payload.stock, enabled: payload.enabled, image_url: imageUrl, image_drive_file_id: imageDriveId
+  });
+  if (editingId) { if (beforeIndex >= 0) _itemsCache[beforeIndex] = optimisticItem; }
+  else { _itemsCache.unshift(optimisticItem); }
+  if (_currentTab === 'items') renderItemsTable();
+  var p = editingId ? _rpc('updateGiftItemRpc', editingId, payload) : _rpc('createGiftItemRpc', payload);
+  p.then(function(res){
+    if (!_isCurrentGiftOp(opId, token)) return;
+    if (!res || res.ok === false){
+      if (editingId) { if (beforeIndex >= 0 && before) _itemsCache[beforeIndex] = before; }
+      else { _itemsCache = _itemsCache.filter(function(x){ return String(x.gift_id) !== String(opId); }); }
+      if (_currentTab === 'items') renderItemsTable();
+      hideHUD('err', (res && res.error) || 'Save failed'); return;
+    }
+    if (!editingId && res.gift_id) {
+      var tmpIdx = _itemsCache.findIndex(function(x){ return String(x.gift_id) === String(opId); });
+      if (tmpIdx >= 0) _itemsCache[tmpIdx].gift_id = res.gift_id;
+    }
+    _itemModal.hide();
+    refresh({ showHud:false }).then(function(){ hideHUD('ok', editingId ? 'Saved' : 'Added'); });
+  }).catch(function(e){
+    if (_isCurrentGiftOp(opId, token)) {
+      if (editingId) { if (beforeIndex >= 0 && before) _itemsCache[beforeIndex] = before; }
+      else { _itemsCache = _itemsCache.filter(function(x){ return String(x.gift_id) !== String(opId); }); }
+      if (_currentTab === 'items') renderItemsTable();
+    }
+    hideHUD('err', e.message||String(e));
+  }).finally(function(){
+    _endGiftOp(opId, token);
+    _setButtonBusy(saveBtn, false);
+  });
+}
+
+function condTypeChanged(){
+  var t = document.getElementById('grType').value;
+  document.getElementById('grCondMinSubtotal').classList.toggle('d-none', t !== 'min_subtotal');
+  document.getElementById('grCondProducts').classList.toggle('d-none', t !== 'required_products');
+  document.getElementById('grCondVariants').classList.toggle('d-none', t !== 'required_variants');
+}
+
+// Render the "selected gift" preview chip above the picker button.
+function _renderSelectedGift() {
+  var giftId = document.getElementById('grGiftId').value || '';
+  var box = document.getElementById('grGiftSelected');
+  var btnLabel = document.getElementById('btnPickGiftLabel');
+  if (!giftId) { box.style.display = 'none'; box.innerHTML = ''; btnLabel.textContent = 'เลือกของแถม'; return; }
+  var g = _findGift(giftId);
+  if (!g) { box.style.display = 'none'; box.innerHTML = ''; btnLabel.textContent = 'เลือกของแถม'; return; }
+  var fid = g.image_drive_file_id || _parseDriveFileId(g.image_url || '');
+  var hasImg = !!(fid || g.image_url);
+  box.innerHTML =
+    '<div class="selected-chip">'
+    + '<div class="picker-thumb-wrap">' + (hasImg ? '<img class="picker-thumb" data-fid="'+escHtml(fid)+'" data-url="'+escHtml(g.image_url||'')+'">' : '<i class="bi bi-gift picker-thumb-icon"></i>') + '</div>'
+    + '<div class="flex-grow-1"><div class="picker-name">'+escHtml(g.name)+'</div>'
+    + '<div class="picker-meta">'+escHtml((g.description||'').slice(0,80))+'</div></div>'
+    + '<button type="button" class="btn btn-sm btn-outline-secondary" id="btnClearGift"><i class="bi bi-x-lg"></i></button>'
+    + '</div>';
+  box.style.display = '';
+  btnLabel.textContent = 'เปลี่ยนของแถม';
+  var img = box.querySelector('img.picker-thumb');
+  if (img) _loadAdminImg(img, fid, g.image_url || '');
+}
+
+// Open the gift picker modal: render a card grid of all enabled gifts.
+function openGiftPicker() {
+  var grid = document.getElementById('giftPickerGrid');
+  var search = document.getElementById('giftPickerSearch');
+  search.value = '';
+  function _render(filter) {
+    var f = String(filter||'').toLowerCase();
+    var list = _itemsCache.filter(function(g){
+      if (!g.enabled) return false;
+      if (!f) return true;
+      return String(g.name||'').toLowerCase().indexOf(f) >= 0;
+    });
+    if (!list.length) { grid.innerHTML = '<div class="text-muted small p-3">— ไม่พบของแถม —</div>'; return; }
+    grid.innerHTML = list.map(function(g){
+      var fid = g.image_drive_file_id || _parseDriveFileId(g.image_url || '');
+      var hasImg = !!(fid || g.image_url);
+      var stockStr = g.stock === -1 ? 'ไม่จำกัด' : ('สต็อก '+g.stock);
+      return '<div class="picker-card" data-pick-gift="'+escHtml(g.gift_id)+'">'
+        + '<div class="picker-thumb-wrap">'
+          + (hasImg ? '<img class="picker-thumb" data-fid="'+escHtml(fid)+'" data-url="'+escHtml(g.image_url||'')+'">' : '<i class="bi bi-gift picker-thumb-icon"></i>')
+        + '</div>'
+        + '<div class="picker-name">'+escHtml(g.name)+'</div>'
+        + '<div class="picker-meta">'+stockStr+'</div>'
+        + '</div>';
+    }).join('');
+    grid.querySelectorAll('img.picker-thumb').forEach(function(img){ _loadAdminImg(img, img.dataset.fid, img.dataset.url); });
+  }
+  _render('');
+  search.oninput = function(){ _render(search.value); };
+  _giftPickerModal.show();
+}
+
+// Open the product picker modal. cb is invoked with the selected product object.
+function openProductPicker(cb) {
+  _productPickerCb = cb;
+  var grid = document.getElementById('productPickerGrid');
+  var search = document.getElementById('productPickerSearch');
+  search.value = '';
+  function _render(filter) {
+    var f = String(filter||'').toLowerCase();
+    var list = _productsCache.filter(function(p){
+      if (!f) return true;
+      return String(p.title||'').toLowerCase().indexOf(f) >= 0;
+    });
+    if (!list.length) { grid.innerHTML = '<div class="text-muted small p-3">— ไม่พบสินค้า —</div>'; return; }
+    grid.innerHTML = list.map(function(p){
+      var fid = p.image_drive_file_id || _parseDriveFileId(p.image_url || '');
+      var hasImg = !!(fid || p.image_url);
+      var disabledCls = p.sale_mode === 'disabled' ? ' disabled' : '';
+      var priceStr = '฿' + Number(p.price||0).toLocaleString();
+      return '<div class="picker-card'+disabledCls+'" data-pick-product="'+escHtml(p.id)+'">'
+        + '<div class="picker-thumb-wrap">'
+          + (hasImg ? '<img class="picker-thumb" data-fid="'+escHtml(fid)+'" data-url="'+escHtml(p.image_url||'')+'">' : '<i class="bi bi-box picker-thumb-icon"></i>')
+        + '</div>'
+        + '<div class="picker-name">'+escHtml(p.title||'—')+'</div>'
+        + '<div class="picker-meta">'+priceStr+'</div>'
+        + '</div>';
+    }).join('');
+    grid.querySelectorAll('img.picker-thumb').forEach(function(img){ _loadAdminImg(img, img.dataset.fid, img.dataset.url); });
+  }
+  _render('');
+  search.oninput = function(){ _render(search.value); };
+  _productPickerModal.show();
+}
+
+// Render the rows for the required_products condition builder.
+function _renderProductCondRows() {
+  var box = document.getElementById('grProductsList');
+  if (!_grProductRows.length) { box.innerHTML = '<div class="text-muted small">— ยังไม่ได้เลือกสินค้า —</div>'; return; }
+  box.innerHTML = _grProductRows.map(function(row, idx){
+    var p = _findProduct(row.product_id) || { title:'(สินค้าถูกลบ)', image_drive_file_id:'', image_url:'' };
+    var fid = p.image_drive_file_id || _parseDriveFileId(p.image_url || '');
+    var hasImg = !!(fid || p.image_url);
+    return '<div class="cond-row">'
+      + '<div class="picker-thumb-wrap">'+(hasImg?'<img class="picker-thumb" data-fid="'+escHtml(fid)+'" data-url="'+escHtml(p.image_url||'')+'">':'<i class="bi bi-box picker-thumb-icon"></i>')+'</div>'
+      + '<div class="flex-grow-1"><div class="picker-name">'+escHtml(p.title)+'</div></div>'
+      + '<div class="d-flex align-items-center gap-1"><span class="small text-muted">ขั้นต่ำ</span>'
+      + '<input type="number" class="form-control form-control-sm" style="width:72px" min="1" value="'+Number(row.min_qty||1)+'" data-cond-qty="'+idx+'"></div>'
+      + '<button type="button" class="btn btn-sm btn-outline-danger" data-cond-rm="'+idx+'"><i class="bi bi-trash"></i></button>'
+      + '</div>';
+  }).join('');
+  box.querySelectorAll('img.picker-thumb').forEach(function(img){ _loadAdminImg(img, img.dataset.fid, img.dataset.url); });
+}
+
+// Render the rows for the required_variants condition builder.
+function _renderVariantCondRows() {
+  var box = document.getElementById('grVariantsList');
+  if (!_grVariantRows.length) { box.innerHTML = '<div class="text-muted small">— ยังไม่ได้เลือกรุ่น —</div>'; return; }
+  box.innerHTML = _grVariantRows.map(function(row, idx){
+    var p = _findProduct(row.product_id) || { title:'(สินค้าถูกลบ)', variants:[], image_drive_file_id:'', image_url:'' };
+    var fid = p.image_drive_file_id || _parseDriveFileId(p.image_url || '');
+    var hasImg = !!(fid || p.image_url);
+    var variantSelectsHtml = (p.variants||[]).map(function(group){
+      var opts = (group.options||[]).map(function(o){
+        var sel = (row.selected_variants && row.selected_variants[group.name] === o.label) ? ' selected' : '';
+        return '<option value="'+escHtml(o.label)+'"'+sel+'>'+escHtml(o.label)+'</option>';
+      }).join('');
+      return '<select class="form-select form-select-sm" data-var-group="'+escHtml(group.name)+'" data-var-row="'+idx+'" style="width:auto;min-width:100px">'
+        + '<option value="">— '+escHtml(group.name)+' —</option>' + opts + '</select>';
+    }).join(' ');
+    return '<div class="cond-row" style="flex-wrap:wrap">'
+      + '<div class="picker-thumb-wrap">'+(hasImg?'<img class="picker-thumb" data-fid="'+escHtml(fid)+'" data-url="'+escHtml(p.image_url||'')+'">':'<i class="bi bi-box picker-thumb-icon"></i>')+'</div>'
+      + '<div class="flex-grow-1"><div class="picker-name">'+escHtml(p.title)+'</div>'
+      + '<div class="d-flex flex-wrap gap-1 mt-1">'+variantSelectsHtml+'</div></div>'
+      + '<div class="d-flex align-items-center gap-1"><span class="small text-muted">ขั้นต่ำ</span>'
+      + '<input type="number" class="form-control form-control-sm" style="width:72px" min="1" value="'+Number(row.min_qty||1)+'" data-vcond-qty="'+idx+'"></div>'
+      + '<button type="button" class="btn btn-sm btn-outline-danger" data-vcond-rm="'+idx+'"><i class="bi bi-trash"></i></button>'
+      + '</div>';
+  }).join('');
+  box.querySelectorAll('img.picker-thumb').forEach(function(img){ _loadAdminImg(img, img.dataset.fid, img.dataset.url); });
+}
+
+function _resetRuleForm(){
+  document.getElementById('grGiftId').value = '';
+  document.getElementById('grName').value = '';
+  document.getElementById('grDesc').value = '';
+  document.getElementById('grQty').value = 1;
+  document.getElementById('grType').value = 'min_subtotal';
+  document.getElementById('grMinSubtotal').value = '';
+  document.getElementById('grStart').value = '';
+  document.getElementById('grEnd').value = '';
+  document.getElementById('grPriority').value = 0;
+  document.getElementById('grEnabled').checked = true;
+  _grProductRows = [];
+  _grVariantRows = [];
+  _renderSelectedGift();
+  _renderProductCondRows();
+  _renderVariantCondRows();
+}
+
+function openAddRule(){
+  _editId = null;
+  document.getElementById('ruleModalTitle').textContent = 'เพิ่มเงื่อนไข';
+  _resetRuleForm();
+  condTypeChanged();
+  _ruleModal.show();
+}
+
+function openEditRule(id){
+  if (_isGiftPending(id)) return;
+  var r = _rulesCache.filter(function(x){ return x.rule_id === id; })[0];
+  if (!r) return;
+  _editId = id;
+  document.getElementById('ruleModalTitle').textContent = 'แก้ไขเงื่อนไข';
+  _resetRuleForm();
+  document.getElementById('grGiftId').value = r.gift_id || '';
+  document.getElementById('grName').value = r.name;
+  document.getElementById('grDesc').value = r.description||'';
+  document.getElementById('grQty').value = r.gift_qty;
+  document.getElementById('grType').value = r.condition_type;
+  var cj = r.condition_json || {};
+  document.getElementById('grMinSubtotal').value = cj.min_subtotal || '';
+  // Hydrate visual builder rows from existing condition_json.
+  if (cj.required_products && Array.isArray(cj.required_products)) {
+    _grProductRows = cj.required_products.map(function(rp){
+      return { product_id: String(rp.product_id||''), min_qty: Number(rp.min_qty||1) };
+    });
+  }
+  if (cj.required_variants && Array.isArray(cj.required_variants)) {
+    _grVariantRows = cj.required_variants.map(function(rv){
+      var sel = {};
+      String(rv.variant_key||'').split('|').forEach(function(seg){
+        var eq = seg.indexOf('='); if (eq < 0) return;
+        sel[seg.slice(0, eq)] = seg.slice(eq+1);
+      });
+      return {
+        product_id: String(rv.product_id||''),
+        selected_variants: sel,
+        variant_key: String(rv.variant_key||''),
+        min_qty: Number(rv.min_qty||1)
+      };
+    });
+  }
+  document.getElementById('grStart').value = _toLocalInput(r.starts_at);
+  document.getElementById('grEnd').value   = _toLocalInput(r.ends_at);
+  document.getElementById('grPriority').value = r.priority || 0;
+  document.getElementById('grEnabled').checked = !!r.enabled;
+  _renderSelectedGift();
+  _renderProductCondRows();
+  _renderVariantCondRows();
+  condTypeChanged();
+  _ruleModal.show();
+}
+
+function saveRule(){
+  var errEl = document.getElementById('grErr');
+  errEl.classList.add('d-none');
+  var t = document.getElementById('grType').value;
+  var cj = {};
+  if (t === 'min_subtotal') {
+    cj = { min_subtotal: Number(document.getElementById('grMinSubtotal').value || 0), calculation_base: 'after_discount_before_shipping' };
+  } else if (t === 'required_products') {
+    if (!_grProductRows.length) { errEl.textContent = 'กรุณาเลือกสินค้าอย่างน้อย 1 รายการ'; errEl.classList.remove('d-none'); return; }
+    cj = { required_products: _grProductRows.map(function(r){ return { product_id: r.product_id, min_qty: Math.max(1, Number(r.min_qty||1)) }; }) };
+  } else if (t === 'required_variants') {
+    if (!_grVariantRows.length) { errEl.textContent = 'กรุณาเลือกรุ่น/ตัวเลือกอย่างน้อย 1 รายการ'; errEl.classList.remove('d-none'); return; }
+    cj = { required_variants: _grVariantRows.map(function(r){
+      return { product_id: r.product_id, variant_key: _buildVariantKey(r.selected_variants), min_qty: Math.max(1, Number(r.min_qty||1)) };
+    }) };
+  }
+  var endVal = document.getElementById('grEnd').value;
+  var payload = {
+    name: document.getElementById('grName').value.trim(),
+    description: document.getElementById('grDesc').value.trim(),
+    gift_id: document.getElementById('grGiftId').value,
+    condition_type: t,
+    condition_json: cj,
+    gift_qty: Number(document.getElementById('grQty').value || 1),
+    starts_at: _fromLocalInput(document.getElementById('grStart').value),
+    ends_at: endVal ? _fromLocalInput(endVal) : '',
+    no_end_date: !endVal,
+    priority: Number(document.getElementById('grPriority').value || 0),
+    enabled: document.getElementById('grEnabled').checked
+  };
+  if (!payload.gift_id) { errEl.textContent = 'กรุณาเลือกของแถม'; errEl.classList.remove('d-none'); return; }
+  var editingId = _editId;
+  var saveRuleBtn = document.getElementById('btnSaveRule');
+  if (saveRuleBtn.disabled) return;
+  showHUD(editingId ? 'Saving gift rule...' : 'Adding gift rule...');
+  _setButtonBusy(saveRuleBtn, true, 'Saving');
+  var opId = editingId || ('temp-rule-' + Math.random().toString(36).slice(2));
+  var token = _beginGiftOp(opId);
+  var beforeIndex = editingId ? _rulesCache.findIndex(function(x){ return String(x.rule_id) === String(editingId); }) : -1;
+  var before = beforeIndex >= 0 ? _cloneGiftRule(_rulesCache[beforeIndex]) : null;
+  var optimisticRule = Object.assign({}, before || {}, payload, { rule_id: opId, status: _giftRuleStatus(payload) });
+  if (editingId) { if (beforeIndex >= 0) _rulesCache[beforeIndex] = optimisticRule; }
+  else { _rulesCache.unshift(optimisticRule); }
+  if (_currentTab === 'rules') renderRulesTable();
+  var p = editingId ? _rpc('updateGiftRuleRpc', editingId, payload) : _rpc('createGiftRuleRpc', payload);
+  p.then(function(res){
+    if (!_isCurrentGiftOp(opId, token)) return;
+    if (!res || res.ok === false){
+      if (editingId) { if (beforeIndex >= 0 && before) _rulesCache[beforeIndex] = before; }
+      else { _rulesCache = _rulesCache.filter(function(x){ return String(x.rule_id) !== String(opId); }); }
+      if (_currentTab === 'rules') renderRulesTable();
+      errEl.textContent = (res && res.error) || 'Save failed'; errEl.classList.remove('d-none'); hideHUD('err', errEl.textContent); return;
+    }
+    if (!editingId && res.rule_id) {
+      var tmpIdx = _rulesCache.findIndex(function(x){ return String(x.rule_id) === String(opId); });
+      if (tmpIdx >= 0) _rulesCache[tmpIdx].rule_id = res.rule_id;
+    }
+    _ruleModal.hide();
+    refresh({ showHud:false }).then(function(){ hideHUD('ok', editingId ? 'Saved' : 'Added'); });
+  }).catch(function(e){
+    if (_isCurrentGiftOp(opId, token)) {
+      if (editingId) { if (beforeIndex >= 0 && before) _rulesCache[beforeIndex] = before; }
+      else { _rulesCache = _rulesCache.filter(function(x){ return String(x.rule_id) !== String(opId); }); }
+      if (_currentTab === 'rules') renderRulesTable();
+    }
+    hideHUD('err', e.message||String(e));
+  }).finally(function(){
+    _endGiftOp(opId, token);
+    _setButtonBusy(saveRuleBtn, false);
+  });
+}
+
+function _optimisticToggleGiftItem(id, enabled) {
+  if (_isGiftPending(id)) return;
+  var token = _beginGiftOp(id);
+  var idx = _itemsCache.findIndex(function(x){ return String(x.gift_id) === String(id); });
+  var before = idx >= 0 ? _cloneGiftItem(_itemsCache[idx]) : null;
+  if (idx >= 0) {
+    _itemsCache[idx] = Object.assign({}, _itemsCache[idx], { enabled: !!enabled });
+    if (_currentTab === 'items') renderItemsTable();
+  }
+  showHUD(enabled ? MSG.loading.toggleOn : MSG.loading.toggleOff);
+  _rpc('toggleGiftItemRpc', id, enabled).then(function(res){
+    if (!_isCurrentGiftOp(id, token)) return;
+    if (!res || res.ok === false) {
+      if (idx >= 0 && before) { _itemsCache[idx] = before; if (_currentTab === 'items') renderItemsTable(); }
+      hideHUD('err', (res && res.error) || MSG.error.update);
+      return;
+    }
+    return refresh({ showHud:false }).then(function(){ hideHUD('ok', enabled ? MSG.success.toggleOn : MSG.success.toggleOff); });
+  }).catch(function(err){
+    if (_isCurrentGiftOp(id, token) && idx >= 0 && before) {
+      _itemsCache[idx] = before;
+      if (_currentTab === 'items') renderItemsTable();
+    }
+    if (err.message !== 'AUTH_REQUIRED') hideHUD('err', err.message || MSG.error.update);
+  }).finally(function(){ _endGiftOp(id, token); });
+}
+
+function _optimisticDeleteGiftItem(id) {
+  if (_isGiftPending(id)) return;
+  confirmDanger({ title:'ยืนยันการลบของแถม', text:'ระบบจะปิดเงื่อนไขของแถมที่ผูกกับรายการนี้โดยอัตโนมัติ' }).then(function(ok){
+    if (!ok) return;
+    var token = _beginGiftOp(id);
+    var itemIdx = _itemsCache.findIndex(function(x){ return String(x.gift_id) === String(id); });
+    var itemBackup = itemIdx >= 0 ? _cloneGiftItem(_itemsCache[itemIdx]) : null;
+    var rulesBackup = _rulesCache.map(_cloneGiftRule);
+    if (itemIdx >= 0) _itemsCache.splice(itemIdx, 1);
+    _rulesCache = _rulesCache.map(function(rule){
+      if (String(rule.gift_id) !== String(id)) return rule;
+      var copy = Object.assign({}, rule, { enabled:false, status:'disabled' });
+      return copy;
+    });
+    _renderCurrentGiftTab();
+    showHUD(MSG.loading.delete);
+    _rpc('deleteGiftItemRpc', id).then(function(res){
+      if (!_isCurrentGiftOp(id, token)) return;
+      if (!res || res.ok === false) throw new Error((res && res.error) || MSG.error.delete);
+      return refresh({ showHud:false }).then(function(){ hideHUD('ok', MSG.success.delete); });
+    }).catch(function(err){
+      if (_isCurrentGiftOp(id, token)) {
+        if (itemBackup) _itemsCache.splice(Math.min(itemIdx, _itemsCache.length), 0, itemBackup);
+        _rulesCache = rulesBackup;
+        _renderCurrentGiftTab();
+      }
+      if (err.message !== 'AUTH_REQUIRED') hideHUD('err', err.message || MSG.error.delete);
+    }).finally(function(){ _endGiftOp(id, token); });
+  });
+}
+
+function _optimisticToggleGiftRule(id, enabled) {
+  if (_isGiftPending(id)) return;
+  var token = _beginGiftOp(id);
+  var idx = _rulesCache.findIndex(function(x){ return String(x.rule_id) === String(id); });
+  var before = idx >= 0 ? _cloneGiftRule(_rulesCache[idx]) : null;
+  if (idx >= 0) {
+    _rulesCache[idx] = Object.assign({}, _rulesCache[idx], { enabled: !!enabled });
+    _rulesCache[idx].status = _giftRuleStatus(_rulesCache[idx]);
+    if (_currentTab === 'rules') renderRulesTable();
+  }
+  showHUD(enabled ? MSG.loading.toggleOn : MSG.loading.toggleOff);
+  _rpc('toggleGiftRuleRpc', id, enabled).then(function(res){
+    if (!_isCurrentGiftOp(id, token)) return;
+    if (!res || res.ok === false) {
+      if (idx >= 0 && before) { _rulesCache[idx] = before; if (_currentTab === 'rules') renderRulesTable(); }
+      hideHUD('err', (res && res.error) || MSG.error.update);
+      return;
+    }
+    return refresh({ showHud:false }).then(function(){ hideHUD('ok', enabled ? MSG.success.toggleOn : MSG.success.toggleOff); });
+  }).catch(function(err){
+    if (_isCurrentGiftOp(id, token) && idx >= 0 && before) {
+      _rulesCache[idx] = before;
+      if (_currentTab === 'rules') renderRulesTable();
+    }
+    if (err.message !== 'AUTH_REQUIRED') hideHUD('err', err.message || MSG.error.update);
+  }).finally(function(){ _endGiftOp(id, token); });
+}
+
+function _optimisticDeleteGiftRule(id) {
+  if (_isGiftPending(id)) return;
+  confirmDanger({ title:'ยืนยันการลบเงื่อนไขของแถม', text:'การดำเนินการนี้ไม่สามารถย้อนกลับได้' }).then(function(ok){
+    if (!ok) return;
+    var token = _beginGiftOp(id);
+    var idx = _rulesCache.findIndex(function(x){ return String(x.rule_id) === String(id); });
+    var backup = idx >= 0 ? _cloneGiftRule(_rulesCache[idx]) : null;
+    if (idx >= 0) {
+      _rulesCache.splice(idx, 1);
+      if (_currentTab === 'rules') renderRulesTable();
+    }
+    showHUD(MSG.loading.delete);
+    _rpc('deleteGiftRuleRpc', id).then(function(res){
+      if (!_isCurrentGiftOp(id, token)) return;
+      if (!res || res.ok === false) throw new Error((res && res.error) || MSG.error.delete);
+      return refresh({ showHud:false }).then(function(){ hideHUD('ok', MSG.success.delete); });
+    }).catch(function(err){
+      if (_isCurrentGiftOp(id, token) && backup) {
+        _rulesCache.splice(Math.min(idx, _rulesCache.length), 0, backup);
+        if (_currentTab === 'rules') renderRulesTable();
+      }
+      if (err.message !== 'AUTH_REQUIRED') hideHUD('err', err.message || MSG.error.delete);
+    }).finally(function(){ _endGiftOp(id, token); });
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  _itemModal = new bootstrap.Modal(document.getElementById('itemModal'));
+  _ruleModal = new bootstrap.Modal(document.getElementById('ruleModal'));
+  _giftPickerModal = new bootstrap.Modal(document.getElementById('giftPickerModal'));
+  _productPickerModal = new bootstrap.Modal(document.getElementById('productPickerModal'));
+
+  document.getElementById('btnRefresh').addEventListener('click', refresh);
+  document.getElementById('btnAdd').addEventListener('click', function(){
+    if (_currentTab === 'items') openAddItem();
+    else openAddRule();
+  });
+  document.getElementById('btnSaveItem').addEventListener('click', saveItem);
+  document.getElementById('btnSaveRule').addEventListener('click', saveRule);
+  document.getElementById('grType').addEventListener('change', condTypeChanged);
+
+  // Gift / product pickers
+  document.getElementById('btnPickGift').addEventListener('click', openGiftPicker);
+  document.getElementById('btnAddProductCond').addEventListener('click', function(){
+    openProductPicker(function(prod){
+      // Don't duplicate the same product. Bump qty instead.
+      var existing = _grProductRows.filter(function(r){ return r.product_id === prod.id; })[0];
+      if (existing) existing.min_qty = Number(existing.min_qty||1) + 1;
+      else _grProductRows.push({ product_id: prod.id, min_qty: 1 });
+      _renderProductCondRows();
+      _productPickerModal.hide();
+    });
+  });
+  document.getElementById('btnAddVariantCond').addEventListener('click', function(){
+    openProductPicker(function(prod){
+      _grVariantRows.push({ product_id: prod.id, selected_variants: {}, variant_key: '', min_qty: 1 });
+      _renderVariantCondRows();
+      _productPickerModal.hide();
+    });
+  });
+
+  // Image upload
+  document.getElementById('giModeUrl').addEventListener('change', function(){
+    _setGiftImageMode('url');
+    _giImageData = null;
+    document.getElementById('giFile').value = '';
+    var url = document.getElementById('giImageUrl').value.trim();
+    _setGiftPreviewSrc('');
+    if (url) _loadAdminImg(document.getElementById('giPreview'), _parseDriveFileId(url), url);
+  });
+  document.getElementById('giModeFile').addEventListener('change', function(){
+    _setGiftImageMode('file');
+    document.getElementById('giImageUrl').value = '';
+    _setGiftPreviewSrc('');
+  });
+
+  document.getElementById('giFile').addEventListener('change', function(e){
+    var f = e.target.files[0]; if (!f) return;
+    document.getElementById('giImageUrl').value = '';
+    var rd = new FileReader();
+    rd.onload = function(){
+      var dataUrl = rd.result;
+      _giImageData = { base64: dataUrl, filename: f.name, contentType: f.type };
+      _setGiftPreviewSrc(dataUrl);
+    };
+    rd.readAsDataURL(f);
+  });
+
+  document.getElementById('giImageUrl').addEventListener('input', function(e){
+    var url = e.target.value.trim();
+    if (url) {
+      document.getElementById('giFile').value = '';
+      _giImageData = null;
+    }
+    _setGiftPreviewSrc('');
+    if (!url) return;
+    _loadAdminImg(document.getElementById('giPreview'), _parseDriveFileId(url), url);
+  });
+
+  // Tab switching
+  document.querySelectorAll('.nav-tabs .nav-link').forEach(function(a){
+    a.addEventListener('click', function(e){
+      e.preventDefault();
+      document.querySelectorAll('.nav-tabs .nav-link').forEach(function(x){x.classList.remove('active');});
+      a.classList.add('active');
+      _currentTab = a.dataset.tab;
+      // Show status filter only on rules tab
+      var statusWrap = document.getElementById('giftRulesStatusWrap');
+      if (statusWrap) statusWrap.style.display = _currentTab === 'rules' ? '' : 'none';
+      if (_currentTab === 'items') renderItemsTable();
+      else renderRulesTable();
+    });
+  });
+
+  // Search + filter controls
+  var _giftSearchDebounce = null;
+  document.getElementById('giftSearchQ').addEventListener('input', function(){
+    _giftSearchQ = this.value;
+    if (_giftSearchDebounce) clearTimeout(_giftSearchDebounce);
+    _giftSearchDebounce = setTimeout(function(){
+      if (_currentTab === 'items') { _pgItemsPage = 1; fetchItemsPage(); }
+      else { _pgRulesPage = 1; fetchRulesPage(); }
+    }, 300);
+  });
+  document.getElementById('giftRulesStatus').addEventListener('change', function(){
+    _giftRulesStatusFilter = this.value;
+    _pgRulesPage = 1;
+    fetchRulesPage();
+  });
+
+  // Pagination controls (shared bar for both tabs) — call fetch to load server page
+  document.getElementById('giftPgPrev').addEventListener('click', function(){
+    if (_giftLoading) return;
+    if (_currentTab === 'items') { if (_pgItemsPage > 1) { _pgItemsPage--; fetchItemsPage(); } }
+    else { if (_pgRulesPage > 1) { _pgRulesPage--; fetchRulesPage(); } }
+  });
+  document.getElementById('giftPgNext').addEventListener('click', function(){
+    if (_giftLoading) return;
+    var _tpI = Math.max(1, Math.ceil(_pgItemsTotal / _pgItemsSize));
+    var _tpR = Math.max(1, Math.ceil(_pgRulesTotal / _pgRulesSize));
+    if (_currentTab === 'items') { if (_pgItemsPage < _tpI) { _pgItemsPage++; fetchItemsPage(); } }
+    else { if (_pgRulesPage < _tpR) { _pgRulesPage++; fetchRulesPage(); } }
+  });
+  document.getElementById('giftPgSize').addEventListener('change', function(){
+    var size = parseInt(this.value, 10) || 20;
+    if (_currentTab === 'items') { _pgItemsSize = size; _pgItemsPage = 1; fetchItemsPage(); }
+    else { _pgRulesSize = size; _pgRulesPage = 1; fetchRulesPage(); }
+  });
+
+  _setupAdminPage();
+
+  // Action delegation
+  document.addEventListener('click', function(e){
+    var t;
+    if ((t = e.target.closest('[data-toggle-item]'))) {
+      _optimisticToggleGiftItem(t.dataset.toggleItem, t.dataset.enabled !== '1');
+      return;
+    }
+    if ((t = e.target.closest('[data-del-item]'))) {
+      _optimisticDeleteGiftItem(t.dataset.delItem);
+      return;
+    }
+    if ((t = e.target.closest('[data-toggle-rule]'))) {
+      _optimisticToggleGiftRule(t.dataset.toggleRule, t.dataset.enabled !== '1');
+      return;
+    }
+    if ((t = e.target.closest('[data-del-rule]'))) {
+      _optimisticDeleteGiftRule(t.dataset.delRule);
+      return;
+    }
+    if ((t = e.target.closest('[data-edit-item]'))) { openEditItem(t.dataset.editItem); return; }
+    if ((t = e.target.closest('[data-edit-rule]'))) { openEditRule(t.dataset.editRule); return; }
+
+    // Gift picker: select a card
+    if ((t = e.target.closest('[data-pick-gift]'))) {
+      document.getElementById('grGiftId').value = t.dataset.pickGift;
+      _renderSelectedGift();
+      _giftPickerModal.hide();
+    }
+    // Clear selected gift
+    if (e.target.closest('#btnClearGift')) {
+      document.getElementById('grGiftId').value = '';
+      _renderSelectedGift();
+    }
+    // Product picker: select a card
+    if ((t = e.target.closest('[data-pick-product]'))) {
+      if (t.classList.contains('disabled')) return;
+      var prod = _findProduct(t.dataset.pickProduct);
+      if (prod && _productPickerCb) { _productPickerCb(prod); _productPickerCb = null; }
+    }
+    // Remove a required-product row
+    if ((t = e.target.closest('[data-cond-rm]'))) {
+      _grProductRows.splice(Number(t.dataset.condRm), 1);
+      _renderProductCondRows();
+    }
+    // Remove a required-variant row
+    if ((t = e.target.closest('[data-vcond-rm]'))) {
+      _grVariantRows.splice(Number(t.dataset.vcondRm), 1);
+      _renderVariantCondRows();
+    }
+  });
+
+  // Live edits inside condition-row inputs (qty, variant selects)
+  document.addEventListener('input', function(e){
+    var t;
+    if ((t = e.target.closest('[data-cond-qty]'))) {
+      var idx = Number(t.dataset.condQty);
+      if (_grProductRows[idx]) _grProductRows[idx].min_qty = Math.max(1, Number(t.value||1));
+    }
+    if ((t = e.target.closest('[data-vcond-qty]'))) {
+      var vi = Number(t.dataset.vcondQty);
+      if (_grVariantRows[vi]) _grVariantRows[vi].min_qty = Math.max(1, Number(t.value||1));
+    }
+  });
+  document.addEventListener('change', function(e){
+    var t;
+    if ((t = e.target.closest('[data-var-row]'))) {
+      var ri = Number(t.dataset.varRow);
+      var grp = t.dataset.varGroup;
+      if (_grVariantRows[ri]) {
+        _grVariantRows[ri].selected_variants = _grVariantRows[ri].selected_variants || {};
+        if (t.value) _grVariantRows[ri].selected_variants[grp] = t.value;
+        else delete _grVariantRows[ri].selected_variants[grp];
+        _grVariantRows[ri].variant_key = _buildVariantKey(_grVariantRows[ri].selected_variants);
+      }
+    }
+  });
+
+  _initAuth().then(function() {
+    return refresh();
+  }).then(function() {
+    _dismissPageLoader();
+  }).catch(function() {
+    _dismissPageLoader();
+  });
+});
+</script>
+</body>
+</html>

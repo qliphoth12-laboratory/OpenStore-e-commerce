@@ -1,0 +1,15 @@
+{
+  "name": "open-storefront-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chromium UI E2E tests for deployed Open Storefront checkout warnings.",
+  "scripts": {
+    "e2e": "playwright test",
+    "e2e:headed": "playwright test --headed",
+    "e2e:ui": "playwright test --ui",
+    "e2e:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.0"
+  }
+}

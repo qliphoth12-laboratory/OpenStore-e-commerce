@@ -1,0 +1,851 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>นโยบายความเป็นส่วนตัว | [ API ]</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f5f6f8;
+      --panel: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --soft: #f8fafc;
+      --soft-2: #f3f4f6;
+      --border: #e5e7eb;
+      --line: #edf2f7;
+      --accent: #111827;
+      --accent-soft: #eef2ff;
+      --info-bg: #eff6ff;
+      --info-border: #bfdbfe;
+      --info-text: #1e3a8a;
+      --warn-bg: #fff7ed;
+      --warn-border: #fed7aa;
+      --warn-text: #9a3412;
+      --ok-bg: #ecfdf5;
+      --ok-border: #bbf7d0;
+      --ok-text: #166534;
+      --radius: 18px;
+      --shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Zen Maru Gothic", "Noto Sans Thai", system-ui, sans-serif;
+      line-height: 1.72;
+    }
+    a { color: #1d4ed8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      background: rgba(255, 255, 255, .92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    .topbar-inner {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .brand-logo, .brand-logo-fallback {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: #fff;
+      flex-shrink: 0;
+    }
+    .brand-logo {
+      object-fit: cover;
+      display: none;
+    }
+    .brand-logo-fallback {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #9ca3af;
+      background: linear-gradient(180deg, #fff, #f3f4f6);
+    }
+    .brand-text { min-width: 0; }
+    .brand-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--accent);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: min(50vw, 560px);
+    }
+    .brand-sub {
+      font-size: .78rem;
+      color: var(--muted);
+    }
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pill-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: .62rem .95rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: .86rem;
+      font-weight: 700;
+      transition: all .16s ease;
+    }
+    .pill-btn:hover {
+      background: #f9fafb;
+      transform: translateY(-1px);
+      text-decoration: none;
+    }
+    .pill-btn.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .container {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+    .hero { padding: 28px 0 18px; }
+    .panel, .hero-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .hero-card { padding: 30px; }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: var(--soft-2);
+      color: var(--muted);
+      font-size: .76rem;
+      font-weight: 800;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 14px 0 12px;
+      font-size: clamp(1.75rem, 3vw, 2.42rem);
+      line-height: 1.22;
+    }
+    h2 {
+      margin: 0 0 10px;
+      font-size: 1.24rem;
+      line-height: 1.35;
+    }
+    h3 {
+      margin: 18px 0 8px;
+      font-size: 1.02rem;
+    }
+    p, li { font-size: .96rem; }
+    ul, ol { padding-left: 1.25rem; margin: 10px 0; }
+    .lead {
+      color: #374151;
+      max-width: 900px;
+      margin-bottom: 0;
+    }
+    .hero-meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .meta-box, .mini-card, .purpose-card, .plain-card {
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      background: var(--soft);
+      padding: 14px;
+    }
+    .meta-box .label {
+      font-size: .74rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      font-weight: 800;
+    }
+    .meta-box .value {
+      margin-top: 4px;
+      font-weight: 800;
+    }
+    .layout {
+      display: grid;
+      gap: 18px;
+      padding-bottom: 40px;
+    }
+    .section-card { padding: 24px; }
+    .section-kicker {
+      margin: 0 0 8px;
+      font-size: .75rem;
+      color: var(--muted);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      font-weight: 800;
+    }
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(225px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .mini-card strong, .plain-card strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+    .mini-card a, .plain-card a {
+      word-break: break-all;
+      overflow-wrap: break-word;
+    }
+    .note, .warning, .success {
+      padding: 14px 16px;
+      border-radius: 15px;
+      font-size: .93rem;
+      margin-top: 14px;
+    }
+    .note {
+      border: 1px solid var(--info-border);
+      background: var(--info-bg);
+      color: var(--info-text);
+    }
+    .warning {
+      border: 1px solid var(--warn-border);
+      background: var(--warn-bg);
+      color: var(--warn-text);
+    }
+    .success {
+      border: 1px solid var(--ok-border);
+      background: var(--ok-bg);
+      color: var(--ok-text);
+    }
+    .plain-explain {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: .93rem;
+    }
+    .purpose-list {
+      display: grid;
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .purpose-card {
+      background: #fff;
+    }
+    .purpose-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .purpose-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      background: var(--accent-soft);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: #3730a3;
+    }
+    .purpose-title {
+      font-weight: 800;
+      line-height: 1.5;
+    }
+    .purpose-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .purpose-field {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: var(--soft);
+    }
+    .purpose-field span {
+      display: block;
+      color: var(--muted);
+      font-size: .78rem;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+    .simple-list {
+      display: grid;
+      gap: 10px;
+      padding: 0;
+      margin: 12px 0 0;
+      list-style: none;
+    }
+    .simple-list li {
+      display: flex;
+      gap: 10px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      background: var(--soft);
+      border-radius: 14px;
+    }
+    .simple-list i { color: #4b5563; margin-top: 2px; }
+    .definition-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .definition-card {
+      border: 1px dashed #cbd5e1;
+      border-radius: 14px;
+      padding: 14px;
+      background: #fff;
+    }
+    .definition-card strong { display: block; margin-bottom: 6px; }
+    .footer {
+      padding: 22px 0 42px;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+    code.inline {
+      padding: 2px 7px;
+      border-radius: 8px;
+      background: #f3f4f6;
+      border: 1px solid var(--border);
+      font-size: .85em;
+    }
+    @media (max-width: 760px) {
+      .hero-card, .section-card { padding: 20px; }
+      .topbar-inner { align-items: flex-start; }
+      .pill-btn { width: 100%; }
+      .top-actions { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+<script>window._EXEC_URL = '<?!= typeof execUrl !== "undefined" ? execUrl : "" ?>';</script>
+<script id="server-cfg" type="application/json"><?!= typeof siteCfgJs !== 'undefined' ? siteCfgJs.replace(/</g, '\\u003c').replace(/>/g, '\\u003e') : '{}' ?></script>
+<script>
+  window.PRIVACY_META = {
+    brandDisplayName: '',
+    controllerName: '',
+    contactEmail: '',
+    primaryContactUrl: '',
+    privacyVersion: '',
+    privacyEffectiveDate: '',
+    privacyLastUpdated: ''
+  };
+</script>
+
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <img id="brandLogo" class="brand-logo" alt="logo" style="display:none">
+        <div id="brandLogoFallback" class="brand-logo-fallback"><i class="bi bi-shop" style="font-size:1.1rem"></i></div>
+        <div class="brand-text">
+          <div class="brand-title" id="brandTitle" data-fill="brandDisplayName">ร้านค้า</div>
+          <div class="brand-sub">นโยบายความเป็นส่วนตัว</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <a class="pill-btn" id="btnBackHome" href="#"><i class="bi bi-house"></i>กลับหน้าร้าน</a>
+        <a class="pill-btn primary" id="termsLink" href="#"><i class="bi bi-file-text"></i>เงื่อนไขการให้บริการ</a>
+      </div>
+    </div>
+  </div>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <article class="hero-card">
+          <div class="eyebrow"><i class="bi bi-shield-check"></i> Privacy Notice</div>
+          <h1>นโยบายความเป็นส่วนตัว</h1>
+          <p class="lead">
+            หน้านี้อธิบายแบบตรงไปตรงมาว่า <strong data-fill="brandDisplayName">[ API ]</strong>
+            เก็บข้อมูลอะไร ใช้เพื่ออะไร ส่งต่อให้ใครบ้าง เก็บไว้นานแค่ไหน และลูกค้าสามารถติดต่อเพื่อสอบถามหรือขอใช้สิทธิของตนเองได้อย่างไร
+          </p>
+          <div class="note">
+            <strong>สรุปสั้น ๆ:</strong>
+            ร้านใช้ข้อมูลเท่าที่จำเป็นสำหรับรับคำสั่งซื้อ ตรวจสอบการชำระเงิน จัดส่งสินค้า แจ้งสถานะ และดูแลปัญหาหลังการสั่งซื้อ
+            ระบบนี้ไม่ได้ออกแบบมาเพื่อเก็บข้อมูลผู้เยี่ยมชมทั่วไปเพื่อการโฆษณาหรือการตลาด
+          </div>
+          <div class="hero-meta">
+            <div class="meta-box">
+              <div class="label">ผู้รับผิดชอบข้อมูล</div>
+              <div class="value" data-fill="controllerName">[ API ]</div>
+            </div>
+            <div class="meta-box">
+              <div class="label">เวอร์ชัน</div>
+              <div class="value" data-fill="privacyVersion">[ API ]</div>
+            </div>
+            <div class="meta-box">
+              <div class="label">วันที่มีผลใช้</div>
+              <div class="value" data-fill="privacyEffectiveDate">[ API ]</div>
+            </div>
+            <div class="meta-box">
+              <div class="label">ปรับปรุงล่าสุด</div>
+              <div class="value" data-fill="privacyLastUpdated">[ API ]</div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <div class="container layout">
+      <section id="who" class="panel section-card">
+        <p class="section-kicker">1. ใครเป็นผู้ดูแลข้อมูล</p>
+        <h2>ข้อมูลผู้รับผิดชอบร้าน</h2>
+        <p>
+          ผู้รับผิดชอบการดูแลข้อมูลส่วนบุคคลในหน้านี้คือ <strong data-fill="controllerName">[ API ]</strong>
+          ซึ่งดำเนินการร้านค้าออนไลน์ในชื่อ <strong data-fill="brandDisplayName">[ API ]</strong>
+        </p>
+        <div class="mini-grid">
+          <article class="mini-card">
+            <strong>ชื่อร้าน / ชื่อเพจ</strong>
+            <div data-fill="brandDisplayName">[ API ]</div>
+          </article>
+          <article class="mini-card">
+            <strong>ผู้รับผิดชอบข้อมูล</strong>
+            <div data-fill="controllerName">[ API ]</div>
+          </article>
+          <article class="mini-card">
+            <strong>อีเมลติดต่อ</strong>
+            <div data-fill="contactEmail">[ API ]</div>
+          </article>
+          <article class="mini-card">
+            <strong>ช่องทางติดต่อหลัก</strong>
+            <div data-fill="primaryContactUrl">[ API ]</div>
+          </article>
+        </div>
+      </section>
+
+      <section id="simple-meaning" class="panel section-card">
+        <p class="section-kicker">2. คำอธิบายให้อ่านง่าย</p>
+        <h2>คำสำคัญที่ใช้ในหน้านี้</h2>
+        <p>เพื่อไม่ให้หน้านี้อ่านยาก คำที่เกี่ยวกับกฎหมายจะถูกอธิบายเป็นภาษาปกติ ดังนี้</p>
+        <div class="definition-grid">
+          <article class="definition-card">
+            <strong>ข้อมูลส่วนบุคคล</strong>
+            <div>ข้อมูลที่ใช้ระบุตัวลูกค้าหรือผู้รับสินค้าได้ เช่น ชื่อ เบอร์โทร ที่อยู่ เลขคำสั่งซื้อ หรือหลักฐานการชำระเงิน</div>
+          </article>
+          <article class="definition-card">
+            <strong>ใช้ข้อมูล</strong>
+            <div>การนำข้อมูลไปทำงานที่เกี่ยวกับคำสั่งซื้อ เช่น ตรวจสลิป แพ็กสินค้า ส่งของ หรือแจ้งสถานะ</div>
+          </article>
+          <article class="definition-card">
+            <strong>เปิดเผยข้อมูล</strong>
+            <div>การส่งข้อมูลบางส่วนให้คนหรือระบบที่จำเป็น เช่น บริษัทขนส่ง หรือระบบติดตามพัสดุ</div>
+          </article>
+          <article class="definition-card">
+            <strong>เหตุผลที่จำเป็นต้องใช้ข้อมูล</strong>
+            <div>ร้านใช้ข้อมูลเพราะต้องทำตามคำสั่งซื้อ จัดส่งสินค้า ตรวจสอบการชำระเงิน ดูแลข้อพิพาท หรือทำตามกฎหมายที่เกี่ยวข้อง</div>
+          </article>
+        </div>
+      </section>
+
+      <section id="collected-data" class="panel section-card">
+        <p class="section-kicker">3. ร้านเก็บข้อมูลอะไรบ้าง</p>
+        <h2>ข้อมูลที่เกี่ยวข้องกับการสั่งซื้อ</h2>
+        <p>ร้านจะเริ่มได้รับข้อมูลส่วนบุคคลเมื่อผู้ใช้กรอกข้อมูลเพื่อสั่งซื้อ อัปโหลดสลิป หรือติดต่อร้านเกี่ยวกับคำสั่งซื้อ</p>
+        <p class="plain-explain">
+          หมายเหตุ: ระบบมีการบันทึกกิจกรรมการใช้งานบางส่วนเพื่อความปลอดภัย การตรวจสอบย้อนหลัง และการแก้ไขปัญหาระบบ
+          ไม่ใช่เพื่อโฆษณาหรือการตลาด
+        </p>
+        <div class="mini-grid">
+          <article class="mini-card">
+            <strong>ข้อมูลผู้สั่งซื้อและผู้รับสินค้า</strong>
+            <div>ชื่อ เบอร์โทรศัพท์ ช่องทางติดต่อ และข้อมูลที่ใช้ยืนยันคำสั่งซื้อ</div>
+          </article>
+          <article class="mini-card">
+            <strong>ที่อยู่จัดส่ง</strong>
+            <div>ที่อยู่ เลขไปรษณีย์ แขวง/ตำบล เขต/อำเภอ จังหวัด และรายละเอียดเพิ่มเติมสำหรับส่งสินค้า</div>
+          </article>
+          <article class="mini-card">
+            <strong>ข้อมูลคำสั่งซื้อ</strong>
+            <div>รายการสินค้า จำนวน ราคา ค่าจัดส่ง วิธีจัดส่ง เลขคำสั่งซื้อ และสถานะคำสั่งซื้อ</div>
+          </article>
+          <article class="mini-card">
+            <strong>ข้อมูลการชำระเงิน</strong>
+            <div>สลิปโอนเงิน วันที่และเวลาที่เกี่ยวข้องกับการชำระเงิน และสถานะการตรวจสอบ</div>
+          </article>
+          <article class="mini-card">
+            <strong>ข้อมูลการจัดส่ง</strong>
+            <div>บริษัทขนส่ง เลขติดตามพัสดุ วิธีจัดส่ง และสถานะการส่งมอบ</div>
+          </article>
+          <article class="mini-card">
+            <strong>ข้อมูลสำหรับความปลอดภัยของระบบ</strong>
+            <div>เช่น โทเคนสำหรับเปิดดูคำสั่งซื้อ วันหมดอายุของโทเคน และบันทึกสถานะที่จำเป็นต่อการให้บริการ</div>
+          </article>
+          <article class="mini-card">
+            <strong>บันทึกกิจกรรมและข้อมูลทางเทคนิค</strong>
+            <div>เช่น วันที่เวลา รายการที่เปิดหรือแก้ไข สถานะการเข้าสู่ระบบ หน้าเว็บที่ใช้งาน user-agent ภาษา เขตเวลา ขนาดหน้าจอ รหัสเครื่องแบบสุ่ม และ IP address เฉพาะเมื่อเปิดใช้การตรวจ IP เพื่อความปลอดภัย</div>
+          </article>
+        </div>
+        <div class="warning">
+          ระบบนี้ไม่ได้ออกแบบมาเพื่อขอหรือจัดเก็บข้อมูลอ่อนไหว เช่น ศาสนา เชื้อชาติ สุขภาพ ประวัติอาชญากรรม หรือข้อมูลอื่นที่ไม่จำเป็นต่อการสั่งซื้อสินค้า
+        </div>
+      </section>
+
+      <section id="purposes" class="panel section-card">
+        <p class="section-kicker">4. ร้านใช้ข้อมูลเพื่ออะไร</p>
+        <h2>วัตถุประสงค์ในการใช้ข้อมูล</h2>
+        <p>ตารางเดิมถูกเปลี่ยนเป็นรายการอ่านง่าย เพื่อให้เห็นชัดว่าแต่ละกิจกรรมใช้ข้อมูลอะไรและเกี่ยวข้องกับใครบ้าง</p>
+        <div class="purpose-list">
+          <article class="purpose-card">
+            <div class="purpose-head">
+              <div class="purpose-icon"><i class="bi bi-bag-check"></i></div>
+              <div>
+                <div class="purpose-title">รับและจัดการคำสั่งซื้อ</div>
+                <div>ใช้เพื่อยืนยันรายการสินค้า ราคา จำนวน วิธีจัดส่ง และข้อมูลที่จำเป็นต่อการทำรายการ</div>
+              </div>
+            </div>
+            <div class="purpose-grid">
+              <div class="purpose-field"><span>ข้อมูลที่ใช้</span>ชื่อ เบอร์โทร ที่อยู่จัดส่ง รายการสินค้า จำนวน ราคา และวิธีจัดส่ง</div>
+              <div class="purpose-field"><span>ทำไมต้องใช้</span>เพื่อทำตามคำสั่งซื้อและจัดการบริการที่ลูกค้าขอ</div>
+              <div class="purpose-field"><span>ส่งต่อให้ใคร</span>ผู้ดูแลร้านหรือผู้ปฏิบัติงานที่เกี่ยวข้องกับคำสั่งซื้อ</div>
+              <div class="purpose-field"><span>เก็บไว้นานแค่ไหน</span>เท่าที่จำเป็นต่อการดำเนินคำสั่งซื้อและการแก้ไขปัญหาที่เกี่ยวข้อง</div>
+            </div>
+          </article>
+
+          <article class="purpose-card">
+            <div class="purpose-head">
+              <div class="purpose-icon"><i class="bi bi-receipt"></i></div>
+              <div>
+                <div class="purpose-title">ตรวจสอบการชำระเงิน</div>
+                <div>ใช้เพื่อตรวจสลิป ยืนยันยอดชำระ และเก็บหลักฐานที่เกี่ยวข้องกับคำสั่งซื้อ</div>
+              </div>
+            </div>
+            <div class="purpose-grid">
+              <div class="purpose-field"><span>ข้อมูลที่ใช้</span>สลิปชำระเงิน รายละเอียดคำสั่งซื้อ สถานะการชำระเงิน และวันที่เวลาที่เกี่ยวข้อง</div>
+              <div class="purpose-field"><span>ทำไมต้องใช้</span>เพื่อยืนยันว่ามีการชำระเงินจริงและป้องกันข้อผิดพลาดหรือข้อพิพาท</div>
+              <div class="purpose-field"><span>ส่งต่อให้ใคร</span>ร้านตรวจสลิปด้วยตนเอง และอาจใช้ข้อมูลกับธนาคารหรือผู้เกี่ยวข้องเท่าที่จำเป็น</div>
+              <div class="purpose-field"><span>เก็บไว้นานแค่ไหน</span>เท่าที่จำเป็นต่อการตรวจสอบการชำระเงิน การส่งสินค้า และการแก้ไขข้อพิพาท</div>
+            </div>
+          </article>
+
+          <article class="purpose-card">
+            <div class="purpose-head">
+              <div class="purpose-icon"><i class="bi bi-truck"></i></div>
+              <div>
+                <div class="purpose-title">จัดส่งสินค้าและติดตามพัสดุ</div>
+                <div>ใช้เพื่อส่งสินค้า แจ้งสถานะ และช่วยติดตามพัสดุหลังจากจัดส่งแล้ว</div>
+              </div>
+            </div>
+            <div class="purpose-grid">
+              <div class="purpose-field"><span>ข้อมูลที่ใช้</span>ชื่อผู้รับ เบอร์โทร ที่อยู่จัดส่ง บริษัทขนส่ง วิธีจัดส่ง เลขพัสดุ และสถานะจัดส่ง</div>
+              <div class="purpose-field"><span>ทำไมต้องใช้</span>เพื่อให้บริษัทขนส่งนำส่งสินค้าได้ถูกต้องและให้ลูกค้าติดตามสถานะได้</div>
+              <div class="purpose-field"><span>ส่งต่อให้ใคร</span>ผู้ให้บริการขนส่ง และระบบติดตามพัสดุที่ร้านเปิดใช้งานจริง</div>
+              <div class="purpose-field"><span>โอนข้อมูลต่างประเทศหรือไม่</span>หากเปิดใช้ AfterShip ข้อมูลติดตามพัสดุบางส่วนอาจถูกประมวลผลผ่านบริการที่อยู่นอกประเทศไทย</div>
+            </div>
+          </article>
+
+          <article class="purpose-card">
+            <div class="purpose-head">
+              <div class="purpose-icon"><i class="bi bi-chat-dots"></i></div>
+              <div>
+                <div class="purpose-title">ติดต่อและช่วยเหลือลูกค้า</div>
+                <div>ใช้เพื่อตอบคำถาม แก้ไขปัญหา เปลี่ยนแปลงข้อมูลคำสั่งซื้อ หรือประสานงานหลังการขาย</div>
+              </div>
+            </div>
+            <div class="purpose-grid">
+              <div class="purpose-field"><span>ข้อมูลที่ใช้</span>ข้อมูลติดต่อ เลขคำสั่งซื้อ รายละเอียดปัญหา และข้อมูลประกอบที่ลูกค้าส่งให้</div>
+              <div class="purpose-field"><span>ทำไมต้องใช้</span>เพื่อช่วยตรวจสอบและตอบกลับปัญหาได้ถูกต้อง</div>
+              <div class="purpose-field"><span>ส่งต่อให้ใคร</span>เฉพาะผู้เกี่ยวข้องกับการดูแลคำสั่งซื้อหรือการให้บริการลูกค้า</div>
+              <div class="purpose-field"><span>เก็บไว้นานแค่ไหน</span>ตามความจำเป็นของคำสั่งซื้อและการติดตามปัญหานั้น ๆ</div>
+            </div>
+          </article>
+
+          <article class="purpose-card">
+            <div class="purpose-head">
+              <div class="purpose-icon"><i class="bi bi-file-earmark-check"></i></div>
+              <div>
+                <div class="purpose-title">ทำตามข้อกำหนดหรือปกป้องสิทธิของร้านและลูกค้า</div>
+                <div>ใช้เมื่อจำเป็นต้องเก็บหลักฐาน ตรวจสอบข้อพิพาท หรือปฏิบัติตามกฎหมายที่เกี่ยวข้อง</div>
+              </div>
+            </div>
+            <div class="purpose-grid">
+              <div class="purpose-field"><span>ข้อมูลที่ใช้</span>ข้อมูลคำสั่งซื้อ ข้อมูลชำระเงิน เอกสารประกอบ และบันทึกที่เกี่ยวข้อง</div>
+              <div class="purpose-field"><span>ทำไมต้องใช้</span>เพื่อจัดการข้อพิพาท ตรวจสอบข้อเท็จจริง หรือปฏิบัติตามข้อกำหนดที่เกี่ยวข้อง</div>
+              <div class="purpose-field"><span>ส่งต่อให้ใคร</span>หน่วยงานรัฐ ธนาคาร ที่ปรึกษา หรือผู้เกี่ยวข้องเท่าที่จำเป็น</div>
+              <div class="purpose-field"><span>เก็บไว้นานแค่ไหน</span>ตามระยะเวลาที่จำเป็นและตามข้อกำหนดที่เกี่ยวข้อง</div>
+            </div>
+          </article>
+
+          <article class="purpose-card">
+            <div class="purpose-head">
+              <div class="purpose-icon"><i class="bi bi-journal-check"></i></div>
+              <div>
+                <div class="purpose-title">บันทึกกิจกรรมเพื่อความปลอดภัยและการตรวจสอบย้อนหลัง</div>
+                <div>ใช้เพื่อตรวจสอบเหตุการณ์สำคัญ เช่น การเข้าสู่ระบบ การเปลี่ยนการตั้งค่า การแก้ไขสินค้า คำสั่งซื้อ โปรโมชั่น ของแถม ผู้ใช้ และการเรียกดูหน้าระบบ</div>
+              </div>
+            </div>
+            <div class="purpose-grid">
+              <div class="purpose-field"><span>ข้อมูลที่ใช้</span>วันที่เวลา ประเภทเหตุการณ์ ผู้ใช้หรือเซสชันที่เกี่ยวข้อง หน้าเว็บหรือรายการที่เกี่ยวข้อง user-agent ข้อมูลเบราว์เซอร์พื้นฐาน และ IP address เมื่อเปิดใช้การตรวจ IP</div>
+              <div class="purpose-field"><span>ทำไมต้องใช้</span>เพื่อช่วยตรวจสอบการใช้งานผิดปกติ แก้ไขปัญหา ตรวจสอบข้อพิพาท และเพิ่มความปลอดภัยของร้าน</div>
+              <div class="purpose-field"><span>ส่งต่อให้ใคร</span>ผู้ดูแลร้านหรือผู้ที่มีหน้าที่ตรวจสอบระบบเท่าที่จำเป็น และผู้ให้บริการโครงสร้างพื้นฐานที่ระบบใช้งาน เช่น Google services</div>
+              <div class="purpose-field"><span>เก็บไว้นานแค่ไหน</span>โดยปกติเก็บไว้ประมาณ 90 วัน แล้วลบหรือย้ายออกตามรอบการล้างข้อมูลของระบบ</div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="disclosure" class="panel section-card">
+        <p class="section-kicker">5. ร้านส่งต่อข้อมูลให้ใครบ้าง</p>
+        <h2>การเปิดเผยข้อมูลเท่าที่จำเป็น</h2>
+        <p>ร้านอาจส่งต่อข้อมูลเฉพาะส่วนที่จำเป็นเพื่อให้คำสั่งซื้อดำเนินต่อได้ เช่น ส่งที่อยู่ให้บริษัทขนส่ง หรือใช้เลขพัสดุกับระบบติดตามสถานะ</p>
+        <ul class="simple-list">
+          <li><i class="bi bi-truck"></i><span>ผู้ให้บริการขนส่งที่ร้านเลือกใช้ เพื่อจัดส่งสินค้าไปยังผู้รับ</span></li>
+          <li><i class="bi bi-geo-alt"></i><span>ระบบติดตามพัสดุที่ร้านเปิดใช้งานจริง เช่น AfterShip, Thailand Post API หรือ ETracking</span></li>
+          <li><i class="bi bi-bank"></i><span>ธนาคารหรือผู้เกี่ยวข้องกับธุรกรรม เฉพาะกรณีที่จำเป็นต่อการตรวจสอบหรือจัดการข้อพิพาท</span></li>
+          <li><i class="bi bi-cloud"></i><span>ผู้ให้บริการระบบและโครงสร้างพื้นฐาน เช่น Google services ที่ใช้จัดเก็บและประมวลผลข้อมูลของระบบร้านค้า</span></li>
+          <li><i class="bi bi-building"></i><span>หน่วยงานรัฐหรือที่ปรึกษาวิชาชีพ เมื่อมีกฎหมายกำหนดหรือมีความจำเป็นตามข้อพิพาท</span></li>
+        </ul>
+      </section>
+
+      <section id="international-transfer" class="panel section-card">
+        <p class="section-kicker">6. การประมวลผลผ่านบริการต่างประเทศ</p>
+        <h2>ข้อมูลอาจถูกประมวลผลผ่านระบบของผู้ให้บริการบางราย</h2>
+        <p>
+          ร้านใช้บริการของ Google เป็นส่วนหนึ่งของระบบ และอาจมีการใช้ AfterShip สำหรับติดตามพัสดุในบางกรณี
+          ดังนั้นข้อมูลบางส่วน เช่น ข้อมูลคำสั่งซื้อ ไฟล์ประกอบ หรือเลขติดตามพัสดุ อาจถูกประมวลผลผ่านระบบของผู้ให้บริการที่มีโครงสร้างพื้นฐานอยู่นอกประเทศไทย
+        </p>
+        <div class="note">ร้านจะใช้บริการเหล่านี้เท่าที่จำเป็นต่อการให้บริการ เช่น การจัดเก็บข้อมูล การแสดงผลคำสั่งซื้อ หรือการติดตามพัสดุเท่านั้น</div>
+      </section>
+
+      <section id="retention" class="panel section-card">
+        <p class="section-kicker">7. เก็บข้อมูลไว้นานแค่ไหน</p>
+        <h2>ระยะเวลาเก็บรักษาข้อมูล</h2>
+        <p>ร้านจะเก็บข้อมูลเท่าที่จำเป็นต่อการให้บริการ การตรวจสอบย้อนหลัง การจัดการข้อพิพาท และการปฏิบัติตามข้อกำหนดที่เกี่ยวข้อง</p>
+        <ul class="simple-list">
+          <li><i class="bi bi-bag"></i><span>ข้อมูลคำสั่งซื้อและการจัดส่ง: เก็บเท่าที่จำเป็นต่อการดำเนินคำสั่งซื้อ การส่งสินค้า และการแก้ไขปัญหาที่เกี่ยวข้อง</span></li>
+          <li><i class="bi bi-receipt-cutoff"></i><span>สลิปชำระเงินและข้อมูลธุรกรรม: เก็บเท่าที่จำเป็นต่อการตรวจสอบการชำระเงินและการแก้ไขข้อพิพาท</span></li>
+          <li><i class="bi bi-chat-left-text"></i><span>ข้อมูลการติดต่อกับร้าน: เก็บเท่าที่จำเป็นต่อการตอบคำถามและติดตามปัญหาของคำสั่งซื้อนั้น ๆ</span></li>
+          <li><i class="bi bi-journal-text"></i><span>บันทึกกิจกรรมและความปลอดภัยของระบบ: โดยปกติเก็บไว้ประมาณ 90 วัน เพื่อใช้ตรวจสอบย้อนหลัง แก้ไขปัญหา และดูแลความปลอดภัย จากนั้นระบบจะล้างข้อมูลตามรอบที่กำหนด</span></li>
+        </ul>
+        <p>เมื่อข้อมูลไม่จำเป็นแล้ว ร้านจะลบ ทำลาย หรือทำให้ไม่สามารถระบุตัวบุคคลได้ตามวิธีที่เหมาะสม</p>
+      </section>
+
+      <section id="security" class="panel section-card">
+        <p class="section-kicker">8. ความปลอดภัยของข้อมูล</p>
+        <h2>ร้านปกป้องข้อมูลอย่างไร</h2>
+        <p>
+          ระบบมีมาตรการเพื่อช่วยลดความเสี่ยงจากการเข้าถึง ใช้ แก้ไข หรือเปิดเผยข้อมูลโดยไม่ได้รับอนุญาต
+          โดยใช้แนวทางด้านเทคนิคและการจำกัดสิทธิ์ตามความจำเป็น
+        </p>
+        <ul class="simple-list">
+          <li><i class="bi bi-lock"></i><span>จำกัดสิทธิ์เข้าถึงข้อมูลในส่วนจัดการระบบตามหน้าที่</span></li>
+          <li><i class="bi bi-key"></i><span>โทเคนสำหรับเปิดดูคำสั่งซื้อถูกจัดเก็บในรูปแบบเข้ารหัส ไม่ใช่การเก็บแบบ plain text หรือการ hash ที่ย้อนกลับไม่ได้</span></li>
+          <li><i class="bi bi-file-lock"></i><span>จำกัดการเข้าถึงไฟล์หลักฐานการชำระเงินเท่าที่จำเป็น</span></li>
+          <li><i class="bi bi-shield-check"></i><span>ใช้การยืนยันตัวตนและมาตรการควบคุมการเข้าถึงสำหรับส่วนจัดการระบบ</span></li>
+          <li><i class="bi bi-upload"></i><span>ตรวจสอบไฟล์อัปโหลดบางประเภทเพื่อช่วยลดความเสี่ยงจากไฟล์ที่ไม่เหมาะสม</span></li>
+          <li><i class="bi bi-fingerprint"></i><span>บันทึกกิจกรรมสำคัญของระบบไว้เป็นไฟล์แยกตามวัน พร้อมข้อมูลตรวจสอบความต่อเนื่องของ log เพื่อช่วยสังเกตการแก้ไขหรือลบ log ที่ผิดปกติ</span></li>
+        </ul>
+      </section>
+
+      <section id="rights" class="panel section-card">
+        <p class="section-kicker">9. สิทธิของลูกค้า</p>
+        <h2>ลูกค้าสามารถขออะไรเกี่ยวกับข้อมูลของตนเองได้บ้าง</h2>
+        <p>ภายใต้เงื่อนไขที่กฎหมายกำหนด ลูกค้าอาจติดต่อร้านเพื่อขอใช้สิทธิที่เกี่ยวข้องกับข้อมูลส่วนบุคคลของตนเอง เช่น</p>
+        <div class="mini-grid">
+          <article class="mini-card"><strong>ขอดูข้อมูล</strong><div>สอบถามว่าร้านมีข้อมูลอะไรเกี่ยวกับคำสั่งซื้อของท่านบ้าง</div></article>
+          <article class="mini-card"><strong>ขอแก้ไขข้อมูล</strong><div>ขอแก้ไขข้อมูลที่ไม่ถูกต้อง เช่น ชื่อ เบอร์โทร หรือข้อมูลจัดส่ง</div></article>
+          <article class="mini-card"><strong>ขอลบหรือระงับการใช้ข้อมูล</strong><div>ขอให้ลบหรือหยุดใช้ข้อมูลในบางกรณี หากไม่กระทบต่อหน้าที่หรือข้อกำหนดที่จำเป็น</div></article>
+          <article class="mini-card"><strong>คัดค้านการใช้ข้อมูล</strong><div>แจ้งคัดค้านเมื่อเห็นว่าการใช้ข้อมูลบางอย่างไม่เหมาะสมหรือไม่จำเป็น</div></article>
+          <article class="mini-card"><strong>ร้องเรียน</strong><div>ร้องเรียนต่อหน่วยงานที่เกี่ยวข้อง หากเห็นว่าการดูแลข้อมูลไม่เป็นไปตามกฎหมาย</div></article>
+        </div>
+        <div class="warning">
+          บางคำขออาจไม่สามารถดำเนินการได้ทันที หากข้อมูลนั้นยังจำเป็นต่อการจัดส่งสินค้า การตรวจสอบการชำระเงิน การแก้ไขข้อพิพาท หรือข้อกำหนดที่เกี่ยวข้อง
+        </div>
+      </section>
+
+      <section id="contact" class="panel section-card">
+        <p class="section-kicker">10. วิธีติดต่อร้าน</p>
+        <h2>ช่องทางสำหรับสอบถามหรือขอใช้สิทธิ</h2>
+        <p>ลูกค้าสามารถติดต่อร้านผ่านช่องทางด้านล่าง โดยร้านอาจขอข้อมูลเพิ่มเติมเท่าที่จำเป็นเพื่อยืนยันตัวตนและตรวจสอบคำสั่งซื้อที่เกี่ยวข้อง</p>
+        <div class="mini-grid">
+          <article class="mini-card">
+            <strong>อีเมล</strong>
+            <div data-fill="contactEmail">[ API ]</div>
+          </article>
+          <article class="mini-card">
+            <strong>ช่องทางติดต่อหลัก</strong>
+            <div data-fill="primaryContactUrl">[ API ]</div>
+          </article>
+          <article class="mini-card">
+            <strong>เวลาตอบกลับโดยประมาณ</strong>
+            <div>ภายใน 15 วันนับจากวันที่ได้รับคำขอและข้อมูลประกอบครบถ้วน</div>
+          </article>
+        </div>
+      </section>
+
+      <section id="cookies" class="panel section-card">
+        <p class="section-kicker">11. คุกกี้และข้อมูลจากเบราว์เซอร์</p>
+        <h2>ระบบใช้ข้อมูลจากเบราว์เซอร์เท่าที่จำเป็น</h2>
+        <p>
+          ตามข้อมูลของระบบปัจจุบัน ร้านไม่มีการใช้คุกกี้เพื่อการตลาด การวิเคราะห์โฆษณา หรือการติดตามพฤติกรรมผู้ใช้เพื่อยิงโฆษณา
+          ระบบอาจใช้การจัดเก็บข้อมูลบางส่วนในเบราว์เซอร์เท่าที่จำเป็นเพื่อให้เว็บไซต์ทำงานได้ถูกต้อง เช่น การแสดงผลหน้าเว็บ การทำงานของตะกร้าสินค้า
+          การจดจำเซสชันของผู้ดูแล หรือรหัสเครื่องแบบสุ่มที่ใช้ประกอบการตรวจสอบความปลอดภัยและการแก้ไขปัญหาระบบ
+        </p>
+      </section>
+
+      <section id="changes" class="panel section-card">
+        <p class="section-kicker">12. การปรับปรุงนโยบาย</p>
+        <h2>นโยบายนี้อาจมีการแก้ไขในอนาคต</h2>
+        <p>
+          ร้านอาจปรับปรุงนโยบายนี้เมื่อมีการเปลี่ยนแปลงระบบ การให้บริการ หรือข้อกำหนดที่เกี่ยวข้อง
+          โดยข้อมูลวันที่มีผลใช้และวันที่ปรับปรุงล่าสุดจะแสดงไว้ด้านล่าง
+        </p>
+        <div class="mini-grid">
+          <article class="mini-card">
+            <strong>วันที่มีผลใช้</strong>
+            <div data-fill="privacyEffectiveDate">[ API ]</div>
+          </article>
+          <article class="mini-card">
+            <strong>ปรับปรุงล่าสุด</strong>
+            <div data-fill="privacyLastUpdated">[ API ]</div>
+          </article>
+          <article class="mini-card">
+            <strong>เวอร์ชัน</strong>
+            <div data-fill="privacyVersion">[ API ]</div>
+          </article>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="container footer">
+    <p>
+      ข้อมูลที่แสดงเป็น <code class="inline">[ API ]</code> จะถูกเติมจากระบบ backend อัตโนมัติ เช่น ชื่อร้าน ผู้รับผิดชอบข้อมูล อีเมลติดต่อ วันที่มีผลใช้ และเวอร์ชันของนโยบาย
+    </p>
+  </footer>
+
+<script>
+(function(){
+  function parseServerCfg() {
+    try {
+      var el = document.getElementById('server-cfg');
+      return el ? JSON.parse(el.textContent || '{}') : {};
+    } catch(_) { return {}; }
+  }
+
+  var siteCfg = parseServerCfg();
+  window._SITE_CFG = siteCfg;
+  var legal = siteCfg.legal || {};
+  var meta = Object.assign({}, window.PRIVACY_META || {}, {
+    brandDisplayName:     siteCfg.siteTitle || '',
+    controllerName:       legal.controllerName || '',
+    contactEmail:         legal.contactEmail || '',
+    primaryContactUrl:    legal.primaryContactUrl || '',
+    privacyVersion:       (legal.privacy && legal.privacy.version) || '',
+    privacyEffectiveDate: (legal.privacy && legal.privacy.effectiveDate) || '',
+    privacyLastUpdated:   (legal.privacy && legal.privacy.lastUpdated) || ''
+  });
+
+  document.title = meta.brandDisplayName
+    ? ('นโยบายความเป็นส่วนตัว | ' + meta.brandDisplayName)
+    : 'นโยบายความเป็นส่วนตัว';
+
+  document.querySelectorAll('[data-fill]').forEach(function(el){
+    var k = el.getAttribute('data-fill');
+    var v = meta[k];
+    if (v == null || v === '') { el.textContent = '—'; return; }
+    if (/^https?:\/\//i.test(String(v))) {
+      el.innerHTML = '';
+      var a = document.createElement('a');
+      a.href = v;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      try { a.textContent = new URL(v).hostname.replace(/^www\./, ''); } catch(_) { a.textContent = v; }
+      a.title = v;
+      el.appendChild(a);
+    } else {
+      el.textContent = v;
+    }
+  });
+
+  (function() {
+    var BRAND_KEY = 'SHOP_BRAND_CACHE_V1';
+    var BRAND_TTL = 3600 * 1000;
+    var logoEl = document.getElementById('brandLogo');
+    var logoFallback = document.getElementById('brandLogoFallback');
+
+    function applyLogo(src) {
+      if (!src || !logoEl) return;
+      logoEl.onload = function() {
+        logoEl.style.display = 'block';
+        if (logoFallback) logoFallback.style.display = 'none';
+      };
+      logoEl.src = src;
+    }
+
+    try {
+      var cached = JSON.parse(localStorage.getItem(BRAND_KEY) || 'null');
+      if (cached && (Date.now() - (cached.ts || 0)) < BRAND_TTL && cached.logo && cached.logo.indexOf('drive.google') < 0) {
+        applyLogo(cached.logo);
+        return;
+      }
+    } catch(_) {}
+
+    var driveId = siteCfg.logoImageDriveFileId || '';
+    if (!driveId && siteCfg.logoImage && /drive\.google\.com/i.test(siteCfg.logoImage)) {
+      var m = siteCfg.logoImage.match(/[?&]id=([^&]+)/);
+      if (m) driveId = m[1];
+    }
+    var directUrl = (!driveId && siteCfg.logoImage && !/drive\.google\.com/i.test(siteCfg.logoImage) && siteCfg.logoImage.indexOf('picsum') < 0) ? siteCfg.logoImage : '';
+
+    if (!driveId) { applyLogo(directUrl); return; }
+    if (!(window.google && google.script && google.script.run)) { applyLogo(directUrl); return; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.dataUrl) {
+          try { localStorage.setItem(BRAND_KEY, JSON.stringify({ logo: res.dataUrl, title: siteCfg.siteTitle || '', ts: Date.now() })); } catch(_) {}
+          applyLogo(res.dataUrl);
+        }
+      })
+      .withFailureHandler(function() { applyLogo(directUrl); })
+      .getFileDataUrlRpc(driveId);
+  })();
+
+  var base = (window._EXEC_URL || '').trim();
+  var termsLink = document.getElementById('termsLink');
+  if (termsLink) termsLink.href = base ? (base + '?page=term-and-service') : '#';
+  var backHome = document.getElementById('btnBackHome');
+  if (backHome) backHome.href = base || '#';
+})();
+</script>
+</body>
+</html>
