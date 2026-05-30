@@ -1,94 +1,91 @@
 # Open Storefront
 
-A self-hosted e-commerce storefront that runs entirely on **Google Apps Script (GAS)**.
-No build step, no package manager, no server to rent — the backend is a single Apps Script
-Web App, data lives in Google Sheets, and product images live in Google Drive.
+Open Storefront คือระบบหน้าร้านอีคอมเมิร์ซแบบ self-hosted ที่ทำงานบน **Google Apps Script (GAS)** ทั้งระบบ
+ไม่ต้อง build โปรเจกต์ ไม่ต้องใช้ package manager และไม่ต้องเช่า server เพิ่ม โดย backend เป็น Apps Script Web App เพียงตัวเดียว
+ข้อมูลจัดเก็บใน Google Sheets และรูปสินค้าเก็บใน Google Drive
 
-It includes a customer storefront, a full admin panel (products, orders, promotions, gifts,
-shipping, payments, users), order tracking with multiple carriers, OTP-protected 2FA login,
-and PDPA-style PII encryption.
+ระบบมาพร้อมหน้าร้านสำหรับลูกค้า แผงจัดการหลังบ้านแบบครบชุด เช่น สินค้า คำสั่งซื้อ โปรโมชัน ของแถม การจัดส่ง การชำระเงิน และผู้ใช้
+รองรับการติดตามคำสั่งซื้อกับหลายขนส่ง การเข้าสู่ระบบแบบ 2FA ด้วย OTP ทางอีเมล และการเข้ารหัสข้อมูลส่วนบุคคลตามแนวทาง PDPA
 
-> The UI is in **Thai**. Strings, toasts, and alerts are written in Thai by design.
+> UI ของระบบเป็น **ภาษาไทย** โดยข้อความ ปุ่ม toast และ alert ถูกออกแบบให้ใช้ภาษาไทยเป็นหลัก
 
-## Features
+## คู่มือการใช้งาน
 
-- Storefront with cart, checkout, product variants, promotions, and free-gift campaigns
-- Admin panels for products, orders, promotions, gifts, shipping carriers, payments, and users
-- Customer order tracking via a private `?token=` link (no login required)
-- Carrier tracking integration (AfterShip, Thailand Post, ETracking)
-- Admin login with password hashing (PBKDF2) and optional email OTP 2FA
-- Customer PII in the orders sheet is encrypted (HMAC-SHA256 keystream XOR cipher with authentication tag)
-- PromptPay QR payment configuration
+เปิดคู่มือ PDF ได้ที่ [คู่มือการใช้งาน Open Storefront.pdf](<คู่มือการใช้งาน Open Storefront.pdf>)
 
-## Project Structure
+## คุณสมบัติหลัก
 
-The repository keeps source files under `System/` for organisation. GAS projects are flat,
-so everything is copied into the same script project at deploy time.
+- หน้าร้านพร้อมตะกร้าสินค้า checkout ตัวเลือกสินค้า โปรโมชัน และแคมเปญของแถม
+- แผงจัดการหลังบ้านสำหรับสินค้า คำสั่งซื้อ โปรโมชัน ของแถม ขนส่ง การชำระเงิน และผู้ใช้
+- หน้าติดตามคำสั่งซื้อสำหรับลูกค้าผ่านลิงก์ส่วนตัวแบบ `?token=` โดยไม่ต้องเข้าสู่ระบบ
+- รองรับการเชื่อมต่อสถานะขนส่ง เช่น AfterShip, Thailand Post และ ETracking
+- ระบบเข้าสู่ระบบผู้ดูแลด้วยการ hash รหัสผ่านแบบ PBKDF2 และเลือกเปิดใช้ OTP 2FA ทางอีเมลได้
+- เข้ารหัสข้อมูลส่วนบุคคลของลูกค้าในชีตคำสั่งซื้อด้วย HMAC-SHA256 keystream XOR cipher พร้อม authentication tag
+- ตั้งค่าการชำระเงินผ่าน PromptPay QR ได้
 
-| Path | Role |
+## โครงสร้างโปรเจกต์
+
+ไฟล์ source หลักถูกจัดไว้ใต้โฟลเดอร์ `System/` เพื่อให้อ่านง่าย แต่โปรเจกต์ GAS จะทำงานในรูปแบบไฟล์แบน
+ดังนั้นตอนนำไป deploy จะต้องคัดลอกไฟล์ทั้งหมดเข้าไปอยู่ใน Apps Script project เดียวกัน
+
+| Path | หน้าที่ |
 |---|---|
-| `System/Backend/code.gs` | Apps Script backend — RPC functions, routing, storage |
-| `System/Backend/shipping.gs` | Carrier tracking module (AfterShip / Thailand Post / ETracking) |
-| `System/Frontend/index.html` | Customer storefront |
-| `System/Frontend/edit-store.html` | Storefront with live theme/appearance editor |
-| `System/Frontend/product.html`, `order.html`, `promotion.html`, `gift.html`, `shipping-page.html`, `payment.html`, `user.html`, `system.html`, `legal.html`, `print-order.html` | Admin panels |
-| `System/Frontend/order-view.html` | Customer order detail / slip upload (token access) |
-| `System/Frontend/login.html` | Admin login + OTP 2FA |
-| `System/Frontend/admin-shared.html` | Shared admin UI component (sidebar, topbar, helpers) |
-| `System/Frontend/privacy-policy.html`, `term_and_service.html` | Public legal pages |
-| `QA/` | Integration tests, E2E tests, and performance load-test tooling |
-| `docs/` | Architecture and logging documentation |
+| `System/Backend/code.gs` | Backend ของ Apps Script เช่น RPC functions, routing และ storage |
+| `System/Backend/shipping.gs` | โมดูลติดตามขนส่ง เช่น AfterShip / Thailand Post / ETracking |
+| `System/Frontend/index.html` | หน้าร้านสำหรับลูกค้า |
+| `System/Frontend/edit-store.html` | หน้าร้านพร้อมตัวแก้ไขธีม/หน้าตาแบบ live editor |
+| `System/Frontend/product.html`, `order.html`, `promotion.html`, `gift.html`, `shipping-page.html`, `payment.html`, `user.html`, `system.html`, `legal.html`, `print-order.html` | หน้าจัดการหลังบ้าน |
+| `System/Frontend/order-view.html` | หน้ารายละเอียดคำสั่งซื้อ/อัปโหลดสลิปของลูกค้า ผ่าน token access |
+| `System/Frontend/login.html` | หน้าเข้าสู่ระบบผู้ดูแลและ OTP 2FA |
+| `System/Frontend/admin-shared.html` | ส่วน UI กลางของหลังบ้าน เช่น sidebar, topbar และ helper ต่าง ๆ |
+| `System/Frontend/privacy-policy.html`, `term_and_service.html` | หน้าเอกสารทางกฎหมายสำหรับผู้ใช้ทั่วไป |
+| `QA/` | ชุดทดสอบ integration, E2E และเครื่องมือ load test ด้าน performance |
+| `docs/` | เอกสาร architecture และ logging |
 
-## Setup
+## การติดตั้ง
 
-1. Create a new Google Apps Script project.
-2. Copy `System/Backend/code.gs` into the project as a script file (you can name it anything, e.g. `backend`).
-3. Copy `System/Backend/shipping.gs` into the project as a second script file.
-4. Copy every file from `System/Frontend/` into the project as HTML files (keep the same names).
-5. In **Project Settings → Script Properties**, set:
-   - `SHEET_ID` — ID of a Google Sheet the app will use for data
-   - `DRIVE_FOLDER_ID` — ID of a Drive folder for product/store images
-   - *(optional)* `DATA_ENCRYPT_KEY` — key used to encrypt customer PII
-   - *(optional carrier keys)* `AFTERSHIP_API_KEY`, `THP_STATIC_TOKEN`,
-     `ETRACK_API_KEY`, `ETRACK_KEY_SECRET`
-6. Deploy as a **Web App** (Execute as: you / Access: anyone).
-7. Run `setupAll()` once from the Apps Script editor to create the sheets,
-   the Drive folder, and the 1-minute sync trigger.
-8. Open the Web App URL. On first visit, the login page redirects to a setup
-   flow to create the first owner account.
+1. สร้าง Google Apps Script project ใหม่
+2. คัดลอก `System/Backend/code.gs` เข้าไปใน project เป็นไฟล์ script หนึ่งไฟล์ โดยตั้งชื่ออะไรก็ได้ เช่น `backend`
+3. คัดลอก `System/Backend/shipping.gs` เข้าไปเป็นไฟล์ script อีกหนึ่งไฟล์
+4. คัดลอกไฟล์ทั้งหมดจาก `System/Frontend/` เข้าไปเป็นไฟล์ HTML โดยคงชื่อไฟล์เดิมไว้
+5. ไปที่ **Project Settings -> Script Properties** แล้วตั้งค่า:
+   - `SHEET_ID` คือ ID ของ Google Sheet ที่ระบบจะใช้เก็บข้อมูล
+   - `DRIVE_FOLDER_ID` คือ ID ของ Google Drive folder สำหรับเก็บรูปสินค้า/รูปหน้าร้าน
+   - *(ไม่บังคับ)* `DATA_ENCRYPT_KEY` คือ key สำหรับเข้ารหัสข้อมูลส่วนบุคคลของลูกค้า
+   - *(ไม่บังคับ สำหรับขนส่ง)* `AFTERSHIP_API_KEY`, `THP_STATIC_TOKEN`, `ETRACK_API_KEY`, `ETRACK_KEY_SECRET`
+6. Deploy เป็น **Web App** โดยตั้งค่า Execute as: you และ Access: anyone
+7. เรียกใช้ `setupAll()` หนึ่งครั้งจาก Apps Script editor เพื่อสร้างชีต โฟลเดอร์ Drive และ trigger sync ทุก 1 นาที
+8. เปิด Web App URL ครั้งแรก ระบบจะพาไปยังขั้นตอนตั้งค่าเพื่อสร้างบัญชี owner คนแรก
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the system is structured.
+อ่านโครงสร้างระบบเพิ่มเติมได้ที่ [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
-## Local Preview
+## การพรีวิวในเครื่อง
 
-You can open the `.html` files directly in a browser, but backend calls are stubbed
-(`GAS.available = false`) — anything that needs the Apps Script backend will not work.
+สามารถเปิดไฟล์ `.html` ใน browser ได้โดยตรง แต่ backend calls จะเป็น stub (`GAS.available = false`)
+ดังนั้นฟีเจอร์ที่ต้องเรียก Apps Script backend จะยังไม่ทำงานในการเปิดไฟล์แบบ local
 
 ## QA
 
-- `QA/Integration/` — integration test suite. Copy `integration-tests.gs` and
-  `integration-dashboard.html` into the Apps Script project, then run
-  `qaOpenIntegrationDashboard()` from the editor.
-- `QA/performance/` — Node.js load test (Node 18+). Copy `config.example.json`
-  to `config.json`, set your deployed Web App URL, then `npm install` and `npm run smoke`.
-- `QA/E2E/` — Playwright Chromium E2E tests against a deployed Web App. Copy
-  `e2e.config.example.json` to `e2e.config.local.json`, set your URL and admin token,
-  then `npm install && npx playwright install chromium` and `npm run e2e`.
+- `QA/Integration/` คือชุดทดสอบ integration ให้คัดลอก `integration-tests.gs` และ `integration-dashboard.html`
+  เข้า Apps Script project แล้วเรียก `qaOpenIntegrationDashboard()` จาก editor
+- `QA/performance/` คือ Node.js load test สำหรับ Node 18+ ให้คัดลอก `config.example.json`
+  เป็น `config.json` ตั้งค่า deployed Web App URL จากนั้นรัน `npm install` และ `npm run smoke`
+- `QA/E2E/` คือ Playwright Chromium E2E tests สำหรับทดสอบกับ deployed Web App ให้คัดลอก
+  `e2e.config.example.json` เป็น `e2e.config.local.json` แล้วตั้งค่า URL และ admin token
+  จากนั้นรัน `npm install && npx playwright install chromium` และ `npm run e2e`
 
-See [QA/Dev.md](QA/Dev.md) for the full QA guide.
+อ่านคู่มือ QA แบบเต็มได้ที่ [QA/Dev.md](QA/Dev.md)
 
-## Activity logging (optional)
+## Activity logging (ไม่บังคับ)
 
-An optional best-effort activity log records auth, order, payment and admin
-events as JSON Lines files in Drive `/log`. It is **off by default** — fresh
-installs log nothing. The owner can enable it (and a separate third-party IP
-observation sub-toggle) from the system settings page. See
-[docs/LOGGING.md](docs/LOGGING.md) for details, privacy notes, and why
-client-fetched IPs are not server-verified.
+ระบบมี activity log แบบ best-effort สำหรับบันทึกเหตุการณ์ เช่น auth, order, payment และ admin events
+เป็นไฟล์ JSON Lines ใน Drive `/log` โดยค่าเริ่มต้นจะ **ปิดอยู่** ทำให้การติดตั้งใหม่จะยังไม่บันทึก log ใด ๆ
+เจ้าของระบบสามารถเปิดใช้งานได้จากหน้าตั้งค่าระบบ รวมถึง sub-toggle สำหรับการสังเกต IP จาก third-party แยกต่างหาก
+อ่านรายละเอียด บันทึกด้าน privacy และเหตุผลที่ client-fetched IPs ไม่ถูก server-verified ได้ที่ [docs/LOGGING.md](docs/LOGGING.md)
 
-## Security
+## ความปลอดภัย
 
-Never commit Script Property values, API keys, or `QA/performance/config.json`.
+ห้าม commit ค่า Script Property, API keys หรือไฟล์ `QA/performance/config.json`
 
 ## License
 
