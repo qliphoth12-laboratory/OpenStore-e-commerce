@@ -745,12 +745,63 @@
   }
 
   /* =====================================================
-     ใบเสร็จ / ใบส่งของ — A4 portrait (210 × 297 mm)
+     ใบเสร็จ / ใบส่งของ — A5 ครึ่งหน้า (148 × 210 mm)
+     วางสองครึ่งซ้าย/ขวาบนชีต A4 แนวนอน (297 × 210 mm)
+     รายการสินค้าที่ล้นจะไหลไปครึ่งขวาแทนการขึ้นหน้าใหม่
      QR payload = URL ของหน้า order-view พร้อม token
      ลูกค้าสแกนแล้วดูสถานะ/ใบเสร็จออนไลน์ได้จริง
      ===================================================== */
-  function _receiptContent(o, storeName, opts) {
+  function _receiptA5Style() {
+    return '<style>'
+      + '.r5w{position:relative;width:148mm;height:210mm;overflow:hidden;background:#fff;font-family:\'Noto Sans Thai\',\'Zen Maru Gothic\',Sarabun,sans-serif;color:#111827}'
+      + '.r5pad{position:absolute;inset:7mm;display:flex;flex-direction:column}'
+      + '.r5hdr{display:flex;justify-content:space-between;align-items:flex-start;gap:6mm;flex-shrink:0}'
+      + '.r5shop{font-size:14pt;font-weight:800;line-height:1.15}'
+      + '.r5sub{font-size:7pt;color:#9ca3af;letter-spacing:.08em;text-transform:uppercase;margin-top:.5mm}'
+      + '.r5meta{font-size:8pt;color:#6b7280;text-align:right;flex-shrink:0}'
+      + '.r5mid{font-weight:700;color:#111827;font-size:9pt}'
+      + '.r5page{margin-top:.5mm;font-size:7.5pt;color:#9ca3af}'
+      + '.r5qr{margin-top:1.5mm;display:inline-block;text-align:center;font-size:6.5pt;color:#9ca3af}'
+      + '.r5qr img{width:18mm;height:18mm;display:block;margin:0 0 .5mm auto}'
+      + '.r5div{border:none;border-top:1px solid #e5e7eb;margin:2.5mm 0;width:100%;flex-shrink:0}'
+      + '.r5lbl{font-size:7pt;color:#9ca3af;text-transform:uppercase;letter-spacing:.07em;font-weight:600;margin-bottom:1.5mm;flex-shrink:0}'
+      + '.r5client{font-size:8.5pt;color:#374151;background:#f9fafb;border:1px solid #e5e7eb;border-radius:2mm;padding:2mm 3mm;margin-bottom:2.5mm;flex-shrink:0}'
+      + '.r5client b{color:#111827}'
+      + '.r5tbl{width:100%;border-collapse:collapse}'
+      + '.r5tbl td{padding:1.6mm 0;border-bottom:1px solid #f3f4f6;vertical-align:middle}'
+      + '.r5tbl tr.last td{border-bottom:none}'
+      + '.r5it{font-size:9pt;font-weight:600;color:#111827}'
+      + '.r5iv{font-size:7.5pt;color:#6b7280;margin-top:.3mm}'
+      + '.r5iq{font-size:7.5pt;color:#9ca3af;margin-top:.3mm}'
+      + '.r5qty{font-size:9pt;font-weight:700;color:#374151;text-align:center;width:14mm;white-space:nowrap}'
+      + '.r5s{font-size:9pt;font-weight:700;text-align:right;white-space:nowrap;padding-left:3mm;color:#111827}'
+      + '.r5tots{background:#f9fafb;border-radius:2mm;padding:2.5mm 3.5mm;margin-top:2mm}'
+      + '.r5tr{display:flex;justify-content:space-between;font-size:9pt;padding:.8mm 0;gap:4mm;color:#374151}'
+      + '.r5tr span:last-child{font-weight:600}'
+      + '.r5grand{display:flex;justify-content:space-between;font-size:11pt;font-weight:800;color:#111827;border-top:1.5px solid #111827;padding-top:2mm;margin-top:1.5mm}'
+      + '.r5more{margin-top:3mm;padding:2.5mm 3mm;border:1px dashed #d1d5db;border-radius:2mm;text-align:center;font-size:8.5pt;color:#6b7280}'
+      + '.r5info-wrap{display:flex;gap:3mm;margin-top:3mm}'
+      + '.r5info-block{flex:1;border-radius:2mm;padding:2.5mm 3mm;font-size:8.5pt;background:#f9fafb}'
+      + '.r5info-ttl{font-size:7pt;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.07em;margin-bottom:1.5mm}'
+      + '.r5fg{margin-bottom:1.2mm}'
+      + '.r5fg:last-child{margin-bottom:0}'
+      + '.r5flbl{font-size:6.5pt;color:#9ca3af;margin-bottom:.2mm}'
+      + '.r5fval{font-size:8.5pt;color:#374151;line-height:1.35}'
+      + '.r5fval.fw{font-weight:700;color:#111827}'
+      + '.r5adr2{display:flex;justify-content:space-between;gap:3mm;margin-bottom:1.2mm}'
+      + '.r5adr2>div{flex:1}'
+      + '.r5adr2>div:last-child{text-align:right;flex:0 0 auto}'
+      + '.r5gft{padding:.5mm 0}'
+      + '.r5gft-row{display:flex;justify-content:space-between;align-items:baseline;font-size:8.5pt;color:#374151;padding:.6mm 0;gap:3mm}'
+      + '.r5gft-row span:first-child{font-weight:600;color:#111827}'
+      + '.r5gft-meta{font-size:7pt;color:#6b7280;text-align:right;flex-shrink:0}'
+      + '</style>';
+  }
+
+  /* A5 ครึ่งหน้า (148 × 210 mm) — เนื้อหาใบเสร็จ (style ฉีดที่ระดับชีตด้วย _receiptA5Style) */
+  function _receiptA5Content(opts, storeName) {
     opts = opts || {};
+    var o = opts.order;
     var qr = o._qrDataUrl || '';
     var items = opts.items || _orderProductLines(o);
     var shippingInfo = o.shipping_info || [];
@@ -775,27 +826,27 @@
         ? (fmtMoney(finalPrice) + ' <span style="color:#9ca3af;text-decoration:line-through;font-size:.85em">' + fmtMoney(basePrice) + '</span>')
         : fmtMoney(finalPrice);
       var promoTag = item.promotion
-        ? '<div class="riv" style="color:#c2410c">' + esc(item.promotion.name || 'โปรโมชั่น') + '</div>'
+        ? '<div class="r5iv" style="color:#c2410c">' + esc(item.promotion.name || 'โปรโมชั่น') + '</div>'
         : '';
       return '<tr' + (i === items.length - 1 ? ' class="last"' : '') + '>'
-        + '<td><div class="rit">' + esc(item.title || '') + '</div>'
-        + (item.variant_info ? '<div class="riv">' + esc(item.variant_info) + '</div>' : '')
+        + '<td><div class="r5it">' + esc(item.title || '') + '</div>'
+        + (item.variant_info ? '<div class="r5iv">' + esc(item.variant_info) + '</div>' : '')
         + promoTag
-        + '<div class="riq">' + priceLine + '/ชิ้น</div>'
-        + '</td><td class="riqty">×' + qty + '</td>'
-        + '<td class="ris">' + fmtMoney((item.subtotal != null) ? item.subtotal : (finalPrice * qty)) + '</td></tr>';
+        + '<div class="r5iq">' + priceLine + '/ชิ้น</div>'
+        + '</td><td class="r5qty">×' + qty + '</td>'
+        + '<td class="r5s">' + fmtMoney((item.subtotal != null) ? item.subtotal : (finalPrice * qty)) + '</td></tr>';
     }).join('');
 
     var TRUCK_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:3px;flex-shrink:0"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>';
     var shippingRows = shippingInfo.length
       ? shippingInfo.map(function(s) {
           var label = [s.company_name, s.method_name].filter(Boolean).join(' ');
-          return '<div class="rtr"><span>' + TRUCK_SVG + 'ค่าจัดส่ง' + (label ? ' (' + esc(label) + ')' : '') + '</span><span>' + fmtMoney(s.fee != null ? s.fee : o.shipping_fee) + '</span></div>';
+          return '<div class="r5tr"><span>' + TRUCK_SVG + 'ค่าจัดส่ง' + (label ? ' (' + esc(label) + ')' : '') + '</span><span>' + fmtMoney(s.fee != null ? s.fee : o.shipping_fee) + '</span></div>';
         }).join('')
-      : '<div class="rtr"><span>' + TRUCK_SVG + 'ค่าจัดส่ง</span><span>' + fmtMoney(o.shipping_fee) + '</span></div>';
+      : '<div class="r5tr"><span>' + TRUCK_SVG + 'ค่าจัดส่ง</span><span>' + fmtMoney(o.shipping_fee) + '</span></div>';
 
     var qrHtml = qr
-      ? '<div class="rqr"><img src="' + qr + '" alt=""><div>สแกนดูออนไลน์</div></div>'
+      ? '<div class="r5qr"><img src="' + qr + '" alt=""><div>สแกนดูออนไลน์</div></div>'
       : '';
 
     /* ── ที่อยู่จัดส่ง ── */
@@ -805,29 +856,29 @@
       if (hasAddr) {
         var addrRow1 = '';
         if (o.shipping_name || o.shipping_postal_code) {
-          addrRow1 = '<div class="radr2">'
+          addrRow1 = '<div class="r5adr2">'
             + (o.shipping_name
-                ? '<div><div class="rflbl">ชื่อผู้รับ</div><div class="rfval fw">' + esc(o.shipping_name) + '</div></div>'
+                ? '<div><div class="r5flbl">ชื่อผู้รับ</div><div class="r5fval fw">' + esc(o.shipping_name) + '</div></div>'
                 : '')
             + (o.shipping_postal_code
-                ? '<div style="text-align:right"><div class="rflbl">รหัสไปรษณีย์</div><div class="rfval fw">' + esc(o.shipping_postal_code) + '</div></div>'
+                ? '<div style="text-align:right"><div class="r5flbl">รหัสไปรษณีย์</div><div class="r5fval fw">' + esc(o.shipping_postal_code) + '</div></div>'
                 : '')
             + '</div>';
         }
         var addrRow2 = o.shipping_address
-          ? '<div class="rfg"><div class="rflbl">ที่อยู่</div><div class="rfval">' + esc(o.shipping_address) + '</div></div>'
+          ? '<div class="r5fg"><div class="r5flbl">ที่อยู่</div><div class="r5fval">' + esc(o.shipping_address) + '</div></div>'
           : '';
         var addrRow3 = (o.shipping_district || o.shipping_amphoe)
-          ? '<div class="radr2">'
-            + '<div><div class="rflbl">แขวง/ตำบล</div><div class="rfval">' + esc(o.shipping_district || '—') + '</div></div>'
-            + '<div><div class="rflbl">เขต/อำเภอ</div><div class="rfval">' + esc(o.shipping_amphoe || '—') + '</div></div>'
+          ? '<div class="r5adr2">'
+            + '<div><div class="r5flbl">แขวง/ตำบล</div><div class="r5fval">' + esc(o.shipping_district || '—') + '</div></div>'
+            + '<div><div class="r5flbl">เขต/อำเภอ</div><div class="r5fval">' + esc(o.shipping_amphoe || '—') + '</div></div>'
             + '</div>'
           : '';
         var addrRow4 = o.shipping_province
-          ? '<div class="rfg"><div class="rflbl">จังหวัด</div><div class="rfval">' + esc(o.shipping_province) + '</div></div>'
+          ? '<div class="r5fg"><div class="r5flbl">จังหวัด</div><div class="r5fval">' + esc(o.shipping_province) + '</div></div>'
           : '';
-        addrBlock = '<div class="rinfo-block">'
-          + '<div class="rinfo-ttl">ที่อยู่จัดส่ง</div>'
+        addrBlock = '<div class="r5info-block">'
+          + '<div class="r5info-ttl">ที่อยู่จัดส่ง</div>'
           + addrRow1 + addrRow2 + addrRow3 + addrRow4
           + '</div>';
       }
@@ -838,13 +889,13 @@
     if (isLastPage && (o.customer_contact || o.customer_phone)) {
       var PLATFORM_LABEL = { facebook:'Facebook', twitter:'Twitter / X', instagram:'Instagram', line:'LINE', tiktok:'TikTok', other:'อื่นๆ' };
       var platformName = o.customer_contact_platform ? (PLATFORM_LABEL[o.customer_contact_platform] || o.customer_contact_platform) : '';
-      contactBlock = '<div class="rinfo-block">'
-        + '<div class="rinfo-ttl">ช่องทางติดต่อ</div>'
+      contactBlock = '<div class="r5info-block">'
+        + '<div class="r5info-ttl">ช่องทางติดต่อ</div>'
         + (o.customer_phone
-            ? '<div class="rfg"><div class="rflbl">เบอร์โทร</div><div class="rfval fw">' + esc(o.customer_phone) + '</div></div>'
+            ? '<div class="r5fg"><div class="r5flbl">เบอร์โทร</div><div class="r5fval fw">' + esc(o.customer_phone) + '</div></div>'
             : '')
         + (o.customer_contact
-            ? '<div class="rfg"><div class="rflbl">' + esc(platformName || 'ช่องทาง') + '</div><div class="rfval">' + esc(o.customer_contact) + '</div></div>'
+            ? '<div class="r5fg"><div class="r5flbl">' + esc(platformName || 'ช่องทาง') + '</div><div class="r5fval">' + esc(o.customer_contact) + '</div></div>'
             : '')
         + '</div>';
     }
@@ -858,105 +909,81 @@
         var srcLabel = g.source === 'manual' ? 'เพิ่มโดยแอดมิน' : 'ระบบอัตโนมัติ';
         var detail = g.source === 'manual' ? (g.note || '') : (g.rule_name || '');
         var detailHtml = detail ? ' — <span style="color:#9ca3af">' + esc(detail) + '</span>' : '';
-        return '<div class="rgft-row">'
+        return '<div class="r5gft-row">'
           + '<span>• ' + esc(g.gift_name || '') + ' ×' + (g.gift_qty || 1) + '</span>'
-          + '<span class="rgft-meta">' + srcLabel + detailHtml + '</span>'
+          + '<span class="r5gft-meta">' + srcLabel + detailHtml + '</span>'
           + '</div>';
       }).join('');
-      giftsBlock = '<hr class="rdiv">'
-        + '<div class="rgft">'
-        + '<div class="rlbl"><i class="bi bi-gift" style="margin-right:3px"></i>ของแถม</div>'
+      giftsBlock = '<hr class="r5div">'
+        + '<div class="r5gft">'
+        + '<div class="r5lbl"><i class="bi bi-gift" style="margin-right:3px"></i>ของแถม</div>'
         + giftRows
         + '</div>';
     }
 
     var totalsHtml = isLastPage
       ? giftsBlock
-        + '<hr class="rdiv">'
-        + '<div class="rtots">'
-        + '<div class="rtr"><span>ราคาสินค้า</span><span>' + fmtMoney(o.subtotal) + '</span></div>'
+        + '<hr class="r5div">'
+        + '<div class="r5tots">'
+        + '<div class="r5tr"><span>ราคาสินค้า</span><span>' + fmtMoney(o.subtotal) + '</span></div>'
         + shippingRows
-        + '<div class="rgrand"><span>รวมทั้งสิ้น</span><span>' + fmtMoney(o.total) + '</span></div>'
+        + '<div class="r5grand"><span>รวมทั้งสิ้น</span><span>' + fmtMoney(o.total) + '</span></div>'
         + '</div>'
         + (addrBlock || contactBlock
-            ? '<div class="rinfo-wrap">' + addrBlock + contactBlock + '</div>'
+            ? '<div class="r5info-wrap">' + addrBlock + contactBlock + '</div>'
             : '')
-      : '<div class="rmore">รายการต่อในหน้าถัดไป</div>';
+      : '<div class="r5more">รายการต่อในหน้าถัดไป</div>';
 
-    return '<style>'
-      + '.rw{font-family:\'Noto Sans Thai\',\'Zen Maru Gothic\',Sarabun,sans-serif;background:#fff;padding:40px 48px;color:#111827;line-height:1.5;width:760px;box-sizing:border-box}'
-      + '.rhdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:24px}'
-      + '.rshop{font-size:22px;font-weight:800;color:#111827}'
-      + '.rsub{font-size:11px;color:#9ca3af;letter-spacing:.08em;text-transform:uppercase;margin-top:2px}'
-      + '.rmeta{font-size:12px;color:#6b7280;text-align:right;flex-shrink:0}'
-      + '.rmid{font-weight:700;color:#111827;font-size:13px}'
-      + '.rqr{margin-top:8px;display:inline-block;text-align:center;font-size:9px;color:#9ca3af}'
-      + '.rqr img{width:74px;height:74px;display:block;margin:0 0 2px auto}'
-      + '.rdiv{border:none;border-top:1px solid #e5e7eb;margin:14px 0}'
-      + '.rlbl{font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.07em;font-weight:600;margin-bottom:8px}'
-      + '.rclient{font-size:12px;color:#374151;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;margin-bottom:14px}'
-      + '.rclient b{color:#111827}'
-      + '.rpage{margin-top:4px;font-size:11px;color:#9ca3af}'
-      + '.rtbl{width:100%;border-collapse:collapse}'
-      + '.rtbl td{padding:9px 0;border-bottom:1px solid #f3f4f6;vertical-align:middle}'
-      + '.rtbl tr.last td{border-bottom:none}'
-      + '.rit{font-size:13px;font-weight:600;color:#111827}'
-      + '.riv{font-size:11px;color:#6b7280;margin-top:2px}'
-      + '.riq{font-size:11px;color:#9ca3af;margin-top:2px}'
-      + '.riqty{font-size:13px;font-weight:700;color:#374151;text-align:center;width:72px;white-space:nowrap}'
-      + '.ris{font-size:13px;font-weight:700;text-align:right;white-space:nowrap;padding-left:12px;color:#111827}'
-      + '.rtots{background:#f9fafb;border-radius:8px;padding:12px 16px;margin-top:4px}'
-      + '.rtr{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;gap:16px;color:#374151}'
-      + '.rtr span:last-child{font-weight:600}'
-      + '.rgrand{display:flex;justify-content:space-between;font-size:15px;font-weight:800;color:#111827;border-top:2px solid #111827;padding-top:10px;margin-top:8px}'
-      + '.rmore{margin-top:16px;padding:10px 14px;border:1px dashed #d1d5db;border-radius:8px;text-align:center;font-size:12px;color:#6b7280}'
-      + '.rinfo-wrap{display:flex;gap:12px;margin-top:14px}'
-      + '.rinfo-block{flex:1;border-radius:8px;padding:12px 14px;font-size:12px;background:#f9fafb}'
-      + '.rinfo-ttl{font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px}'
-      + '.rfg{margin-bottom:6px}'
-      + '.rfg:last-child{margin-bottom:0}'
-      + '.rflbl{font-size:9.5px;color:#9ca3af;margin-bottom:1px}'
-      + '.rfval{font-size:12px;color:#374151;line-height:1.4}'
-      + '.rfval.fw{font-weight:700;color:#111827}'
-      + '.radr2{display:flex;justify-content:space-between;gap:12px;margin-bottom:6px}'
-      + '.radr2>div{flex:1}'
-      + '.radr2>div:last-child{text-align:right;flex:0 0 auto}'
-      + '.rgft{padding:2px 0}'
-      + '.rgft-row{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:#374151;padding:3px 0;gap:12px}'
-      + '.rgft-row span:first-child{font-weight:600;color:#111827}'
-      + '.rgft-meta{font-size:10.5px;color:#6b7280;text-align:right;flex-shrink:0}'
-      + '</style>'
-      + '<div class="rw">'
-      + '<div class="rhdr">'
-      + '<div><div class="rshop">' + esc(storeName || _getReceiptStoreName()) + '</div><div class="rsub">ใบเสร็จรับเงิน</div></div>'
-      + '<div class="rmeta"><div class="rmid">' + esc(o.order_id) + '</div><div>' + esc(fmtReceiptDate(o.created_at)) + '</div>'
-      + (pageText ? '<div class="rpage">' + esc(pageText) + '</div>' : '') + qrHtml + '</div>'
+    return '<div class="r5w"><div class="r5pad">'
+      + '<div class="r5hdr">'
+      + '<div><div class="r5shop">' + esc(storeName || _getReceiptStoreName()) + '</div><div class="r5sub">ใบเสร็จรับเงิน</div></div>'
+      + '<div class="r5meta"><div class="r5mid">' + esc(o.order_id) + '</div><div>' + esc(fmtReceiptDate(o.created_at)) + '</div>'
+      + (pageText ? '<div class="r5page">' + esc(pageText) + '</div>' : '') + qrHtml + '</div>'
       + '</div>'
-      + '<hr class="rdiv">'
-      + (customerName ? '<div class="rclient">ลูกค้า: <b>' + esc(customerName) + '</b></div>' : '')
-      + '<div class="rlbl">รายการสินค้า</div>'
-      + '<table class="rtbl"><tbody>' + itemRows + '</tbody></table>'
+      + '<hr class="r5div">'
+      + (customerName ? '<div class="r5client">ลูกค้า: <b>' + esc(customerName) + '</b></div>' : '')
+      + '<div class="r5lbl">รายการสินค้า</div>'
+      + '<table class="r5tbl"><tbody>' + itemRows + '</tbody></table>'
       + totalsHtml
-      + '</div>';
+      + '</div></div>';
   }
 
-  function _buildReceiptPages(orders) {
-    var pages = [];
+  /* แบ่งรายการสินค้าของ order เดียวเป็นหน้า A5 (รายการล้น → หน้าถัดไป = ครึ่งขวา) */
+  function _buildReceiptA5Pages(order) {
+    var items = _orderProductLines(order); // pagination over products only
     var maxItems = 8;
-    orders.forEach(function(o) {
-      var items = _orderProductLines(o); // pagination over products only
-      var pageCount = Math.max(1, Math.ceil(items.length / maxItems));
-      for (var p = 0; p < pageCount; p++) {
-        pages.push({
-          order: o,
-          items: items.slice(p * maxItems, (p + 1) * maxItems),
-          pageNo: p + 1,
-          pageCount: pageCount,
-          isLast: p === pageCount - 1
-        });
-      }
-    });
+    var pageCount = Math.max(1, Math.ceil(items.length / maxItems));
+    var pages = [];
+    for (var p = 0; p < pageCount; p++) {
+      pages.push({
+        order: order,
+        items: items.slice(p * maxItems, (p + 1) * maxItems),
+        pageNo: p + 1,
+        pageCount: pageCount,
+        isLast: p === pageCount - 1
+      });
+    }
     return pages;
+  }
+
+  /* จับคู่หน้า A5 ทีละ 2 (ซ้าย/ขวา) → [[p0,p1],[p2,null],…] */
+  function _pairReceiptPages(pages) {
+    var pairs = [];
+    for (var i = 0; i < pages.length; i += 2) pairs.push([pages[i], pages[i + 1] || null]);
+    return pairs;
+  }
+
+  /* ชีต A4 แนวนอน (297 × 210 mm) — ใบเสร็จ A5 สองครึ่งซ้าย/ขวา + เส้นแบ่งประ */
+  function _receiptSheetContent(pair, storeName) {
+    var left  = pair[0] ? _receiptA5Content(pair[0], storeName) : '<div style="width:148mm;height:210mm"></div>';
+    var right = pair[1] ? _receiptA5Content(pair[1], storeName) : '<div style="width:148mm;height:210mm"></div>';
+    return _receiptA5Style()
+      + '<div style="width:297mm;height:210mm;background:#fff;display:flex;position:relative;overflow:hidden">'
+      + '<div style="width:148.5mm;height:210mm;overflow:hidden">' + left + '</div>'
+      + '<div style="position:absolute;left:148.5mm;top:4mm;bottom:4mm;z-index:20;'
+      +   'transform:translateX(-50%);border-left:.45mm dashed #6b7280;pointer-events:none"></div>'
+      + '<div style="width:148.5mm;height:210mm;overflow:hidden">' + right + '</div>'
+      + '</div>';
   }
 
   /* =====================================================
@@ -1032,52 +1059,30 @@
     }
   }
 
-  async function _exportReceiptPDF(orders, contentFn, filename) {
-    var jsPDF = window.jspdf.jsPDF;
-    var doc = new jsPDF({ unit: 'px', format: 'a4', orientation: 'portrait' });
+  /* ใบเสร็จไฟล์เดียว — รวมหน้า A5 ของทุก order แล้วแพ็คทีละ 2 ครึ่ง/ชีต A4 แนวนอน
+     (แต่ละ A5 เป็นใบเสร็จอิสระ ตัดครึ่งแยกได้; ครึ่งขวาว่างเฉพาะใบสุดท้ายเมื่อจำนวนหน้ารวมเป็นเลขคี่) */
+  async function _exportReceiptPDF(orders, storeName, filename) {
+    var doc = new jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     var container = document.createElement('div');
     container.setAttribute('aria-hidden', 'true');
-    container.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:760px;background:#fff;z-index:-1;pointer-events:none';
+    container.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1;pointer-events:none;width:297mm;height:210mm;overflow:hidden;background:#fff';
     document.body.appendChild(container);
-    var hasContent = false;
     try {
-      for (var i = 0; i < orders.length; i++) {
-        container.innerHTML = contentFn(orders[i]);
+      var allPages = [];
+      for (var oi = 0; oi < orders.length; oi++) allPages = allPages.concat(_buildReceiptA5Pages(orders[oi]));
+      var pairs = _pairReceiptPages(allPages);
+      for (var pi = 0; pi < pairs.length; pi++) {
+        if (pi > 0) doc.addPage('a4', 'landscape');
+        container.innerHTML = _receiptSheetContent(pairs[pi], storeName);
         await Promise.all(Array.from(container.querySelectorAll('img')).map(function(img) {
           if (img.complete && img.naturalWidth) return Promise.resolve();
           return new Promise(function(res) { img.onload = res; img.onerror = res; setTimeout(res, 3000); });
         }));
         var canvas = await html2canvas(container, {
-          scale: 2, useCORS: false, logging: false, backgroundColor: '#ffffff'
+          scale: 2, useCORS: false, logging: false, backgroundColor: '#ffffff',
+          width: container.offsetWidth, height: container.offsetHeight
         });
-        var imgData = canvas.toDataURL('image/png');
-        var pdfW = doc.internal.pageSize.getWidth();
-        var pageH = doc.internal.pageSize.getHeight();
-        var pdfH = (canvas.height / canvas.width) * pdfW;
-        var firstPage = hasContent ? doc.getNumberOfPages() + 1 : doc.getNumberOfPages();
-        var y = 0;
-        while (y < pdfH || y === 0) {
-          if (hasContent) doc.addPage();
-          hasContent = true;
-          doc.addImage(imgData, 'PNG', 0, -y, pdfW, pdfH);
-          y += pageH;
-        }
-        var linkEl = container.querySelector('.rl a');
-        if (linkEl) {
-          var scale = pdfW / 760;
-          var cRect = container.getBoundingClientRect();
-          var lRect = linkEl.getBoundingClientRect();
-          var linkY = (lRect.top - cRect.top) * scale;
-          var pageNo = firstPage + Math.floor(linkY / pageH);
-          doc.setPage(pageNo);
-          doc.link(
-            (lRect.left - cRect.left) * scale,
-            linkY - Math.floor(linkY / pageH) * pageH,
-            (linkEl.offsetWidth || 200) * scale,
-            Math.max(linkEl.offsetHeight || 16, 16) * scale,
-            { url: linkEl.href }
-          );
-        }
+        doc.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 297, 210);
       }
       doc.save(filename);
     } finally {
@@ -1112,54 +1117,43 @@
     setTimeout(function() { URL.revokeObjectURL(url); }, 15000);
   }
 
-  /* แปลง order เดียว → PDF bytes (A5 portrait ใบขนส่ง) */
+  /* แปลง order เดียว → PDF bytes (A4 แนวนอน ใบขนส่งครึ่งซ้าย; ครึ่งขวาว่าง) */
   async function _shippingOrderToPdfBytes(order, sender) {
-    var doc = new jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' });
+    var doc = new jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     var container = document.createElement('div');
-    container.style.cssText = 'position:fixed;left:-9999px;top:0;width:148mm;height:210mm;overflow:hidden;background:#fff;z-index:-1;pointer-events:none';
+    container.style.cssText = 'position:fixed;left:-9999px;top:0;width:297mm;height:210mm;overflow:hidden;background:#fff;z-index:-1;pointer-events:none';
     document.body.appendChild(container);
     try {
-      container.innerHTML = _shippingLabelContent(order, sender);
+      container.innerHTML = _shippingSheetContent([order, null], sender);
       await Promise.all(Array.from(container.querySelectorAll('img')).map(function(img) {
         if (img.complete && img.naturalWidth) return Promise.resolve();
         return new Promise(function(res) { img.onload = res; img.onerror = res; setTimeout(res, 3000); });
       }));
       var canvas = await html2canvas(container, { scale:2, useCORS:false, logging:false, backgroundColor:'#ffffff', width:container.offsetWidth, height:container.offsetHeight });
-      doc.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 148, 210);
+      doc.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 297, 210);
       return doc.output('arraybuffer');
     } finally {
       document.body.removeChild(container);
     }
   }
 
-  /* แปลง order เดียว → PDF bytes (A4 portrait ใบเสร็จ) */
+  /* แปลง order เดียว → PDF bytes (A4 แนวนอน ใบเสร็จ A5 ซ้าย/ขวา; ครึ่งขวาว่างถ้ามีหน้าเดียว) */
   async function _receiptOrderToPdfBytes(order, storeName) {
-    var jsPDF = window.jspdf.jsPDF;
-    var doc = new jsPDF({ unit:'px', format:'a4', orientation:'portrait' });
+    var doc = new jspdf.jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
     var container = document.createElement('div');
-    container.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:760px;background:#fff;z-index:-1;pointer-events:none';
+    container.style.cssText = 'position:fixed;left:-9999px;top:0;width:297mm;height:210mm;overflow:hidden;background:#fff;z-index:-1;pointer-events:none';
     document.body.appendChild(container);
-    var hasContent = false;
     try {
-      var pages = _buildReceiptPages([order]);
-      for (var i = 0; i < pages.length; i++) {
-        container.innerHTML = _receiptContent(pages[i].order, storeName, pages[i]);
+      var pairs = _pairReceiptPages(_buildReceiptA5Pages(order));
+      for (var i = 0; i < pairs.length; i++) {
+        if (i > 0) doc.addPage('a4', 'landscape');
+        container.innerHTML = _receiptSheetContent(pairs[i], storeName);
         await Promise.all(Array.from(container.querySelectorAll('img')).map(function(img) {
           if (img.complete && img.naturalWidth) return Promise.resolve();
           return new Promise(function(res) { img.onload = res; img.onerror = res; setTimeout(res, 3000); });
         }));
-        var canvas = await html2canvas(container, { scale:2, useCORS:false, logging:false, backgroundColor:'#ffffff' });
-        var imgData = canvas.toDataURL('image/png');
-        var pdfW = doc.internal.pageSize.getWidth();
-        var pageH = doc.internal.pageSize.getHeight();
-        var pdfH = (canvas.height / canvas.width) * pdfW;
-        var y = 0;
-        while (y < pdfH || y === 0) {
-          if (hasContent) doc.addPage();
-          hasContent = true;
-          doc.addImage(imgData, 'PNG', 0, -y, pdfW, pdfH);
-          y += pageH;
-        }
+        var canvas = await html2canvas(container, { scale:2, useCORS:false, logging:false, backgroundColor:'#ffffff', width:container.offsetWidth, height:container.offsetHeight });
+        doc.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 297, 210);
       }
       return doc.output('arraybuffer');
     } finally {
@@ -1258,8 +1252,7 @@
         await _exportZip(orders, function(o) { return _receiptOrderToPdfBytes(o, storeName); },
           'ใบเสร็จ-' + date + '.zip', 'กำลังสร้างใบเสร็จ');
       } else {
-        var receiptPages = _buildReceiptPages(orders);
-        await _exportReceiptPDF(receiptPages, function(page) { return _receiptContent(page.order, storeName, page); }, 'ใบเสร็จ-' + date + '.pdf');
+        await _exportReceiptPDF(orders, storeName, 'ใบเสร็จ-' + date + '.pdf');
       }
       hideHUD('ok', 'บันทึกเสร็จแล้ว');
     } catch(e) {
