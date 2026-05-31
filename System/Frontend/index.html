@@ -3577,14 +3577,14 @@
         showBrand: true,
         note: "All rights reserved.",
         socials: [
-          { label: "Instagram", href: "#", icon: "bi-instagram" },
-          { label: "Twitter/X", href: "#", icon: "bi-twitter-x" }
+          { label: "Instagram", href: "https://www.instagram.com/", icon: "bi-instagram" },
+          { label: "Twitter/X", href: "https://x.com/", icon: "bi-twitter-x" }
         ]
       },
       ctaButtons: [
         { label: "ดูสินค้า", href: "#shop", icon: "bi-bag" },
-        { label: "นโยบายจัดส่ง", href: "#shipping", icon: "bi-truck" },
-        { label: "ติดต่อร้าน", href: "#contact", icon: "bi-envelope" }
+        { label: "เพจของเรา", href: "https://www.facebook.com/qliphoth12lab", icon: "bi-facebook" },
+        { label: "ติดต่อร้าน", href: "https://www.facebook.com/qliphoth12lab", icon: "bi-envelope" }
       ],
       productTags: [
         { id: 'new',      label: 'ใหม่',       bg: 'rgba(22,163,74,.85)',  text: '#ffffff' },
@@ -4284,7 +4284,24 @@
       SHOP.ctaButtons.forEach(b => {
         const a = document.createElement("a");
         a.className = "btn cta-btn rounded-pill px-4";
-        a.href = b.href || "#"; a.innerHTML = `<i class="bi ${b.icon ?? 'bi-stars'} me-1"></i> ${b.label}`;
+        const href = b.href || "#";
+        a.href = href;
+        if (/^https?:\/\//i.test(href)) {
+          // ลิงก์ภายนอก (http/https) ต้องเปิดแท็บใหม่/หลุดจาก iframe ของ GAS — ไม่งั้นโดน X-Frame-Options บล็อก
+          a.target = "_blank"; a.rel = "noopener";
+        } else if (href.charAt(0) === '#') {
+          // ลิงก์ภายในหน้า (#section) — base target=_top จะพา iframe URL ออกไปทั้งหน้า
+          // จึง intercept แล้วเลื่อนเองภายใน iframe
+          a.target = "_self";
+          a.addEventListener('click', function(e){
+            e.preventDefault();
+            const id = href.slice(1);
+            const el = id ? document.getElementById(id) : null;
+            if (el) el.scrollIntoView({ behavior:'smooth', block:'start' });
+            else window.scrollTo({ top:0, behavior:'smooth' });
+          });
+        }
+        a.innerHTML = `<i class="bi ${b.icon ?? 'bi-stars'} me-1"></i> ${b.label}`;
         ctaArea.appendChild(a);
       });
 
