@@ -915,14 +915,14 @@ function getDefaultSiteConfig_() {
       showBrand: true,
       note: "All rights reserved.",
       socials: [
-        { label: "Instagram", href: "#", icon: "bi-instagram" },
-        { label: "Twitter/X", href: "#", icon: "bi-twitter-x" }
+        { label: "Instagram", href: "https://www.instagram.com/", icon: "bi-instagram" },
+        { label: "Twitter/X", href: "https://x.com/", icon: "bi-twitter-x" }
       ]
     },
     ctaButtons: [
       { label: "ดูสินค้า", href: "#shop", icon: "bi-bag" },
-      { label: "นโยบายจัดส่ง", href: "#shipping", icon: "bi-truck" },
-      { label: "ติดต่อร้าน", href: "#contact", icon: "bi-envelope" }
+      { label: "เพจของเรา", href: "https://www.facebook.com/qliphoth12lab", icon: "bi-facebook" },
+      { label: "ติดต่อร้าน", href: "https://www.facebook.com/qliphoth12lab", icon: "bi-envelope" }
     ],
     productTags: [
       { id: 'new',      label: 'ใหม่',       bg: 'rgba(22,163,74,.85)',  text: '#ffffff' },
