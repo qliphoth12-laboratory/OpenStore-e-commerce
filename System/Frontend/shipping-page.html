@@ -91,6 +91,7 @@
     .method-block.has-error .method-error-text { display: flex; }
     .bracket-row { display: flex; gap: 6px; align-items: center; margin-bottom: 5px; }
     .bracket-row input { flex: 1; font-size: .82rem; }
+    .bracket-row input[readonly] { background: #f3f4f6; color: #6b7280; cursor: not-allowed; }
     .bracket-row .del-bracket { padding: 3px 8px; }
 
     /* Mode toggle buttons */
@@ -521,6 +522,7 @@ function openEdit(id) {
   _rebuildProviderSelect(c.tracking_provider || '');
   document.getElementById('methodsContainer').innerHTML = '';
   (c.methods || []).forEach(m => addMethodBlock(m));
+  document.querySelectorAll('#methodsContainer .weight-panel').forEach(panel => _syncWeightBrackets(panel));
   _syncNoMethodsMsg();
   _modal.show();
 }
@@ -590,10 +592,10 @@ function addMethodBlock(data) {
 function bracketRowHtml(b) {
   b = b || {};
   return `<div class="bracket-row">
-    <input type="number" class="form-control form-control-sm" placeholder="0" min="0" value="${Number(b.from_g||0)}" data-field="from_g">
-    <input type="number" class="form-control form-control-sm" placeholder="9999" min="0" value="${Number(b.to_g||0)}" data-field="to_g">
+    <input type="number" class="form-control form-control-sm" placeholder="0" min="0" value="${Number(b.from_g||0)}" data-field="from_g" readonly>
+    <input type="number" class="form-control form-control-sm" placeholder="9999" min="0" value="${Number(b.to_g||0)}" data-field="to_g" oninput="_syncWeightBrackets(this.closest('.weight-panel'), this.closest('.bracket-row'), { soft:true })" onblur="_syncWeightBrackets(this.closest('.weight-panel'), this.closest('.bracket-row'))">
     <input type="number" class="form-control form-control-sm" placeholder="ราคา" min="0" value="${Number(b.price||0)}" data-field="price">
-    <button type="button" class="btn btn-sm btn-outline-danger del-bracket" onclick="this.closest('.bracket-row').remove()">
+    <button type="button" class="btn btn-sm btn-outline-danger del-bracket" onclick="_removeBracket(this)">
       <i class="bi bi-x"></i>
     </button>
   </div>`;
@@ -617,8 +619,63 @@ async function _removeMethod(btn) {
 }
 
 function _addBracket(btn) {
-  const list = btn.closest('.weight-panel').querySelector('.brackets-list');
-  list.insertAdjacentHTML('beforeend', bracketRowHtml({}));
+  const panel = btn.closest('.weight-panel');
+  const list = panel.querySelector('.brackets-list');
+  const rows = Array.from(list.querySelectorAll('.bracket-row'));
+  let from = 0;
+  if (rows.length) {
+    const lastTo = Number(rows[rows.length - 1].querySelector('[data-field="to_g"]').value || 0);
+    from = (isNaN(lastTo) ? 0 : lastTo) + 1;
+  }
+  list.insertAdjacentHTML('beforeend', bracketRowHtml({ from_g: from, to_g: from + 9 }));
+  _syncWeightBrackets(panel);
+}
+
+function _removeBracket(btn) {
+  const panel = btn.closest('.weight-panel');
+  btn.closest('.bracket-row').remove();
+  _syncWeightBrackets(panel);
+}
+
+function _syncWeightBrackets(weightPanel, changedRow, opts) {
+  if (!weightPanel) return;
+  opts = opts || {};
+  const rows = Array.from(weightPanel.querySelectorAll('.bracket-row'));
+  let nextFrom = 0;
+  let preserveWidth = !changedRow;
+
+  for (let ri = 0; ri < rows.length; ri++) {
+    const row = rows[ri];
+    const fromInput = row.querySelector('[data-field="from_g"]');
+    const toInput = row.querySelector('[data-field="to_g"]');
+    if (!fromInput || !toInput) continue;
+
+    const oldFromRaw = Number(fromInput.value);
+    const oldToRaw = Number(toInput.value);
+    const oldFrom = isNaN(oldFromRaw) ? nextFrom : oldFromRaw;
+    const oldTo = isNaN(oldToRaw) ? oldFrom : oldToRaw;
+    const span = Math.max(0, oldTo - oldFrom);
+    let newTo;
+
+    if (row === changedRow) {
+      preserveWidth = true;
+      newTo = oldTo;
+      if (opts.soft && (toInput.value === '' || isNaN(newTo) || newTo < nextFrom)) {
+        fromInput.value = nextFrom;
+        break;
+      }
+      if (isNaN(newTo) || newTo < nextFrom) newTo = nextFrom;
+    } else if (preserveWidth) {
+      newTo = nextFrom + span;
+    } else {
+      newTo = oldTo;
+      if (isNaN(newTo) || newTo < nextFrom) newTo = nextFrom;
+    }
+
+    fromInput.value = nextFrom;
+    toInput.value = newTo;
+    nextFrom = newTo + 1;
+  }
 }
 
 function _syncNoMethodsMsg() {
@@ -660,6 +717,7 @@ function _readModal() {
   const name   = document.getElementById('cmpName').value.trim();
   const active = document.getElementById('cmpActive').checked;
   const methods = [];
+  document.querySelectorAll('#methodsContainer .weight-panel').forEach(panel => _syncWeightBrackets(panel));
 
   document.querySelectorAll('#methodsContainer .method-block').forEach(block => {
     const mid = block.dataset.mid;

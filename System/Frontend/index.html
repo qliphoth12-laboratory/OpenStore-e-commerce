@@ -6191,13 +6191,13 @@
       const brackets = method.brackets || [];
       if (!brackets.length) return 0;
       const w = totalWeightGrams;
-      // Sort ascending + exclusive upper bound so a boundary weight deterministically
-      // belongs to the lower bracket. Must mirror calcBackendShippingFee_ exactly.
+      // Sort ascending and treat `to_g` as inclusive: "0-500g" includes 500g.
+      // Must mirror calcBackendShippingFee_ exactly.
       const sorted = [...brackets].sort((a, b) => Number(a.from_g) - Number(b.from_g));
       if (w < Number(sorted[0].from_g)) return Number(sorted[0].price || 0);
       for (let i = 0; i < sorted.length; i++) {
-        const b = sorted[i], isLast = (i === sorted.length - 1);
-        if (w >= Number(b.from_g) && (w < Number(b.to_g) || (isLast && w <= Number(b.to_g)))) {
+        const b = sorted[i];
+        if (w >= Number(b.from_g) && w <= Number(b.to_g)) {
           return Number(b.price || 0);
         }
       }

@@ -3807,14 +3807,12 @@ function calcBackendShippingFee_(method, totalWeightGrams) {
   var brackets = method.brackets || [];
   if (!brackets.length) return 0;
   var w = totalWeightGrams;
-  // Sort ascending and use an exclusive upper bound so a weight exactly on a
-  // boundary deterministically belongs to the lower bracket — independent of
-  // the brackets' input order. The topmost bracket keeps an inclusive upper end.
+  // Sort ascending and treat `to_g` as inclusive: "0-500g" includes 500g.
   var sorted = brackets.slice().sort(function(a, b){ return Number(a.from_g) - Number(b.from_g); });
   if (w < Number(sorted[0].from_g)) return Number(sorted[0].price || 0);
   for (var i = 0; i < sorted.length; i++) {
-    var b = sorted[i], isLast = (i === sorted.length - 1);
-    if (w >= Number(b.from_g) && (w < Number(b.to_g) || (isLast && w <= Number(b.to_g)))) {
+    var b = sorted[i];
+    if (w >= Number(b.from_g) && w <= Number(b.to_g)) {
       return Number(b.price || 0);
     }
   }
