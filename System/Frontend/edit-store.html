@@ -11404,7 +11404,7 @@
       console.log('Saved locally & applied.');
     };
 
-    btnExport.onclick = () => { const { products: _p, ...exportCfg } = SHOP; const blob = new Blob([JSON.stringify(exportCfg, null, 2)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "shop-settings.json"; a.click(); };
+    btnExport.onclick = () => { const { products: _p, payment: _pay, shipping_companies: _sc, logIpObservation: _lip, ...exportCfg } = SHOP; const blob = new Blob([JSON.stringify(exportCfg, null, 2)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "shop-settings.json"; a.click(); };
     fileImport.onchange = (e) => {
       const f = e.target.files[0];
       if (!f) return;
@@ -11416,6 +11416,11 @@
           const raw = JSON.parse(r.result);
           // ไม่นำเข้าข้อมูลสินค้า — products มาจาก server เท่านั้น
           delete raw.products;
+          // ตัด runtime keys ที่ inject ตอน serve (ไม่ใช่ค่าที่ edit-store เป็นเจ้าของ)
+          // โดยเฉพาะ payment — กัน promptpay/ข้อมูลชำระเงินเก่าจากไฟล์ค้างใน SHOP/localStorage
+          delete raw.payment;
+          delete raw.shipping_companies;
+          delete raw.logIpObservation;
 
           // เติม default กัน field หาย
           SHOP = deepMergeDefaults(raw, { ...DEFAULT_CONFIG, products: SHOP.products });

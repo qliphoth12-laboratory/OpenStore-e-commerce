@@ -990,7 +990,20 @@ function buildConfigWithProducts_() {
   // 5) ฝัง payment config จาก sheet `payment` (เดิมเก็บใน cfg.payment ของ site_config,
   //    ย้ายไป sheet แยกแล้ว — ฝังกลับลง cfg.payment เพื่อรักษา wire format เดิม
   //    ที่ order-view.html ใช้อ่าน)
-  try { cfg.payment = readPaymentConfig_(); } catch(_) { cfg.payment = {}; }
+  //    Whitelist เฉพาะ field ที่ client ใช้แสดง QR — ตัด id/updated_at/updated_by (อีเมล admin)
+  //    ไม่ให้หลุดลง server-cfg ของทุกหน้า (รวม storefront สาธารณะ) และไฟล์ export ของ edit-store
+  try {
+    var _pp = readPaymentConfig_();
+    cfg.payment = {
+      promptpay_number: _pp.promptpay_number || '',
+      promptpay_name:   _pp.promptpay_name   || '',
+      bg_drive_id:      _pp.bg_drive_id      || '',
+      bg_url:           _pp.bg_url           || '',
+      qr_x:    _pp.qr_x    !== undefined ? _pp.qr_x    : 50,
+      qr_y:    _pp.qr_y    !== undefined ? _pp.qr_y    : 50,
+      qr_size: _pp.qr_size !== undefined ? _pp.qr_size : 25
+    };
+  } catch(_) { cfg.payment = {}; }
 
   // 6) flag for the client: whether to fetch a third-party IP observation (ipify).
   //    Mutates the in-memory copy only — not persisted back to the store sheet.
@@ -3168,6 +3181,7 @@ function _logToNumOrNull_(v) { var n = Number(v); return isNaN(n) ? null : n; }
 // HMAC-SHA256(value) -> short prefixed token. Used for user/session/client/order ids.
 function hashForLog_(value, prefix) {
   if (value === null || value === undefined || value === '') return null;
+  if (!isLoggingEnabled_()) return null;   // logging ปิด = ไม่อ่าน/สร้าง secret, ไม่คำนวณ HMAC ทิ้งเปล่า
   try {
     var sig = Utilities.computeHmacSha256Signature(
       Utilities.newBlob(String(value)).getBytes(),

@@ -89,4 +89,4 @@ Open Storefront คือระบบหน้าร้านอีคอมเ�
 
 ## License
 
-[MIT](LICENSE)
+[GNU Affero General Public License v3.0 (AGPLv3)](LICENSE)
