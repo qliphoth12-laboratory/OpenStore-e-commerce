@@ -83,6 +83,58 @@ function getStoreName_() {
   } catch(_) {}
   return 'Open Storefront';
 }
+/* ---------- OTP email helpers ---------- */
+// Mask an email for UI display: keep ≤3 chars of the local part, hide the rest.
+function maskEmail_(email) {
+  var e = String(email || '');
+  var at = e.indexOf('@');
+  if (at < 1) return '***';
+  var u = e.slice(0, at);
+  return (u.length > 3 ? u.slice(0, 3) : u) + '***@' + e.slice(at + 1);
+}
+// Minimal HTML escaper for otp/email bodies (no escaper existed in backend).
+function _escapeHtml_(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+// Send an OTP email whose inbox PREVIEW / notification snippet does NOT reveal
+// the code. A hidden HTML preheader fills the snippet with a generic line and
+// zero-width filler pushes the code out of the ~100-char preview; the plain-text
+// fallback likewise leads with the generic line so the code sits well below it.
+// The code is only visible once the email is actually opened.
+// opts: { ttlText?, warnLines?[] }. Returns MailApp remaining daily quota.
+function sendOtpEmail_(to, subjectLabel, otp, opts) {
+  opts = opts || {};
+  var lead = 'คุณได้ขอรหัสยืนยัน กรุณาเปิดอีเมลนี้เพื่อดูรหัส OTP ของคุณ';
+  var ttlText = opts.ttlText || 'รหัสนี้จะหมดอายุใน 10 นาที';
+  var warnLines = opts.warnLines || ['หากคุณไม่ได้ทำรายการนี้ กรุณาเพิกเฉยข้อความนี้'];
+
+  // Plain-text fallback (non-HTML clients): generic lead first, code far below.
+  var textBody = lead + '\n\n\n\nรหัส OTP: ' + otp + '\n\n' + ttlText + '\n' + warnLines.join('\n');
+
+  // Zero-width filler keeps the real content (the code) out of the snippet.
+  var filler = '';
+  for (var i = 0; i < 80; i++) filler += '&zwnj;&nbsp;';
+  var html =
+      '<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;'
+    +   'font-size:1px;line-height:1px;color:#ffffff;opacity:0">' + _escapeHtml_(lead) + filler + '</div>'
+    + '<div style="font-family:\'Segoe UI\',Tahoma,sans-serif;color:#111827;font-size:14px;line-height:1.6">'
+    +   '<p style="margin:0 0 16px">' + _escapeHtml_(lead) + '</p>'
+    +   '<p style="margin:0 0 16px;font-size:30px;font-weight:800;letter-spacing:6px;color:#111827">' + _escapeHtml_(otp) + '</p>'
+    +   '<p style="margin:0;color:#6b7280;font-size:12px">' + _escapeHtml_(ttlText)
+    +     '<br>' + warnLines.map(_escapeHtml_).join('<br>') + '</p>'
+    + '</div>';
+
+  MailApp.sendEmail({
+    to: to,
+    subject: '[' + getStoreName_() + '] ' + subjectLabel,
+    body: textBody,
+    htmlBody: html
+  });
+  return MailApp.getRemainingDailyQuota();
+}
+
 function ss_(){ return SpreadsheetApp.openById(SP.getProperty('SHEET_ID')); }
 function fileTs_(id){ try{ return DriveApp.getFileById(id).getLastUpdated().getTime(); }catch(_){ return 0; } }
 function publicUrl_(fileId){ return 'https://drive.google.com/uc?export=view&id=' + fileId; }
@@ -472,14 +524,72 @@ function deleteDriveFileSafe_(fileId){
   try{ DriveApp.getFileById(fileId).setTrashed(true); }catch(_){}
 }
 
+// Resolve the per-store subfolder id for `name`, creating it once if missing.
+// Hardened against the duplicate-folder bug:
+//   1. the resolved id is persisted in Script Properties (FOLDER_ID_<name>) so
+//      later executions skip the name search and never create a second folder;
+//   2. the resolve/create path is serialized with a script lock so two
+//      concurrent uploads can't both find "none" and both create;
+//   3. when duplicates already exist the OLDEST is chosen deterministically and
+//      pinned — so the set stops drifting.
+// NOTE: this only stops NEW duplicates. Files already scattered across existing
+// duplicate folders keep serving because the parent-folder checks accept any
+// folder matching the name (see _allFolderIdsByName_).
 function getOrCreateFolder_(name) {
   const mainId = SP.getProperty('DRIVE_FOLDER_ID');
   if (!mainId) throw new Error('DRIVE_FOLDER_ID not configured');
+
+  var propKey = 'FOLDER_ID_' + name;
+  var savedId = SP.getProperty(propKey);
+  if (savedId && _folderUsable_(savedId)) return savedId;
+
   const mainFolder = DriveApp.getFolderById(mainId);
-  const iter = mainFolder.getFoldersByName(name);
-  if (iter.hasNext()) return iter.next().getId();
-  return mainFolder.createFolder(name).getId();
-  // No catch: errors propagate so callers see the real failure instead of silently uploading to root
+  var lock = LockService.getScriptLock();
+  var locked = false;
+  try { locked = lock.tryLock(10000); } catch (_) {}
+  try {
+    // Re-check inside the lock — another execution may have just resolved it.
+    savedId = SP.getProperty(propKey);
+    if (savedId && _folderUsable_(savedId)) return savedId;
+    var id = _oldestFolderByName_(mainFolder, name) || mainFolder.createFolder(name).getId();
+    SP.setProperty(propKey, id);
+    return id;
+  } finally {
+    if (locked) { try { lock.releaseLock(); } catch (_) {} }
+  }
+}
+
+// True if folderId points to a live (non-trashed) folder.
+function _folderUsable_(folderId) {
+  try { return !DriveApp.getFolderById(folderId).isTrashed(); }
+  catch (_) { return false; }
+}
+
+// Oldest (earliest-created) child folder matching `name`, or '' if none.
+// Deterministic tiebreak so duplicates resolve to one canonical id.
+function _oldestFolderByName_(parentFolder, name) {
+  var it = parentFolder.getFoldersByName(name);
+  var best = null, bestT = Infinity;
+  while (it.hasNext()) {
+    var f = it.next();
+    var t = f.getDateCreated().getTime();
+    if (t < bestT) { bestT = t; best = f; }
+  }
+  return best ? best.getId() : '';
+}
+
+// ALL (non-trashed) child folder ids matching `name` under DRIVE_FOLDER_ID.
+// Used by parent-folder allowlists so files in pre-existing duplicate folders
+// still serve even though new uploads go to the single pinned folder.
+function _allFolderIdsByName_(name) {
+  var ids = [];
+  try {
+    var mainId = SP.getProperty('DRIVE_FOLDER_ID');
+    if (!mainId) return ids;
+    var it = DriveApp.getFolderById(mainId).getFoldersByName(name);
+    while (it.hasNext()) ids.push(it.next().getId());
+  } catch (_) {}
+  return ids;
 }
 var _folderIdCache_ = {};
 function getFolderIdCached_(name) {
@@ -1088,16 +1198,8 @@ function sendSystemOtpRpc(token) {
   if (!sess) return { ok:false, error:'\u0e40\u0e09\u0e1e\u0e32\u0e30\u0e40\u0e08\u0e49\u0e32\u0e02\u0e2d\u0e07\u0e23\u0e30\u0e1a\u0e1a\u0e40\u0e17\u0e48\u0e32\u0e19\u0e31\u0e49\u0e19' };
   try {
     var otp = otpIssue_('system_config', sess.userId, {}, 600);
-    MailApp.sendEmail({
-      to:      sess.email,
-      subject: '[' + getStoreName_() + '] รหัส OTP ตั้งค่าระบบ',
-      body:    'รหัส OTP สำหรับบันทึกการตั้งค่าระบบ: ' + otp
-             + '\n\nรหัสนี้จะหมดอายุใน 10 นาที\nหากคุณไม่ได้ทำรายการนี้ กรุณาเพิกเฉยข้อความนี้'
-    });
-    var at = sess.email.indexOf('@');
-    var u  = sess.email.slice(0, at);
-    var masked = (u.length > 3 ? u.slice(0,3) : u) + '***@' + sess.email.slice(at+1);
-    return { ok:true, maskedEmail:masked, remainingQuota:MailApp.getRemainingDailyQuota() };
+    var quota = sendOtpEmail_(sess.email, 'รหัส OTP ตั้งค่าระบบ', otp);
+    return { ok:true, maskedEmail:maskEmail_(sess.email), remainingQuota:quota };
   } catch(err) { return { ok:false, error:String(err) }; }
 }
 
@@ -1188,18 +1290,13 @@ function sendKeyRotateOtpRpc(token) {
   if (!sess) return { ok:false, error:'เฉพาะเจ้าของระบบเท่านั้น' };
   try {
     var otp = otpIssue_('key_rotate', sess.userId, {}, 600);
-    MailApp.sendEmail({
-      to:      sess.email,
-      subject: '[' + getStoreName_() + '] รหัส OTP หมุนเวียน Encryption Key',
-      body:    'รหัส OTP สำหรับหมุนเวียน Encryption Key: ' + otp
-             + '\n\nรหัสนี้จะหมดอายุใน 10 นาที'
-             + '\n⚠️ การดำเนินการนี้จะ re-encrypt ข้อมูลลูกค้าทั้งหมดในระบบ'
-             + '\nหากคุณไม่ได้ทำรายการนี้ กรุณาเพิกเฉยข้อความนี้'
+    var quota = sendOtpEmail_(sess.email, 'รหัส OTP หมุนเวียน Encryption Key', otp, {
+      warnLines: [
+        '⚠️ การดำเนินการนี้จะ re-encrypt ข้อมูลลูกค้าทั้งหมดในระบบ',
+        'หากคุณไม่ได้ทำรายการนี้ กรุณาเพิกเฉยข้อความนี้'
+      ]
     });
-    var at = sess.email.indexOf('@');
-    var u  = sess.email.slice(0, at);
-    var masked = (u.length > 3 ? u.slice(0,3) : u) + '***@' + sess.email.slice(at+1);
-    return { ok:true, maskedEmail:masked, remainingQuota:MailApp.getRemainingDailyQuota() };
+    return { ok:true, maskedEmail:maskEmail_(sess.email), remainingQuota:quota };
   } catch(err) { return { ok:false, error:String(err) }; }
 }
 
@@ -1328,9 +1425,7 @@ function sendPaymentOtpRpc(token, payload) {
 
     var payloadHash = paymentOtpPayloadHash_(payload);
 
-    const at  = email.indexOf('@');
-    const user = email.slice(0, at);
-    const masked = (user.length > 3 ? user.slice(0, 3) : user) + '***@' + email.slice(at + 1);
+    const masked = maskEmail_(email);
 
     // ป้องกัน double-send: ถ้าเพิ่งส่งไปไม่ถึง 60 วินาที และ payload เหมือนเดิม ไม่ส่งซ้ำ
     var existingRecord = otpLoad_('payment_config', sess.userId);
@@ -1343,16 +1438,9 @@ function sendPaymentOtpRpc(token, payload) {
 
     var otp = otpIssue_('payment_config', sess.userId, { sentAt: Date.now(), payloadHash: payloadHash }, 600);
 
-    MailApp.sendEmail({
-      to: email,
-      subject: '[' + getStoreName_() + '] รหัส OTP ยืนยันการตั้งค่า PromptPay',
-      body:
-        'รหัส OTP ของคุณคือ: ' + otp + '\n\n' +
-        'รหัสนี้จะหมดอายุใน 10 นาที\n' +
-        'หากคุณไม่ได้ทำรายการนี้ กรุณาเพิกเฉยข้อความนี้'
-    });
+    var quota = sendOtpEmail_(email, 'รหัส OTP ยืนยันการตั้งค่า PromptPay', otp);
 
-    return { ok:true, maskedEmail: masked, remainingQuota: MailApp.getRemainingDailyQuota() };
+    return { ok:true, maskedEmail: masked, remainingQuota: quota };
   } catch(err) { return { ok:false, error:String(err) }; }
 }
 
@@ -1874,12 +1962,10 @@ function updateStockRpc(token, updates) {
 function getFileDataUrlRpc(fileId) {
   try {
     var file = DriveApp.getFileById(fileId);
-    var allowedIds = [
-      SP.getProperty('DRIVE_FOLDER_ID'),      // legacy: ไฟล์เก่าก่อนมี subfolder
-      getFolderIdCached_(FOLDER_PRODUCT),
-      getFolderIdCached_(FOLDER_STORE),
-      getFolderIdCached_(FOLDER_GIFT)
-    ];
+    var allowedIds = [SP.getProperty('DRIVE_FOLDER_ID')]   // legacy: ไฟล์เก่าก่อนมี subfolder
+      .concat(_allFolderIdsByName_(FOLDER_PRODUCT))         // accept any duplicate of the same name
+      .concat(_allFolderIdsByName_(FOLDER_STORE))
+      .concat(_allFolderIdsByName_(FOLDER_GIFT));
     var parentId = null;
     var parents = file.getParents();
     if (parents.hasNext()) parentId = parents.next().getId();
@@ -1896,13 +1982,11 @@ function getAdminFileDataUrlRpc(token, fileId) {
   if (!requireAdmin_(token)) return { ok:false, error:'AUTH_REQUIRED' };
   try {
     var file = DriveApp.getFileById(fileId);
-    var allowedIds = [
-      SP.getProperty('DRIVE_FOLDER_ID'),      // legacy
-      getFolderIdCached_(FOLDER_PRODUCT),
-      getFolderIdCached_(FOLDER_SLIP),
-      getFolderIdCached_(FOLDER_STORE),
-      getFolderIdCached_(FOLDER_GIFT)
-    ];
+    var allowedIds = [SP.getProperty('DRIVE_FOLDER_ID')]   // legacy
+      .concat(_allFolderIdsByName_(FOLDER_PRODUCT))         // accept any duplicate of the same name
+      .concat(_allFolderIdsByName_(FOLDER_SLIP))
+      .concat(_allFolderIdsByName_(FOLDER_STORE))
+      .concat(_allFolderIdsByName_(FOLDER_GIFT));
     var parentId = null;
     var parents = file.getParents();
     if (parents.hasNext()) parentId = parents.next().getId();
@@ -1927,13 +2011,13 @@ function getSlipByOrderTokenRpc(orderToken, slipFileId) {
     if (!storedSlipId || storedSlipId !== String(slipFileId))
       return { ok:false, error:'ไม่อนุญาต' };
 
-    // ตรวจสอบว่าไฟล์อยู่ใน slip folder จริง
+    // ตรวจสอบว่าไฟล์อยู่ใน slip folder จริง (รับทุกโฟลเดอร์ชื่อ slip รวมที่ซ้ำ)
     var file = DriveApp.getFileById(slipFileId);
-    var slipFolderId = getFolderIdCached_(FOLDER_SLIP);
+    var slipFolderIds = _allFolderIdsByName_(FOLDER_SLIP);
     var parentId = null;
     var parents = file.getParents();
     if (parents.hasNext()) parentId = parents.next().getId();
-    if (parentId !== slipFolderId) return { ok:false, error:'ไม่อนุญาต' };
+    if (slipFolderIds.indexOf(parentId) < 0) return { ok:false, error:'ไม่อนุญาต' };
 
     var blob = file.getBlob();
     var b64  = Utilities.base64Encode(blob.getBytes());
@@ -3288,8 +3372,11 @@ function auditLog_(action, options, ctx) {
 
 /* ---- Drive folder helpers ---- */
 function getOrCreateSubfolder_(parentFolder, name) {
-  var it = parentFolder.getFoldersByName(name);
-  if (it.hasNext()) return it.next();
+  // Pick the oldest existing match deterministically (so duplicates resolve to
+  // one canonical folder) and only create when truly none exist. Runs under the
+  // flush worker's lock / one-time setup, so no extra lock is taken here.
+  var id = _oldestFolderByName_(parentFolder, name);
+  if (id) return DriveApp.getFolderById(id);
   return parentFolder.createFolder(name);
 }
 function getLogFolder_() { return DriveApp.getFolderById(getFolderIdCached_(FOLDER_LOG)); }
@@ -6143,14 +6230,8 @@ function loginRpc(email, password, clientCtx) {
       var otpKey  = LOGIN_OTP_PREFIX + user.email.toLowerCase();
       var expires = Date.now() + LOGIN_OTP_TTL * 1000;
       CacheService.getScriptCache().put(otpKey, JSON.stringify({otp:otp, expires:expires, email:user.email, role:user.role, id:user.id}), LOGIN_OTP_TTL);
-      var at     = user.email.indexOf('@');
-      var u      = user.email.slice(0, at);
-      var masked = (u.length > 3 ? u.slice(0,3) : u) + '***@' + user.email.slice(at+1);
-      MailApp.sendEmail({
-        to: user.email,
-        subject: '[' + getStoreName_() + '] รหัส OTP เข้าสู่ระบบ',
-        body: 'รหัส OTP สำหรับเข้าสู่ระบบ: ' + otp + '\n\nรหัสนี้จะหมดอายุใน 10 นาที\nหากคุณไม่ได้ทำรายการนี้ กรุณาเพิกเฉยข้อความนี้'
-      });
+      var masked = maskEmail_(user.email);
+      sendOtpEmail_(user.email, 'รหัส OTP เข้าสู่ระบบ', otp);
       enqueueLog_('otp.send', { category:['authentication'], type:['info'],
         outcome:'success', route:'login', rpc:'loginRpc', userId:user.id,
         meta:{ email_hash:emailHash, channel:'email' } }, ctx);
@@ -6375,12 +6456,7 @@ function userRequestEmailChangeOtpRpc(token, userId, newEmail) {
     var existing = getUserByEmail_(newEmail);
     if (existing && existing.id !== String(userId)) return { ok:false, error:'อีเมลนี้ถูกใช้งานแล้ว' };
     var otp = otpIssue_('email_change', userId, { newEmail: newEmail }, LOGIN_OTP_TTL);
-    MailApp.sendEmail({
-      to: newEmail,
-      subject: '[' + getStoreName_() + '] ยืนยันการเปลี่ยนอีเมล',
-      body: 'รหัส OTP สำหรับยืนยันอีเมลใหม่: ' + otp
-          + '\n\nรหัสนี้จะหมดอายุใน 10 นาที\nหากคุณไม่ได้ทำรายการนี้ กรุณาเพิกเฉยข้อความนี้'
-    });
+    sendOtpEmail_(newEmail, 'ยืนยันการเปลี่ยนอีเมล', otp);
     auditLog_('user.email_change.otp_send', { category:['iam'], type:['user','change'],
       outcome:'success', route:'user', rpc:'userRequestEmailChangeOtpRpc',
       userId:_sess.userId, sessionId:token,

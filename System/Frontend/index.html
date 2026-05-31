@@ -7144,9 +7144,10 @@
         confirmButtonColor: '#374151',
         width: 'min(92vw, 600px)',
         didOpen: () => {
-          const statusBg = { unpaid:'#fef3c7', pending:'#fef3c7', paid:'#dcfce7', approved:'#dbeafe', shipping:'#ede9fe', shipped:'#ede9fe', done:'#f0fdf4', rejected:'#fee2e2' };
-          const statusFg = { unpaid:'#b45309', pending:'#b45309', paid:'#16a34a', approved:'#1d4ed8', shipping:'#7c3aed', shipped:'#7c3aed', done:'#15803d', rejected:'#dc2626' };
-          const statusTh = { unpaid:'รอชำระเงิน', pending:'รอชำระเงิน', paid:'ชำระแล้ว', approved:'อนุมัติแล้ว', shipping:'กำลังจัดส่ง', shipped:'จัดส่งแล้ว', done:'สำเร็จ', rejected:'ยกเลิก' };
+          const statusBg = { unpaid:'#fef3c7', pending:'#fef3c7', paid:'#dbeafe', approved:'#f0fdf4', shipping:'#e0f2fe', shipped:'#e0f2fe', delivered:'#f8fafc', done:'#f8fafc', rejected:'#fef2f2' };
+          const statusFg = { unpaid:'#92400e', pending:'#92400e', paid:'#1e40af', approved:'#15803d', shipping:'#0369a1', shipped:'#0369a1', delivered:'#16a34a', done:'#16a34a', rejected:'#b91c1c' };
+          const statusBorder = { unpaid:'#fde68a', pending:'#fde68a', paid:'#bfdbfe', approved:'#bbf7d0', shipping:'#bae6fd', shipped:'#bae6fd', delivered:'#e2e8f0', done:'#e2e8f0', rejected:'#fecaca' };
+          const statusTh = { unpaid:'ยังไม่ชำระ', pending:'ยังไม่ชำระ', paid:'ชำระแล้ว', approved:'อนุมัติแล้ว', shipping:'กำลังจัดส่ง', shipped:'จัดส่งแล้ว', delivered:'จัดส่งสำเร็จ', done:'จัดส่งสำเร็จ', rejected:'ปฏิเสธ' };
           saved.forEach((t, tIdx) => {
             // load images
             (t.items || []).forEach((item, iIdx) => {
@@ -7172,14 +7173,15 @@
                 const s = (res && res.ok) ? (res.status || 'pending') : 'pending';
                 el.style.background = statusBg[s] || '#f3f4f6';
                 el.style.color      = statusFg[s] || '#6b7280';
+                el.style.border     = '1px solid ' + (statusBorder[s] || '#e5e7eb');
                 el.textContent      = statusTh[s] || s;
               }).catch(() => {
                 const el = document.getElementById(`_ohStatus_${tIdx}`);
-                if (el) { el.style.background='#fef3c7'; el.style.color='#b45309'; el.textContent='รอชำระเงิน'; }
+                if (el) { el.style.background='#fef3c7'; el.style.color='#92400e'; el.style.border='1px solid #fde68a'; el.textContent='ยังไม่ชำระ'; }
               });
             } else {
               const el = document.getElementById(`_ohStatus_${tIdx}`);
-              if (el) { el.style.background='#fef3c7'; el.style.color='#b45309'; el.textContent='รอชำระเงิน'; }
+              if (el) { el.style.background='#fef3c7'; el.style.color='#92400e'; el.style.border='1px solid #fde68a'; el.textContent='ยังไม่ชำระ'; }
             }
           });
         }
@@ -7221,8 +7223,7 @@
         }
         const o = res.order || res;
         const fmtDate = iso => { try { return new Date(iso).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }); } catch (_) { return iso || '—'; } };
-        const STATUS_LABEL = { pending: 'รอชำระ', paid: 'ชำระแล้ว', approved: 'อนุมัติแล้ว', shipping: 'กำลังจัดส่ง', done: 'สำเร็จ', rejected: 'ปฏิเสธ' };
-        const STATUS_COLOR = { pending: '#f59e0b', paid: '#3b82f6', approved: '#10b981', shipping: '#6366f1', done: '#22c55e', rejected: '#ef4444' };
+        const STATUS_LABEL = { unpaid: 'ยังไม่ชำระ', paid: 'ชำระแล้ว', approved: 'อนุมัติแล้ว', shipped: 'จัดส่งแล้ว', delivered: 'จัดส่งสำเร็จ', rejected: 'ปฏิเสธ', pending: 'รอชำระ', shipping: 'กำลังจัดส่ง', done: 'สำเร็จ' };
         const items = o.items || [];
         const stripId = '_ohStrip_' + Date.now();
         const viewLink = _GAS_EXEC_URL ? `${_GAS_EXEC_URL}?page=order-view&token=${encodeURIComponent(token)}` : '';
@@ -7239,8 +7240,9 @@
           </div>`
         ).join('');
 
-        const statusBg = { pending:'#fef3c7', paid:'#dbeafe', approved:'#d1fae5', shipping:'#ede9fe', done:'#dcfce7', rejected:'#fee2e2' };
-        const statusFg = { pending:'#b45309', paid:'#1d4ed8', approved:'#065f46', shipping:'#5b21b6', done:'#166534', rejected:'#991b1b' };
+        const statusBg = { unpaid:'#fef3c7', pending:'#fef3c7', paid:'#dbeafe', approved:'#f0fdf4', shipping:'#e0f2fe', shipped:'#e0f2fe', delivered:'#f8fafc', done:'#f8fafc', rejected:'#fef2f2' };
+        const statusFg = { unpaid:'#92400e', pending:'#92400e', paid:'#1e40af', approved:'#15803d', shipping:'#0369a1', shipped:'#0369a1', delivered:'#16a34a', done:'#16a34a', rejected:'#b91c1c' };
+        const statusBorder = { unpaid:'#fde68a', pending:'#fde68a', paid:'#bfdbfe', approved:'#bbf7d0', shipping:'#bae6fd', shipped:'#bae6fd', delivered:'#e2e8f0', done:'#e2e8f0', rejected:'#fecaca' };
 
         const html = `<div style="text-align:left">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem;margin-bottom:.25rem">
@@ -7248,7 +7250,7 @@
               <div style="font-size:.9rem;font-weight:700;color:#111;letter-spacing:.02em">${o.order_id || token}</div>
               <div style="font-size:.72rem;color:#9ca3af;margin-top:.1rem">${fmtDate(o.created_at)}</div>
             </div>
-            <span style="font-size:.7rem;background:${statusBg[o.status]||'#f3f4f6'};color:${statusFg[o.status]||'#374151'};padding:.2rem .6rem;border-radius:99px;font-weight:700;white-space:nowrap;flex-shrink:0">
+            <span style="font-size:.7rem;background:${statusBg[o.status]||'#f3f4f6'};color:${statusFg[o.status]||'#374151'};border:1px solid ${statusBorder[o.status]||'#e5e7eb'};padding:.2rem .6rem;border-radius:99px;font-weight:700;white-space:nowrap;flex-shrink:0">
               ${STATUS_LABEL[o.status] || o.status || '—'}
             </span>
           </div>

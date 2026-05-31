@@ -1187,10 +1187,14 @@
         hdr.className = 'd-flex gap-2 align-items-center mb-2';
         hdr.innerHTML = '<input type="text" class="form-control form-control-sm" placeholder="ชื่อตัวเลือก เช่น สี, ขนาด"'
           + ' value="' + escHtml(group.name) + '" data-vi="' + gi + '" data-field="name">'
-          + '<select class="form-select form-select-sm" style="width:120px;flex-shrink:0" data-vi="' + gi + '" data-field="type">'
-          + '<option value="text"' + (group.type === 'text' ? ' selected' : '') + '>ข้อความ</option>'
-          + '<option value="image"' + (group.type === 'image' ? ' selected' : '') + '>รูปภาพ</option>'
-          + '</select>'
+          + '<div class="vtype-toggle" data-vi="' + gi + '" style="display:inline-flex;flex-shrink:0;border:1px solid #d1d5db;border-radius:8px;overflow:hidden;background:#f9fafb">'
+          + '<button type="button" class="vtype-btn' + (group.type === 'text' ? ' active' : '') + '" data-vi="' + gi + '" data-val="text"'
+          + ' style="display:inline-flex;align-items:center;gap:5px;padding:4px 11px;font-size:.78rem;font-weight:600;border:none;background:' + (group.type === 'text' ? '#111827' : 'transparent') + ';color:' + (group.type === 'text' ? '#fff' : '#6b7280') + ';cursor:pointer;transition:background .15s,color .15s;white-space:nowrap">'
+          + '<i class="bi bi-type" style="font-size:.8rem"></i>ข้อความ</button>'
+          + '<button type="button" class="vtype-btn' + (group.type === 'image' ? ' active' : '') + '" data-vi="' + gi + '" data-val="image"'
+          + ' style="display:inline-flex;align-items:center;gap:5px;padding:4px 11px;font-size:.78rem;font-weight:600;border:none;border-left:1px solid #d1d5db;background:' + (group.type === 'image' ? '#111827' : 'transparent') + ';color:' + (group.type === 'image' ? '#fff' : '#6b7280') + ';cursor:pointer;transition:background .15s,color .15s;white-space:nowrap">'
+          + '<i class="bi bi-image" style="font-size:.8rem"></i>รูปภาพ</button>'
+          + '</div>'
           + '<button type="button" class="btn btn-sm btn-outline-danger pill px-2" data-del-group="' + gi + '" title="ลบ Variant นี้">'
           + '<i class="bi bi-trash"></i>'
           + '</button>';
@@ -1489,14 +1493,17 @@
         variantGroups[+vi][field] = el.value;
       }
     });
-    // select change (type) + file input change (variant image)
-    document.getElementById('variantEditor').addEventListener('change', e => {
-      const el = e.target;
-      if (el.tagName === 'SELECT' && el.dataset.vi !== undefined && el.dataset.field === 'type') {
-        variantGroups[+el.dataset.vi].type = el.value;
+    // vtype toggle buttons (click) + file input change (variant image)
+    document.getElementById('variantEditor').addEventListener('click', e => {
+      const btn = e.target.closest('.vtype-btn');
+      if (btn && btn.dataset.vi !== undefined && btn.dataset.val) {
+        variantGroups[+btn.dataset.vi].type = btn.dataset.val;
         renderVariantEditor();
         return;
       }
+    });
+    document.getElementById('variantEditor').addEventListener('change', e => {
+      const el = e.target;
       if (el.dataset.variantImgFile) {
         const [vi, oi] = el.dataset.variantImgFile.split('-').map(Number);
         const f = el.files?.[0]; if (!f) return;
@@ -1536,7 +1543,7 @@
     });
     // ปุ่มเพิ่ม Variant group
     document.getElementById('btnAddVariant')?.addEventListener('click', () => {
-      variantGroups.push({ name: '', type: 'text', options: [{ label: '', price: 0, weight_grams: 0, stock: -1, image: '' }] });
+      variantGroups.push({ name: '', type: 'image', options: [{ label: '', price: 0, weight_grams: 0, stock: -1, image: '' }] });
       renderVariantEditor();
     });
 

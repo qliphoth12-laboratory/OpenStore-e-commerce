@@ -232,7 +232,10 @@ body, button, input, textarea, select { font-family:"Noto Sans Thai","Zen Maru G
 .badge-status.shipped   { background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; }
 .admin-status.delivered,
 .status-badge.delivered,
-.badge-status.delivered { background:#d1fae5; color:#065f46; border:1px solid #6ee7b7; }
+.badge-status.delivered { background:#fcfcfc; color:#15803d; border:1px solid #c8ced6; }
+.admin-status.delivered i,
+.status-badge.delivered i,
+.badge-status.delivered i { color:#15803d; }
 .admin-status.rejected,
 .status-badge.rejected,
 .badge-status.rejected  { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
@@ -400,13 +403,28 @@ function _rpc(method) {
 function _initAuth() {
   var token = _getAdminToken();
   if (!token) { _redirectToLogin(); return Promise.reject(new Error('NOT_LOGGED_IN')); }
-  return callRpc('validateSessionRpc', token).then(function(r) {
-    if (!r || !r.ok) { _redirectToLogin(); throw new Error('SESSION_INVALID'); }
-    return r;
-  }).catch(function(err) {
-    if (err.message !== 'AUTH_REQUIRED') _redirectToLogin();
-    throw err;
-  });
+  // IMPORTANT: only wipe the token when the SERVER explicitly says the session is
+  // invalid (resolves with ok:false). A google.script.run *rejection* means the
+  // check itself failed transiently (cold start, network blip, GAS hiccup) — the
+  // session is very likely still valid, so we retry and, if still unreachable,
+  // proceed optimistically WITHOUT clearing the token. If the token really is
+  // expired, the page's data RPCs will return AUTH_REQUIRED and redirect cleanly.
+  function attempt(triesLeft) {
+    return callRpc('validateSessionRpc', token).then(function(r) {
+      if (r && r.ok) return r;                       // definitive: valid
+      _redirectToLogin();                            // definitive: invalid → wipe + redirect
+      throw new Error('SESSION_INVALID');
+    }, function(err) {
+      if (err && err.message === 'SESSION_INVALID') throw err; // re-thrown from above
+      if (triesLeft > 0) {
+        return new Promise(function(res) { setTimeout(res, 600); })
+          .then(function() { return attempt(triesLeft - 1); });
+      }
+      // Transient failure exhausted retries — keep the token, let the page load.
+      return { ok: true, degraded: true };
+    });
+  }
+  return attempt(2);
 }
 
 /* ---------- Session-context beacon (best-effort) ----------

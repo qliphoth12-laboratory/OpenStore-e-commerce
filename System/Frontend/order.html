@@ -1963,6 +1963,10 @@
     if (!currentOrder) return;
     if (currentOrder.status === newStatus) return;
 
+    // Snapshot before any await — prevents race condition when user opens a different
+    // order while the confirmation dialog or RPC is in flight.
+    var snapshotId = currentOrder.order_id;
+
     var label = STATUS_LABEL[newStatus] || newStatus;
     var autoTrack = !!(currentOrder.tracking &&
       (currentOrder.tracking.tracking_provider || currentOrder.tracking.auto_tracking));
@@ -1995,30 +1999,44 @@
       if (!confirmed.isConfirmed) return;
     }
 
+    // Guard: user may have switched order while the dialog was open.
+    if (!currentOrder || currentOrder.order_id !== snapshotId) return;
+
     showHUD('กำลังอัปเดตสถานะ…');
     try {
       if (!GAS_ENV) throw new Error('GAS not available');
 
-      var r = await _rpc('orderUpdateStatusRpc', currentOrder.order_id, newStatus, note || '');
+      var r = await _rpc('orderUpdateStatusRpc', snapshotId, newStatus, note || '');
       if (!r || !r.ok) throw new Error((r && r.error) || 'ไม่สามารถอัปเดตได้');
 
-      currentOrder.status = newStatus;
-      currentOrder.updated_at = r.updated_at || new Date().toISOString();
-      if (newStatus === 'unpaid') currentOrder.slip_drive_file_id = '';
-
-      if (!currentOrder.status_history) currentOrder.status_history = [];
-      var entry = { status: newStatus, timestamp: currentOrder.updated_at };
+      var updatedAt = r.updated_at || new Date().toISOString();
+      var entry = { status: newStatus, timestamp: updatedAt };
       if (note) entry.note = note;
-      currentOrder.status_history.push(entry);
 
-      var idx = allOrders.findIndex(function(o) {
-        return o.order_id === currentOrder.order_id;
-      });
-      if (idx >= 0) allOrders[idx] = currentOrder;
-      _detailCache[currentOrder.order_id] = currentOrder;
-
-      fillDetail(currentOrder);
+      // Always update the cache so allOrders stays consistent.
+      var idx = allOrders.findIndex(function(o) { return o.order_id === snapshotId; });
+      var cachedOrder = _detailCache[snapshotId] || (idx >= 0 ? allOrders[idx] : null);
+      if (cachedOrder) {
+        cachedOrder.status = newStatus;
+        cachedOrder.updated_at = updatedAt;
+        if (newStatus === 'unpaid') cachedOrder.slip_drive_file_id = '';
+        if (!cachedOrder.status_history) cachedOrder.status_history = [];
+        cachedOrder.status_history.push(entry);
+        if (idx >= 0) allOrders[idx] = cachedOrder;
+        _detailCache[snapshotId] = cachedOrder;
+      }
       renderTable();
+
+      // Guard: only update the open detail panel if it still shows this order.
+      if (currentOrder && currentOrder.order_id === snapshotId) {
+        currentOrder.status = newStatus;
+        currentOrder.updated_at = updatedAt;
+        if (newStatus === 'unpaid') currentOrder.slip_drive_file_id = '';
+        if (!currentOrder.status_history) currentOrder.status_history = [];
+        currentOrder.status_history.push(entry);
+        fillDetail(currentOrder);
+      }
+
       hideHUD('ok', MSG.success.update);
     } catch (err) {
       hideHUD('err', translateRpcError(err, 'ไม่สามารถปรับปรุงสถานะคำสั่งซื้อได้'));
@@ -2056,6 +2074,7 @@
   async function saveShippingFee() {
     if (!currentOrder) return;
 
+    var snapshotId = currentOrder.order_id;
     var fee = Number(document.getElementById('odmShippingFeeInput').value || 0);
     var total = Number(currentOrder.subtotal || 0) + fee;
 
@@ -2063,24 +2082,29 @@
     try {
       if (!GAS_ENV) throw new Error('GAS not available');
 
-      var r = await _rpc('orderUpdateFieldsRpc', currentOrder.order_id, {
+      var r = await _rpc('orderUpdateFieldsRpc', snapshotId, {
         shipping_fee: fee,
         total: total
       });
 
       if (!r || !r.ok) throw new Error((r && r.error) || 'บันทึกไม่สำเร็จ');
 
-      currentOrder.shipping_fee = fee;
-      currentOrder.total = total;
-
-      var idx = allOrders.findIndex(function(o) {
-        return o.order_id === currentOrder.order_id;
-      });
-      if (idx >= 0) allOrders[idx] = currentOrder;
-      _detailCache[currentOrder.order_id] = currentOrder;
-
-      document.getElementById('odmTotal').textContent = money(total);
+      var idx = allOrders.findIndex(function(o) { return o.order_id === snapshotId; });
+      var cachedOrder = _detailCache[snapshotId] || (idx >= 0 ? allOrders[idx] : null);
+      if (cachedOrder) {
+        cachedOrder.shipping_fee = fee;
+        cachedOrder.total = total;
+        if (idx >= 0) allOrders[idx] = cachedOrder;
+        _detailCache[snapshotId] = cachedOrder;
+      }
       renderTable();
+
+      if (currentOrder && currentOrder.order_id === snapshotId) {
+        currentOrder.shipping_fee = fee;
+        currentOrder.total = total;
+        document.getElementById('odmTotal').textContent = money(total);
+      }
+
       hideHUD('ok', MSG.success.save);
     } catch (err) {
       hideHUD('err', translateRpcError(err, MSG.error.save));
@@ -2110,6 +2134,7 @@
 
   async function confirmShip() {
     if (!currentOrder) return;
+    var snapshotId = currentOrder.order_id;
     var trackingNumber = document.getElementById('odmTrackingInput').value.trim();
     var note = document.getElementById('odmShipNoteInput').value.trim();
     var sd = window._odmShipData || {};
@@ -2135,8 +2160,7 @@
     showHUD('กำลังบันทึกการจัดส่ง…');
     try {
       if (!GAS_ENV) throw new Error('GAS not available');
-      console.log(trackingData)
-      var r = await _rpc('orderMarkShippedRpc', currentOrder.order_id, trackingData);
+      var r = await _rpc('orderMarkShippedRpc', snapshotId, trackingData);
       if (!r || !r.ok) {
         var errCode = (r && r.error) || '';
         if (errCode === 'ORDER_NOT_APPROVED') {
@@ -2153,18 +2177,33 @@
         throw new Error(errCode || 'บันทึกไม่สำเร็จ');
       }
 
-      if (r.record) {
-        currentOrder = r.record;
+      // Update cache regardless of which order is currently open.
+      var updatedRecord = r.record || null;
+      var _shipIdx = allOrders.findIndex(function(o){ return o.order_id === snapshotId; });
+      if (updatedRecord) {
+        if (_shipIdx >= 0) allOrders[_shipIdx] = updatedRecord;
+        _detailCache[snapshotId] = updatedRecord;
       } else {
-        currentOrder.status = 'shipped';
-        currentOrder.tracking = trackingData;
+        var cachedShip = _detailCache[snapshotId] || (_shipIdx >= 0 ? allOrders[_shipIdx] : null);
+        if (cachedShip) {
+          cachedShip.status = 'shipped';
+          cachedShip.tracking = trackingData;
+          if (_shipIdx >= 0) allOrders[_shipIdx] = cachedShip;
+          _detailCache[snapshotId] = cachedShip;
+        }
       }
-      var _shipIdx = allOrders.findIndex(function(o){ return o.order_id === currentOrder.order_id; });
-      if (_shipIdx >= 0) allOrders[_shipIdx] = currentOrder;
-      _detailCache[currentOrder.order_id] = currentOrder;
-
-      fillDetail(currentOrder);
       renderTable();
+
+      // Only update the open panel if it still shows this order.
+      if (currentOrder && currentOrder.order_id === snapshotId) {
+        if (updatedRecord) {
+          currentOrder = updatedRecord;
+        } else {
+          currentOrder.status = 'shipped';
+          currentOrder.tracking = trackingData;
+        }
+        fillDetail(currentOrder);
+      }
 
       // แสดงผล provider registration / validation
       var as = r.aftership;

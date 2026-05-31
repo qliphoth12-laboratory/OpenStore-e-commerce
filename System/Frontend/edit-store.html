@@ -749,7 +749,7 @@
     .promo-card-end { color: var(--card-cd-text, #c2410c); background: var(--card-cd-bg, transparent); font-size: .72rem; font-weight: 600; min-height: 1.1em; }
     .promo-block-foot i { color: var(--box-cd-icon, var(--box-cd-text, #9a3412)); }
     .promo-block-foot .promo-card-end { color: var(--box-cd-text, #9a3412); background: transparent; }
-    .promo-block { background: var(--promo-container-bg, #fff7ed); border: 1px solid var(--promo-container-border, #fdba74); border-radius: var(--promo-container-radius, 12px); padding: 12px 14px; margin: 8px 0; color: var(--promo-container-text, #9a3412); font-size: .88rem; }
+    .promo-block { background: var(--promo-container-bg, #fff7ed); border: 1px solid var(--promo-container-border, #fdba74); border-radius: var(--promo-container-radius, 12px); padding: 12px 14px; margin: 8px 0; color: var(--promo-container-text, #9a3412); font-size: .88rem; min-height: 1px; }
     .promo-block-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
     .promo-block-tag { background: var(--promo-badge-bg, #c2410c); color: var(--promo-badge-text, #ffffff); font-size: .72rem; font-weight: 700; padding: .15rem .55rem; border-radius: var(--promo-badge-radius, 999px); }
     .promo-block-name { font-weight: 700; color: var(--promo-container-text, #9a3412); font-size: .85rem; }
@@ -3073,7 +3073,7 @@
     .gift-camp-desc { font-size:.86rem; color:#6b7280; line-height:1.55; overflow-wrap:anywhere; }
     .gift-camp-meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:2px; }
     .gift-camp-pill { display:inline-flex; align-items:center; gap:5px; border:1px solid #e5e7eb; background:#f8fafc; color:#4b5563; border-radius:10px; padding:5px 9px; font-size:.78rem; line-height:1.35; }
-    .gift-camp-pill.condition { color:#374151; background:#f3f4f6; border-color:#e5e7eb; }
+    .gift-camp-pill.condition { color:#166534; background:#f0fdf4; border-color:#bbf7d0; }
     .gift-camp-pill.time { color:#4b5563; background:#fff; border-color:#e5e7eb; }
     .gift-condition-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:7px; margin-top:2px; }
     .gift-condition-item { display:flex; gap:8px; align-items:center; color:#374151; font-size:.8rem; line-height:1.45; overflow-wrap:anywhere; border:1px solid #e5e7eb; background:#fff; border-radius:10px; padding:7px; min-width:0; }
@@ -3125,7 +3125,7 @@
     .cart-gift-progress { width:min(100%,220px); }
     .cart-gift-progress-track { height:7px; border-radius:999px; background:#e5e7eb; overflow:hidden; }
     .cart-gift-progress-bar { height:100%; width:var(--gift-progress,0%); border-radius:999px; background:#94a3b8; transition:width .25s ease; }
-    .cart-gift-row.is-complete .cart-gift-progress-bar { background:#374151; }
+    .cart-gift-row.is-complete .cart-gift-progress-bar { background:#22c55e; }
     .cart-gift-progress-text { margin-top:4px; font-size:.68rem; font-weight:800; color:#64748b; }
     .cart-gift-row.is-complete .cart-gift-progress-text { color:#374151; }
     .cart-gift-empty-note { font-size:.82rem; color:#6b7280; line-height:1.5; }
@@ -5862,8 +5862,20 @@
             return;
           }
           google.script.run
-            .withSuccessHandler(resolve)
-            .withFailureHandler(reject)[fnName](...args);
+            .withSuccessHandler(function(res) {
+              // เซสชันหมดอายุ — แสดง modal เข้าสู่ระบบใหม่ให้สอดคล้องกับหน้า admin อื่น
+              if (res && res.ok === false && res.error === 'AUTH_REQUIRED') {
+                try { _redirectToLogin(); } catch (_) {}
+              }
+              resolve(res);
+            })
+            .withFailureHandler(function(err) {
+              // backend โยน error (เช่น token หมดอายุ) → ขึ้น modal เข้าสู่ระบบใหม่
+              if (err && /AUTH_REQUIRED/.test(String((err && err.message) || err))) {
+                try { _redirectToLogin(); } catch (_) {}
+              }
+              reject(err);
+            })[fnName](...args);
         });
       }
     };
@@ -6030,26 +6042,48 @@
       if (document.getElementById('sessionExpiredOverlay')) return;
       const ov = document.createElement('div');
       ov.id = 'sessionExpiredOverlay';
-      ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#f6f7f9;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px';
-      ov.innerHTML = '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:24px;padding:3rem 2.5rem;width:100%;max-width:420px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.08)">'
-        + '<div style="position:relative;display:inline-flex;margin-bottom:1.75rem">'
-        + '<div style="width:84px;height:84px;background:#fef2f2;border-radius:50%;display:flex;align-items:center;justify-content:center">'
-        + '<i class="bi bi-shield-lock-fill" style="font-size:2.25rem;color:#ef4444"></i></div>'
-        + '<div style="position:absolute;inset:-8px;border-radius:50%;border:1.5px solid #fecaca"></div>'
-        + '</div>'
-        + '<h4 style="font-weight:800;color:#111827;margin-bottom:.4rem;font-size:1.4rem">เซสชันหมดอายุ</h4>'
-        + '<p style="color:#6b7280;font-size:.88rem;line-height:1.7;margin-bottom:2rem">เวลาเข้าใช้งานสิ้นสุดแล้ว<br>กรุณาเข้าสู่ระบบใหม่อีกครั้ง</p>'
-        + '<a href="' + loginUrl + '" target="_top" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:#111827;color:#fff;border-radius:12px;padding:.75rem 1.5rem;font-weight:700;font-size:.95rem;text-decoration:none">'
-        + '<i class="bi bi-box-arrow-in-right"></i>เข้าสู่ระบบ</a>'
-        + '</div>';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#f3f4f6;display:flex;align-items:center;justify-content:center;padding:24px';
+      ov.innerHTML = '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:18px;width:100%;max-width:420px;box-shadow:0 24px 70px rgba(15,23,42,.12);overflow:hidden">'
+        + '<div style="padding:1rem 1.25rem;border-bottom:1px solid #eef2f7;display:flex;align-items:center;gap:12px">'
+        + '<span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:#ef4444">'
+        + '<i class="bi bi-exclamation-triangle-fill" style="font-size:1rem;line-height:1;display:block"></i></span>'
+        + '<div style="text-align:left;min-width:0">'
+        + '<div style="color:#0f172a;font-weight:800;font-size:.95rem;line-height:1.25">เซสชันหมดอายุ</div>'
+        + '<div style="color:#64748b;font-size:.78rem;margin-top:2px">ต้องเข้าสู่ระบบใหม่เพื่อใช้งานต่อ</div>'
+        + '</div></div>'
+        + '<div style="padding:1.5rem 1.5rem 1.6rem;text-align:center">'
+        + '<i class="bi bi-shield-exclamation" style="display:block;color:#ef4444;font-size:2.55rem;line-height:1;margin:0 auto 1rem"></i>'
+        + '<h4 style="font-weight:800;color:#0f172a;margin-bottom:.55rem;font-size:1.25rem">กลับเข้าสู่ระบบ</h4>'
+        + '<p style="color:#64748b;font-size:.88rem;line-height:1.65;margin:0 auto 1.35rem;max-width:310px">เวลาเข้าใช้งานสิ้นสุดแล้ว กรุณายืนยันตัวตนอีกครั้งเพื่อความปลอดภัยของระบบ</p>'
+        + '<a href="' + loginUrl + '" target="_top" style="display:flex;align-items:center;justify-content:center;width:100%;background:#0f172a;color:#fff;border-radius:12px;padding:.82rem 1.25rem;font-weight:800;font-size:.95rem;text-decoration:none">'
+        + 'เข้าสู่ระบบ</a>'
+        + '</div></div>';
       document.body.appendChild(ov);
     }
     async function _initAuth() {
       if (!GAS.available) return;
       const token = _getAdminToken();
       if (!token) { _redirectToLogin(); throw new Error('NOT_LOGGED_IN'); }
-      const r = await GAS.run('validateSessionRpc', token).catch(() => null);
-      if (!r || !r.ok) { _redirectToLogin(); throw new Error('SESSION_INVALID'); }
+      // Only wipe the token on a definitive server "invalid" (resolves with ok:false).
+      // A GAS.run rejection means the check failed transiently (cold start, network
+      // blip) — the session is likely still valid, so retry and, if still unreachable,
+      // proceed WITHOUT clearing the token. A truly expired token will be caught by
+      // the page's data RPCs returning AUTH_REQUIRED (GAS.run redirects on that).
+      for (let triesLeft = 2; ; triesLeft--) {
+        let r, rejected = false;
+        try {
+          r = await GAS.run('validateSessionRpc', token);
+        } catch (_) {
+          rejected = true;
+        }
+        if (!rejected) {
+          if (r && r.ok) return;                       // definitive: valid
+          _redirectToLogin();                          // definitive: invalid → wipe + redirect
+          throw new Error('SESSION_INVALID');
+        }
+        if (triesLeft <= 0) return;                    // transient → keep token, load page
+        await new Promise(res => setTimeout(res, 600));
+      }
     }
 
     /* ========== CONFIGURATION ========== */
@@ -9665,9 +9699,10 @@
         confirmButtonColor: '#374151',
         width: 'min(92vw, 600px)',
         didOpen: () => {
-          const statusBg = { unpaid:'#fef3c7', pending:'#fef3c7', paid:'#dcfce7', approved:'#dbeafe', shipping:'#ede9fe', shipped:'#ede9fe', done:'#f0fdf4', rejected:'#fee2e2' };
-          const statusFg = { unpaid:'#b45309', pending:'#b45309', paid:'#16a34a', approved:'#1d4ed8', shipping:'#7c3aed', shipped:'#7c3aed', done:'#15803d', rejected:'#dc2626' };
-          const statusTh = { unpaid:'รอชำระเงิน', pending:'รอชำระเงิน', paid:'ชำระแล้ว', approved:'อนุมัติแล้ว', shipping:'กำลังจัดส่ง', shipped:'จัดส่งแล้ว', done:'สำเร็จ', rejected:'ยกเลิก' };
+          const statusBg = { unpaid:'#fef3c7', pending:'#fef3c7', paid:'#dbeafe', approved:'#f0fdf4', shipping:'#e0f2fe', shipped:'#e0f2fe', delivered:'#f8fafc', done:'#f8fafc', rejected:'#fef2f2' };
+          const statusFg = { unpaid:'#92400e', pending:'#92400e', paid:'#1e40af', approved:'#15803d', shipping:'#0369a1', shipped:'#0369a1', delivered:'#16a34a', done:'#16a34a', rejected:'#b91c1c' };
+          const statusBorder = { unpaid:'#fde68a', pending:'#fde68a', paid:'#bfdbfe', approved:'#bbf7d0', shipping:'#bae6fd', shipped:'#bae6fd', delivered:'#e2e8f0', done:'#e2e8f0', rejected:'#fecaca' };
+          const statusTh = { unpaid:'ยังไม่ชำระ', pending:'ยังไม่ชำระ', paid:'ชำระแล้ว', approved:'อนุมัติแล้ว', shipping:'กำลังจัดส่ง', shipped:'จัดส่งแล้ว', delivered:'จัดส่งสำเร็จ', done:'จัดส่งสำเร็จ', rejected:'ปฏิเสธ' };
           saved.forEach((t, tIdx) => {
             // load images
             (t.items || []).forEach((item, iIdx) => {
@@ -9693,14 +9728,15 @@
                 const s = (res && res.ok) ? (res.status || 'pending') : 'pending';
                 el.style.background = statusBg[s] || '#f3f4f6';
                 el.style.color      = statusFg[s] || '#6b7280';
+                el.style.border     = '1px solid ' + (statusBorder[s] || '#e5e7eb');
                 el.textContent      = statusTh[s] || s;
               }).catch(() => {
                 const el = document.getElementById(`_ohStatus_${tIdx}`);
-                if (el) { el.style.background='#fef3c7'; el.style.color='#b45309'; el.textContent='รอชำระเงิน'; }
+                if (el) { el.style.background='#fef3c7'; el.style.color='#92400e'; el.style.border='1px solid #fde68a'; el.textContent='ยังไม่ชำระ'; }
               });
             } else {
               const el = document.getElementById(`_ohStatus_${tIdx}`);
-              if (el) { el.style.background='#fef3c7'; el.style.color='#b45309'; el.textContent='รอชำระเงิน'; }
+              if (el) { el.style.background='#fef3c7'; el.style.color='#92400e'; el.style.border='1px solid #fde68a'; el.textContent='ยังไม่ชำระ'; }
             }
           });
         }
@@ -9742,11 +9778,12 @@
         }
         const o = res.order || res;
         const fmtDate = iso => { try { return new Date(iso).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }); } catch (_) { return iso || '—'; } };
-        const STATUS_LABEL = { pending: 'รอชำระ', paid: 'ชำระแล้ว', approved: 'อนุมัติแล้ว', shipping: 'กำลังจัดส่ง', done: 'สำเร็จ', rejected: 'ปฏิเสธ' };
+        const STATUS_LABEL = { unpaid: 'ยังไม่ชำระ', paid: 'ชำระแล้ว', approved: 'อนุมัติแล้ว', shipped: 'จัดส่งแล้ว', delivered: 'จัดส่งสำเร็จ', rejected: 'ปฏิเสธ', pending: 'รอชำระ', shipping: 'กำลังจัดส่ง', done: 'สำเร็จ' };
         const items = o.items || [];
         const viewLink = _GAS_EXEC_URL ? `${_GAS_EXEC_URL}?page=order-view&token=${encodeURIComponent(token)}` : '';
-        const statusBg = { pending:'#fef3c7', paid:'#dbeafe', approved:'#d1fae5', shipping:'#ede9fe', done:'#dcfce7', rejected:'#fee2e2' };
-        const statusFg = { pending:'#b45309', paid:'#1d4ed8', approved:'#065f46', shipping:'#5b21b6', done:'#166534', rejected:'#991b1b' };
+        const statusBg = { unpaid:'#fef3c7', pending:'#fef3c7', paid:'#dbeafe', approved:'#f0fdf4', shipping:'#e0f2fe', shipped:'#e0f2fe', delivered:'#f8fafc', done:'#f8fafc', rejected:'#fef2f2' };
+        const statusFg = { unpaid:'#92400e', pending:'#92400e', paid:'#1e40af', approved:'#15803d', shipping:'#0369a1', shipped:'#0369a1', delivered:'#16a34a', done:'#16a34a', rejected:'#b91c1c' };
+        const statusBorder = { unpaid:'#fde68a', pending:'#fde68a', paid:'#bfdbfe', approved:'#bbf7d0', shipping:'#bae6fd', shipped:'#bae6fd', delivered:'#e2e8f0', done:'#e2e8f0', rejected:'#fecaca' };
 
         const itemRowsHtml = items.map((item, idx) =>
           `<div style="display:flex;gap:.65rem;align-items:center;padding:.45rem 0;border-top:1px solid #f3f4f6">
@@ -9766,7 +9803,7 @@
               <div style="font-size:.9rem;font-weight:700;color:#111;letter-spacing:.02em">${o.order_id || token}</div>
               <div style="font-size:.72rem;color:#9ca3af;margin-top:.1rem">${fmtDate(o.created_at)}</div>
             </div>
-            <span style="font-size:.7rem;background:${statusBg[o.status]||'#f3f4f6'};color:${statusFg[o.status]||'#374151'};padding:.2rem .6rem;border-radius:99px;font-weight:700;white-space:nowrap;flex-shrink:0">
+            <span style="font-size:.7rem;background:${statusBg[o.status]||'#f3f4f6'};color:${statusFg[o.status]||'#374151'};border:1px solid ${statusBorder[o.status]||'#e5e7eb'};padding:.2rem .6rem;border-radius:99px;font-weight:700;white-space:nowrap;flex-shrink:0">
               ${STATUS_LABEL[o.status] || o.status || '—'}
             </span>
           </div>
