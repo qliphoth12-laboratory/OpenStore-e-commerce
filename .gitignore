@@ -13,6 +13,10 @@ QA/E2E/tmp-test-results/
 tmp_pdf_images/
 *.tmp
 
+# Local AI assistant workspace files
+.claude/
+CLAUDE.md
+
 # Secrets — never commit
 .env
 .env.local
