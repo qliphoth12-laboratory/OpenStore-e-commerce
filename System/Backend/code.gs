@@ -6337,15 +6337,19 @@ function saveShippingRpc(token, data) {
       (c.methods||[]).forEach(function(m){ if(m.id) newMethodIds.add(m.id); });
     });
     const removedIds = [...oldMethodIds].filter(function(id){ return !newMethodIds.has(id); });
-    var cleanedProducts = removedIds.length ? cleanupOrphanedShippingIds_(removedIds) : 0;
 
     // ตรวจสอบสินค้าที่เปิดขายอยู่ แต่ไม่มีวิธีจัดส่งที่ active อีกต่อไป → ปิดอัตโนมัติ
+    // ต้องทำ "ก่อน" cleanupOrphanedShippingIds_ เพราะ cleanup จะ strip id ที่ถูกลบออก
+    // ทำให้ allowed_shipping_ids กลายเป็น [] ซึ่ง deactivate จะข้าม (treat as ไม่จำกัด)
     const activeMethodIds = new Set();
     cleanArr.forEach(function(c) {
       if (c.active === false) return;
       (c.methods||[]).forEach(function(m) { if (m.active !== false && m.id) activeMethodIds.add(m.id); });
     });
     var deactivatedProducts = deactivateProductsWithNoValidShipping_(activeMethodIds);
+
+    // หลังปิดสินค้าแล้ว ค่อย strip id วิธีจัดส่งที่ถูกลบออกจาก allowed_shipping_ids
+    var cleanedProducts = removedIds.length ? cleanupOrphanedShippingIds_(removedIds) : 0;
     invalidateShippingCache_();
 
     auditLog_('shipping.config.update', { category:['configuration'], type:['change'],

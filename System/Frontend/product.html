@@ -554,6 +554,11 @@
     }
 
     function productSaleRuntimeStatus(p) {
+      // Backend snapshot computes the authoritative sale_status (รวมการตรวจวิธีจัดส่ง).
+      // 'invalid' = sale_mode เปิดอยู่ แต่ขายจริงไม่ได้ (เช่น วิธีจัดส่งถูกลบ, ไม่มีราคา) —
+      // เงื่อนไขที่ field ฝั่ง runtime ด้านล่างตรวจไม่เจอ จึงต้อง short-circuit ก่อน
+      const backend = String(p?.sale_status || '').toLowerCase();
+      if (backend === 'invalid') return 'invalid';
       const mode = String(p?.sale_mode || p?.sale_status || 'always').toLowerCase();
       if (mode === 'disabled' || p?.active === false || p?.sale_enabled === false) return 'disabled';
       if (mode === 'expired') return 'expired';
@@ -804,6 +809,9 @@
         if (saleState === 'disabled') {
           statusBadge.className = 'admin-status disabled';
           statusBadge.innerHTML = '<i class="bi bi-dash-circle" style="font-size:.6rem"></i> ปิดขาย';
+        } else if (saleState === 'invalid') {
+          statusBadge.className = 'admin-status invalid';
+          statusBadge.innerHTML = '<i class="bi bi-exclamation-triangle" style="font-size:.6rem"></i> ไม่พร้อมขาย';
         } else if (saleState === 'expired') {
           statusBadge.className = 'admin-status expired';
           statusBadge.innerHTML = '<i class="bi bi-x-circle" style="font-size:.6rem"></i> หมดเวลา';
