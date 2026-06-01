@@ -529,16 +529,51 @@
 <div class="modal fade" id="productionSummaryModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
     <div class="modal-content" style="border-radius:16px;overflow:hidden">
-      <div class="modal-header">
-        <div>
-          <h5 class="modal-title fw-bold mb-0"><i class="bi bi-clipboard-data me-2"></i>สรุปการผลิต</h5>
-          <div class="text-muted small">ยอดสั่งซื้อรวมของสินค้าและของแถม สำหรับวางแผนการผลิต/จัดเตรียม</div>
+      <div class="modal-header flex-column align-items-start gap-1 pb-2" style="background:#fff;border-bottom:1px solid #e5e7eb">
+        <div class="d-flex w-100 align-items-start">
+          <div class="flex-fill">
+            <h5 class="modal-title fw-bold mb-0" style="color:#111827"><i class="bi bi-clipboard-data me-2"></i>สรุปการผลิต</h5>
+            <div class="small" style="color:#6b7280">ยอดสั่งซื้อรวมของสินค้าและของแถม สำหรับวางแผนการผลิต/จัดเตรียม</div>
+          </div>
+          <button type="button" class="btn-close ms-2 mt-1" data-bs-dismiss="modal"></button>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="w-100 pt-2 mt-1" style="border-top:1px solid #e5e7eb">
+          <div class="small mb-2" style="color:#6b7280;font-weight:500">นับเฉพาะออร์เดอร์สถานะ:</div>
+          <div class="d-flex flex-wrap gap-2 align-items-center" id="prodSummaryStatusFilter" style="--ps-chk-accent:#111827">
+            <style>#prodSummaryStatusFilter .form-check-input:checked{background-color:#111827;border-color:#111827}#prodSummaryStatusFilter .form-check-input:focus{border-color:#6b7280;box-shadow:0 0 0 .2rem rgba(17,24,39,.15)}</style>
+            <div class="form-check form-check-inline m-0">
+              <input class="form-check-input" type="checkbox" id="psSt-approved" value="approved" checked>
+              <label class="form-check-label small" for="psSt-approved" style="color:#374151">อนุมัติแล้ว</label>
+            </div>
+            <div class="form-check form-check-inline m-0">
+              <input class="form-check-input" type="checkbox" id="psSt-paid" value="paid">
+              <label class="form-check-label small" for="psSt-paid" style="color:#374151">ชำระแล้ว</label>
+            </div>
+            <div class="form-check form-check-inline m-0">
+              <input class="form-check-input" type="checkbox" id="psSt-unpaid" value="unpaid">
+              <label class="form-check-label small" for="psSt-unpaid" style="color:#374151">ยังไม่ชำระ</label>
+            </div>
+            <div class="form-check form-check-inline m-0">
+              <input class="form-check-input" type="checkbox" id="psSt-shipped" value="shipped">
+              <label class="form-check-label small" for="psSt-shipped" style="color:#374151">จัดส่งแล้ว</label>
+            </div>
+            <div class="form-check form-check-inline m-0">
+              <input class="form-check-input" type="checkbox" id="psSt-delivered" value="delivered">
+              <label class="form-check-label small" for="psSt-delivered" style="color:#374151">จัดส่งสำเร็จ</label>
+            </div>
+            <div class="form-check form-check-inline m-0">
+              <input class="form-check-input" type="checkbox" id="psSt-rejected" value="rejected">
+              <label class="form-check-label small" for="psSt-rejected" style="color:#374151">ปฏิเสธ</label>
+            </div>
+            <button class="btn btn-sm pill ms-auto" style="background:#111827;color:#fff;border:none" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='#111827'" onclick="_refreshProductionSummary()">
+              <i class="bi bi-arrow-clockwise me-1"></i>อัปเดตผล
+            </button>
+          </div>
+        </div>
       </div>
-      <div class="modal-body" id="prodSummaryBody"></div>
-      <div class="modal-footer">
-        <button class="btn btn-outline-secondary btn-sm pill" data-bs-dismiss="modal">ปิด</button>
+      <div class="modal-body" id="prodSummaryBody" style="background:#fafafa"></div>
+      <div class="modal-footer" style="background:#fff;border-top:1px solid #e5e7eb">
+        <button class="btn btn-sm pill" style="border:1px solid #d1d5db;color:#374151;background:#fff" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='#fff'" data-bs-dismiss="modal">ปิด</button>
       </div>
     </div>
   </div>
@@ -2007,6 +2042,28 @@
       if (!GAS_ENV) throw new Error('GAS not available');
 
       var r = await _rpc('orderUpdateStatusRpc', snapshotId, newStatus, note || '');
+      // Un-rejecting re-deducts stock atomically; if anything is short the status is
+      // left unchanged and the shortages are returned so we can show what blocked it.
+      if (r && !r.ok && r.error === 'STOCK_INSUFFICIENT') {
+        hideHUD();
+        var rows = (r.shortages || []).map(function(s) {
+          var kind = s.kind === 'gift' ? 'ของแถม' : 'สินค้า';
+          return '<tr><td class="text-start">' + escapeHtml((s.title || '-')) + ' <span class="text-muted">(' + kind + ')</span></td>'
+            + '<td class="text-end">' + (Number(s.requested) || 0) + '</td>'
+            + '<td class="text-end text-danger fw-semibold">' + (Number(s.available) || 0) + '</td></tr>';
+        }).join('');
+        await Swal.fire({
+          icon: 'error',
+          title: 'สต็อกไม่เพียงพอ',
+          html: '<div class="small text-muted mb-2">ไม่สามารถเปลี่ยนสถานะได้ เนื่องจากสต็อกของรายการต่อไปนี้ไม่พอสำหรับการตัดสต็อกคืน — ระบบไม่ได้แก้ไขสต็อกใด ๆ</div>'
+            + (rows ? '<table class="table table-sm small mb-0"><thead><tr>'
+                + '<th class="text-start">รายการ</th><th class="text-end">ต้องการ</th><th class="text-end">คงเหลือ</th>'
+                + '</tr></thead><tbody>' + rows + '</tbody></table>' : ''),
+          confirmButtonText: 'ตกลง',
+          confirmButtonColor: '#111827'
+        });
+        return;
+      }
       if (!r || !r.ok) throw new Error((r && r.error) || 'ไม่สามารถอัปเดตได้');
 
       var updatedAt = r.updated_at || new Date().toISOString();
@@ -2055,6 +2112,7 @@
 
     var result = await Swal.fire({
       title: label + ' — กรอกหมายเหตุ (ถ้ามี)',
+      text: newStatus === 'rejected' ? 'ระบบจะคืนสต็อกสินค้าและของแถมของคำสั่งซื้อนี้กลับเข้าคลัง' : undefined,
       input: 'textarea',
       inputPlaceholder: 'เช่น สลิปไม่ถูกต้อง, ยอดโอนไม่ตรง…',
       showCancelButton: true,
@@ -2679,10 +2737,13 @@
     var gifts = r.gifts || [];
     var html = '';
 
+    var _psStatusLabel = { unpaid:'ยังไม่ชำระ', paid:'ชำระแล้ว', approved:'อนุมัติแล้ว', shipped:'จัดส่งแล้ว', delivered:'จัดส่งสำเร็จ', rejected:'ปฏิเสธ' };
+    var _psStatusTags = (r.filteredStatuses || []).map(function(s){ return _psStatusLabel[s] || s; }).join(', ');
     html += '<div class="d-flex flex-wrap gap-2 mb-3">'
       + '<div class="flex-fill border rounded-3 p-2 px-3" style="min-width:130px">'
       +   '<div class="text-muted small">ออร์เดอร์ที่นับ</div>'
       +   '<div class="fw-bold" style="font-size:1.1rem">' + (Number(r.orderCount)||0).toLocaleString() + '</div>'
+      +   (_psStatusTags ? '<div class="text-muted" style="font-size:.7rem;margin-top:2px">สถานะ: ' + escapeHtml(_psStatusTags) + '</div>' : '')
       + '</div>'
       + '<div class="flex-fill border rounded-3 p-2 px-3" style="min-width:130px">'
       +   '<div class="text-muted small">สินค้ารวม (ชิ้น)</div>'
@@ -2733,27 +2794,42 @@
     return html;
   }
 
-  async function openProductionSummary() {
-    var modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('productionSummaryModal'));
+  function _getProdSummaryStatuses() {
+    var checked = document.querySelectorAll('#prodSummaryStatusFilter input[type=checkbox]:checked');
+    return Array.from(checked).map(function(cb) { return cb.value; });
+  }
+
+  async function _refreshProductionSummary() {
     var body = document.getElementById('prodSummaryBody');
+    var statuses = _getProdSummaryStatuses();
+    if (!statuses.length) {
+      body.innerHTML = '<div class="text-warning small text-center py-4">'
+        + '<i class="bi bi-exclamation-triangle me-1"></i>กรุณาเลือกสถานะอย่างน้อย 1 รายการ</div>';
+      return;
+    }
     body.innerHTML = '<div class="text-center py-5">'
       + '<div class="spinner-border text-secondary" style="width:1.5rem;height:1.5rem;border-width:.2rem" role="status"></div>'
       + '<div class="text-muted small mt-2">กำลังรวมข้อมูลคำสั่งซื้อ…</div></div>';
-    modal.show();
     try {
       if (!GAS_ENV) { body.innerHTML = '<div class="text-muted small text-center py-4">ต้องเปิดผ่าน GAS Web App</div>'; return; }
-      var r = await _rpc('orderProductionSummaryRpc');
+      var r = await _rpc('orderProductionSummaryRpc', { statuses: statuses });
       if (!r || !r.ok) {
         body.innerHTML = '<div class="text-danger small text-center py-4"><i class="bi bi-exclamation-circle me-1"></i>'
           + escapeHtml(translateRpcError(r, MSG.error.fetch)) + '</div>';
         return;
       }
       body.innerHTML = _renderProductionSummary(r);
-      _initProdSummaryThumbs(); // lazy-load thumbnails after the rows are in the DOM
+      _initProdSummaryThumbs();
     } catch (err) {
       body.innerHTML = '<div class="text-danger small text-center py-4"><i class="bi bi-exclamation-circle me-1"></i>'
         + escapeHtml(translateRpcError(err, MSG.error.fetch)) + '</div>';
     }
+  }
+
+  async function openProductionSummary() {
+    var modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('productionSummaryModal'));
+    modal.show();
+    await _refreshProductionSummary();
   }
 
   /* ===== Stock Management ===== */

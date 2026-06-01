@@ -604,6 +604,9 @@ function qaAdditionalEdgeSpecs_() {
     qaWriteSpec_('orders.edge-duplicate-product-lines-stock-aggregate', 'Orders edge: duplicate product lines aggregate stock', 'orders', 'critical', 'Submit the same product as two cart lines whose combined qty exactly equals stock.', 'Order should succeed, totals should use combined quantity, and stock should end at 0.', 'qaRunOrderEdgeDuplicateProductLinesStockAggregateFlow_'),
     qaWriteSpec_('orders.edge-variant-stock-rollback-on-failure', 'Orders edge: variant stock rolls back on later failure', 'orders', 'critical', 'Submit a valid variant line followed by another product that is out of stock.', 'The order should fail and the variant stock should remain unchanged.', 'qaRunOrderEdgeVariantStockRollbackOnFailureFlow_'),
     qaWriteSpec_('orders.edge-token-read-after-delete-rejected', 'Orders edge: token read after delete rejected', 'orders', 'high', 'Create an order, delete it as admin, then try to read with the customer token.', 'getOrderByTokenRpc should reject the deleted order token.', 'qaRunOrderEdgeTokenReadAfterDeleteRejectedFlow_'),
+    qaWriteSpec_('orders.reject-restores-product-and-gift-stock', 'Orders: reject restores stock, un-reject re-deducts', 'orders', 'critical', 'Submit an order (product + auto gift), reject it, then move it back to approved.', 'Reject should return product and gift stock to inventory (no double restore on repeat reject); un-reject should re-deduct both product and gift stock.', 'qaRunOrderRejectRestoresStockFlow_'),
+    qaWriteSpec_('orders.unreject-blocked-when-product-stock-short', 'Orders: un-reject blocked by short product stock', 'orders', 'critical', 'Reject an order, drop product stock below the order qty, then try to un-reject.', 'Un-reject should fail with STOCK_INSUFFICIENT, the order should stay rejected, and neither product nor gift stock should be deducted.', 'qaRunOrderUnrejectProductStockBlockedFlow_'),
+    qaWriteSpec_('orders.unreject-blocked-when-gift-stock-short', 'Orders: un-reject blocked by short gift stock (atomic)', 'orders', 'critical', 'Reject an order, deplete the gift stock, then try to un-reject.', 'Un-reject should fail with STOCK_INSUFFICIENT for the gift and must NOT deduct the (sufficient) product stock — all-or-nothing.', 'qaRunOrderUnrejectGiftStockBlockedFlow_'),
     qaWriteSpec_('products.edge-update-active-without-shipping-rejected', 'Products edge: update active product without shipping rejected', 'products', 'critical', 'Create an active product with shipping, then try to remove all allowed_shipping_ids while keeping it active.', 'productUpdateRpc should reject the unsafe active product state.', 'qaRunProductEdgeUpdateActiveWithoutShippingRejectedFlow_'),
     qaWriteSpec_('promotions.edge-negative-discount-rejected', 'Promotions edge: negative discount rejected', 'promotions', 'high', 'Try to create a fixed discount with a negative discount_value.', 'createPromotionRpc should reject the invalid discount.', 'qaRunPromotionEdgeNegativeDiscountRejectedFlow_'),
     qaWriteSpec_('promotions.edge-end-before-start-rejected', 'Promotions edge: end before start rejected', 'promotions', 'high', 'Try to create a promotion whose ends_at is earlier than starts_at.', 'createPromotionRpc should reject the invalid date window.', 'qaRunPromotionEdgeEndBeforeStartRejectedFlow_'),
@@ -7900,6 +7903,140 @@ function qaRunOrderEdgeVariantStockRollbackOnFailureFlow_(ctx) {
   } catch (err) { caught = err; }
   var cleanup = qaCleanupCommerceFixture_(fx);
   if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Reject returns product + gift stock to inventory; un-reject re-deducts both.
+function qaRunOrderRejectRestoresStockFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'RejectRestore', {
+    product_stock: 5, product_price: 500, gift_stock: 5, min_qty: 1, gift_qty: 1
+  });
+  var caught = null, output = null;
+  try {
+    var token = fx.token;
+    // Order: 2 units of the product → auto-attaches 1 gift.
+    var payload = qaBuildOrderPayloadForProduct_('qa-reject-restore', fx.stamp, 'Buyer', fx.product.id, fx.shipping, {
+      items: [{ product_id: fx.product.id, qty: 2, selected_variants: {} }]
+    });
+    var res = qaSubmitAndTrack_(payload, fx.order_ids);
+    qaAssertOk_(res);
+    var orderId = qaOrderIdsFromSubmit_(res)[0];
+
+    var order = qaReadOrder_(token, orderId);
+    var giftLines = qaActiveGiftLines_(order, fx.gift_id);
+    qaAssert_(giftLines.length === 1, 'Submitted order should carry one active gift line', { order: order, gifts: giftLines });
+    qaAssert_(qaGetProductStock_(fx.product.id) === 3, 'Submit should deduct product stock 5 -> 3', { stock: qaGetProductStock_(fx.product.id) });
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 4, 'Submit should deduct gift stock 5 -> 4', { stock: qaGetGiftStock_(fx.gift_id) });
+
+    // Reject → product + gift stock returns to inventory.
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [token, orderId, 'rejected', 'qa reject restore']));
+    qaAssert_(qaGetProductStock_(fx.product.id) === 5, 'Reject should restore product stock 3 -> 5', { stock: qaGetProductStock_(fx.product.id) });
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 5, 'Reject should restore gift stock 4 -> 5', { stock: qaGetGiftStock_(fx.gift_id) });
+
+    // Reject again (rejected → rejected) must NOT double-restore.
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [token, orderId, 'rejected', 'qa reject twice']));
+    qaAssert_(qaGetProductStock_(fx.product.id) === 5 && qaGetGiftStock_(fx.gift_id) === 5,
+      'Repeat reject must not restore stock twice',
+      { product: qaGetProductStock_(fx.product.id), gift: qaGetGiftStock_(fx.gift_id) });
+
+    // Un-reject (rejected → approved) → re-deduct product + gift.
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [token, orderId, 'approved', 'qa un-reject']));
+    qaAssert_(qaGetProductStock_(fx.product.id) === 3, 'Un-reject should re-deduct product stock 5 -> 3', { stock: qaGetProductStock_(fx.product.id) });
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 4, 'Un-reject should re-deduct gift stock 5 -> 4', { stock: qaGetGiftStock_(fx.gift_id) });
+
+    var finalOrder = qaReadOrder_(token, orderId);
+    qaAssert_(String(finalOrder.status) === 'approved', 'Order status should be approved after un-reject', finalOrder);
+
+    output = {
+      order_id: orderId, final_status: finalOrder.status,
+      final_product_stock: qaGetProductStock_(fx.product.id),
+      final_gift_stock: qaGetGiftStock_(fx.gift_id)
+    };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Un-reject must abort (no stock change) when product stock can no longer cover the order.
+function qaRunOrderUnrejectProductStockBlockedFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'UnrejectProdShort', {
+    product_stock: 5, gift_stock: 5, min_qty: 1, gift_qty: 1
+  });
+  var caught = null, output = null;
+  try {
+    var token = fx.token;
+    var payload = qaBuildOrderPayloadForProduct_('qa-unreject-prod-short', fx.stamp, 'Buyer', fx.product.id, fx.shipping, {
+      items: [{ product_id: fx.product.id, qty: 2, selected_variants: {} }]
+    });
+    var res = qaSubmitAndTrack_(payload, fx.order_ids);
+    qaAssertOk_(res);
+    var orderId = qaOrderIdsFromSubmit_(res)[0];
+
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [token, orderId, 'rejected', 'qa reject']));
+    // After reject stock is restored (product 5, gift 5). Drop product below the order qty (needs 2, leave 1).
+    qaAssertOk_(qaCall_('updateStockRpc', [token, [{ productId: fx.product.id, stock: 1 }]]));
+    var giftBefore = qaGetGiftStock_(fx.gift_id);
+
+    var attempt = qaCall_('orderUpdateStatusRpc', [token, orderId, 'approved', 'qa un-reject blocked']);
+    qaAssert_(attempt && attempt.ok === false && attempt.error === 'STOCK_INSUFFICIENT',
+      'Un-reject must fail with STOCK_INSUFFICIENT when product stock is short', attempt);
+    qaAssert_(Array.isArray(attempt.shortages) && attempt.shortages.some(function(s){ return s.kind === 'product'; }),
+      'Failure should report the short product in shortages[]', attempt);
+
+    // Nothing changed: status still rejected, product + gift stock untouched.
+    var order = qaReadOrder_(token, orderId);
+    qaAssert_(String(order.status) === 'rejected', 'Order must remain rejected after a blocked un-reject', order);
+    qaAssert_(qaGetProductStock_(fx.product.id) === 1, 'Blocked un-reject must not deduct product stock', { stock: qaGetProductStock_(fx.product.id) });
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === giftBefore, 'Blocked un-reject must not deduct gift stock', { before: giftBefore, after: qaGetGiftStock_(fx.gift_id) });
+
+    output = { order_id: orderId, response: attempt, status: order.status,
+      product_stock: qaGetProductStock_(fx.product.id), gift_stock: qaGetGiftStock_(fx.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// All-or-nothing: a short gift blocks the whole un-reject, leaving the sufficient product untouched.
+function qaRunOrderUnrejectGiftStockBlockedFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'UnrejectGiftShort', {
+    product_stock: 5, gift_stock: 5, min_qty: 1, gift_qty: 1
+  });
+  var caught = null, output = null;
+  try {
+    var token = fx.token;
+    var payload = qaBuildOrderPayloadForProduct_('qa-unreject-gift-short', fx.stamp, 'Buyer', fx.product.id, fx.shipping, {
+      items: [{ product_id: fx.product.id, qty: 2, selected_variants: {} }]
+    });
+    var res = qaSubmitAndTrack_(payload, fx.order_ids);
+    qaAssertOk_(res);
+    var orderId = qaOrderIdsFromSubmit_(res)[0];
+
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [token, orderId, 'rejected', 'qa reject']));
+    // Product restored to 5, gift restored to 5. Deplete the gift so re-deduct cannot satisfy it.
+    qaAssertOk_(qaCall_('updateGiftItemRpc', [token, fx.gift_id, { stock: 0 }]));
+
+    var attempt = qaCall_('orderUpdateStatusRpc', [token, orderId, 'paid', 'qa un-reject blocked gift']);
+    qaAssert_(attempt && attempt.ok === false && attempt.error === 'STOCK_INSUFFICIENT',
+      'Un-reject must fail with STOCK_INSUFFICIENT when gift stock is short', attempt);
+    qaAssert_(Array.isArray(attempt.shortages) && attempt.shortages.some(function(s){ return s.kind === 'gift'; }),
+      'Failure should report the short gift in shortages[]', attempt);
+
+    // Atomicity: the product had enough stock but must NOT be deducted because the gift failed.
+    var order = qaReadOrder_(token, orderId);
+    qaAssert_(String(order.status) === 'rejected', 'Order must remain rejected after a blocked un-reject', order);
+    qaAssert_(qaGetProductStock_(fx.product.id) === 5, 'Blocked un-reject must not deduct product stock (atomic)', { stock: qaGetProductStock_(fx.product.id) });
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 0, 'Gift stock should stay at the depleted value', { stock: qaGetGiftStock_(fx.gift_id) });
+
+    output = { order_id: orderId, response: attempt, status: order.status,
+      product_stock: qaGetProductStock_(fx.product.id), gift_stock: qaGetGiftStock_(fx.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
   output.cleanup = cleanup;
   return output;
 }

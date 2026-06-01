@@ -2827,7 +2827,7 @@ function sanitizeShippingCompany_(c) {
 
 /* ---------- sanitizeOrderStatusEntry_(entry) ---------- */
 function sanitizeOrderStatusEntry_(entry) {
-  var ORDER_STATUSES = ['unpaid','paid','approved','shipped','delivered','cancelled'];
+  var ORDER_STATUSES = ['unpaid','paid','approved','shipped','delivered','cancelled','rejected'];
   var statusR = normalizeEnum_(entry.status, ORDER_STATUSES, 'status');
   if (!statusR.ok) return statusR;
   var note = '';
@@ -5489,7 +5489,7 @@ function orderListByIdsRpc(token, orderIds) {
  * and per gift item across ALL orders. Read-only; reads only the items_json
  * column (not encrypted) so no PII decryption is needed. Does not alter any
  * order / pricing / promotion / gift logic. */
-function orderProductionSummaryRpc(token) {
+function orderProductionSummaryRpc(token, opts) {
   if (!requireAdmin_(token)) return { ok:false, error:'AUTH_REQUIRED' };
   if (checkRotateLock_()) return { ok:false, error:'ROTATE_LOCK' };
   try {
@@ -5498,6 +5498,13 @@ function orderProductionSummaryRpc(token) {
     if (n < 2) return { ok:true, products:[], gifts:[], orderCount:0, totalProductUnits:0, totalGiftUnits:0 };
     var numCols = Math.min(ORDER_COLS.length, sh.getLastColumn());
     var rows = sh.getRange(2,1,n-1,numCols).getValues();
+    // Status filter — r[3] is plaintext; default to approved only
+    var _validStatuses = ['unpaid','paid','approved','shipped','delivered','cancelled','rejected'];
+    var allowedStatuses = (opts && Array.isArray(opts.statuses) && opts.statuses.length > 0)
+      ? opts.statuses.map(String).filter(function(s){ return _validStatuses.indexOf(s) !== -1; })
+      : [];
+    if (!allowedStatuses.length) allowedStatuses = ['approved'];
+    rows = rows.filter(function(r){ return allowedStatuses.indexOf(String(r[3]||'unpaid')) !== -1; });
     var prodMap = {}, giftMap = {}, orderCount = 0;
     rows.forEach(function(r) {
       var items;
@@ -5545,7 +5552,8 @@ function orderProductionSummaryRpc(token) {
     var totalProductUnits = products.reduce(function(s,p){ return s + p.qty; }, 0);
     var totalGiftUnits    = gifts.reduce(function(s,g){ return s + g.qty; }, 0);
     return { ok:true, products:products, gifts:gifts, orderCount:orderCount,
-             totalProductUnits:totalProductUnits, totalGiftUnits:totalGiftUnits };
+             totalProductUnits:totalProductUnits, totalGiftUnits:totalGiftUnits,
+             filteredStatuses:allowedStatuses };
   } catch(err) {
     return { ok:false, error:String(err) };
   }
@@ -5687,6 +5695,185 @@ function uploadSlipRpc(token, base64, filename, contentType) {
   }
 }
 
+/* ====================================================================
+ * Order stock release / re-deduct (Reject / un-Reject)
+ *
+ * Invariant: an order whose status is in RELEASED_STATUSES holds NO stock —
+ * its product lines and ACTIVE gift lines have been returned to inventory.
+ * Any other status holds its stock (deducted at checkout).
+ * ==================================================================== */
+var RELEASED_STATUSES = ['rejected', 'cancelled'];
+function _isStockReleasedStatus_(s) {
+  return RELEASED_STATUSES.indexOf(String(s || '').toLowerCase()) !== -1;
+}
+
+// Split an order's items_json into stock-relevant product/gift lines.
+// Gift lines count only when status === 'active' — 'removed' gifts already had
+// their stock handled at removal time.
+function _collectOrderStockLines_(items) {
+  var products = [], gifts = [];
+  (items || []).forEach(function(it) {
+    if (!it) return;
+    if (it.line_type === 'gift') {
+      if (it.status === 'active' && it.gift_id) {
+        gifts.push({ gift_id: String(it.gift_id), qty: Number(it.gift_qty || 1), name: String(it.gift_name || '') });
+      }
+    } else {
+      products.push({
+        product_id: String(it.product_id),
+        selected_variants: it.selected_variants || {},
+        qty: Number(it.qty || 0),
+        title: String(it.title || '')
+      });
+    }
+  });
+  return { products: products, gifts: gifts };
+}
+
+// Resolve which stock cell a product line draws from. Mirrors submitOrderRpc's
+// variant matching exactly so restore/deduct stays symmetric with checkout.
+// pinfo = { prodStock, variants }. Returns { type, gIdx, oIdx, effStock }.
+function _resolveItemStockTarget_(pinfo, selectedVariants) {
+  var sel = selectedVariants || {};
+  var effStock = pinfo.prodStock;
+  var matchedG = -1, matchedO = -1;
+  for (var gi = 0; gi < (pinfo.variants || []).length; gi++) {
+    var sg = pinfo.variants[gi];
+    var chosen = sel[sg.name];
+    if (!chosen) continue;
+    for (var oi = 0; oi < (sg.options || []).length; oi++) {
+      if (sg.options[oi].label === chosen && sg.options[oi].stock !== undefined) {
+        effStock = Number(sg.options[oi].stock);
+        matchedG = gi; matchedO = oi;
+        break;
+      }
+    }
+  }
+  return { type: matchedG >= 0 ? 'variant' : 'product', gIdx: matchedG, oIdx: matchedO, effStock: effStock };
+}
+
+// Apply a stock change for one order's lines. CALLER MUST HOLD THE SCRIPT LOCK.
+// direction: 'deduct' (all-or-nothing; pre-checks every line) | 'restore'.
+// Returns { ok:true, snapshotUpdates:[...] } or, for deduct only,
+// { ok:false, error:'STOCK_INSUFFICIENT', shortages:[...] } having written nothing.
+function _changeOrderStock_(items, direction) {
+  var lines = _collectOrderStockLines_(items);
+  var snapshotUpdates = [];
+
+  // ---- products ----
+  var prodSh = sheetProd_();
+  var prodLastRow = prodSh.getLastRow();
+  var prodSheetData = prodLastRow >= 2 ? prodSh.getRange(2, 1, prodLastRow - 1, 15).getValues() : [];
+  var prodIdToIdx = {};
+  for (var pi = 0; pi < prodSheetData.length; pi++) prodIdToIdx[String(prodSheetData[pi][0])] = pi;
+
+  var prodStockMap = {};
+  lines.products.forEach(function(ln) {
+    if (prodStockMap[ln.product_id]) return;
+    var idx = prodIdToIdx[ln.product_id];
+    if (idx === undefined) return; // product master gone — restore/deduct skips it
+    var row = prodSheetData[idx];
+    var parsedVars;
+    try { parsedVars = JSON.parse(String(row[10] || '[]')); } catch(_) { parsedVars = []; }
+    prodStockMap[ln.product_id] = {
+      rowNo: idx + 2,
+      prodStock: (function(){ var x = Number(row[14]); return isNaN(x) ? -1 : x; })(),
+      variants: parsedVars,
+      touched: false
+    };
+  });
+
+  // Aggregate per stock target so repeated lines on the same variant net correctly.
+  var prodTargets = {}; // key -> { pid, type, gIdx, oIdx, cur, need, title }
+  lines.products.forEach(function(ln) {
+    var pinfo = prodStockMap[ln.product_id];
+    if (!pinfo) return; // vanished product — nothing to track
+    var t = _resolveItemStockTarget_(pinfo, ln.selected_variants);
+    if (t.effStock === -1) return; // unlimited — skip both directions
+    var key = t.type === 'variant' ? (ln.product_id + '|' + t.gIdx + '|' + t.oIdx) : (ln.product_id + '|__prod__');
+    if (!prodTargets[key]) {
+      prodTargets[key] = { pid: ln.product_id, type: t.type, gIdx: t.gIdx, oIdx: t.oIdx, cur: t.effStock, need: 0, title: ln.title };
+    }
+    prodTargets[key].need += ln.qty;
+  });
+
+  // ---- gifts ----
+  var giftSh = null, giftStockMap = {};
+  var giftNeed = {}; // gift_id -> { need, name }
+  lines.gifts.forEach(function(g) {
+    if (!giftNeed[g.gift_id]) giftNeed[g.gift_id] = { need: 0, name: g.name };
+    giftNeed[g.gift_id].need += g.qty;
+  });
+  var giftIds = Object.keys(giftNeed);
+  if (giftIds.length > 0) {
+    giftSh = sheetGiftItems_();
+    var gN = giftSh.getLastRow();
+    if (gN >= 2) {
+      var gIds = giftSh.getRange(2, 1, gN - 1, 1).getValues().map(function(r){ return String(r[0]); });
+      var gStocks = giftSh.getRange(2, 6, gN - 1, 1).getValues();
+      giftIds.forEach(function(gid) {
+        var idx = gIds.indexOf(gid);
+        if (idx < 0) return; // gift master gone — skip
+        var stock = Number(gStocks[idx][0]);
+        if (isNaN(stock)) stock = 0;
+        giftStockMap[gid] = { rowNo: idx + 2, stock: stock };
+      });
+    }
+  }
+
+  // ---- deduct: pre-check every target, write nothing if anything is short ----
+  if (direction === 'deduct') {
+    var shortages = [];
+    Object.keys(prodTargets).forEach(function(key) {
+      var t = prodTargets[key];
+      if (t.cur < t.need) {
+        shortages.push({ kind: 'product', title: t.title, requested: t.need, available: Math.max(0, t.cur) });
+      }
+    });
+    Object.keys(giftStockMap).forEach(function(gid) {
+      var gm = giftStockMap[gid];
+      if (gm.stock === -1) return; // unlimited
+      var need = giftNeed[gid].need;
+      if (gm.stock < need) {
+        shortages.push({ kind: 'gift', title: giftNeed[gid].name, requested: need, available: Math.max(0, gm.stock) });
+      }
+    });
+    if (shortages.length) return { ok: false, error: 'STOCK_INSUFFICIENT', shortages: shortages };
+  }
+
+  // ---- apply product writes ----
+  Object.keys(prodTargets).forEach(function(key) {
+    var t = prodTargets[key];
+    var pinfo = prodStockMap[t.pid];
+    if (!pinfo) return;
+    var next = direction === 'deduct' ? Math.max(0, t.cur - t.need) : (t.cur + t.need);
+    if (t.type === 'variant') {
+      pinfo.variants[t.gIdx].options[t.oIdx].stock = next;
+    } else {
+      pinfo.prodStock = next;
+    }
+    pinfo.touched = true;
+  });
+  Object.keys(prodStockMap).forEach(function(pid) {
+    var pinfo = prodStockMap[pid];
+    if (!pinfo.touched) return;
+    prodSh.getRange(pinfo.rowNo, 11).setValue(JSON.stringify(pinfo.variants));
+    prodSh.getRange(pinfo.rowNo, 15).setValue(pinfo.prodStock);
+    snapshotUpdates.push({ product_id: pid, prodStock: pinfo.prodStock, variants: pinfo.variants });
+  });
+
+  // ---- apply gift writes ----
+  Object.keys(giftStockMap).forEach(function(gid) {
+    var gm = giftStockMap[gid];
+    if (gm.stock === -1) return; // unlimited
+    var need = giftNeed[gid].need;
+    var next = direction === 'deduct' ? Math.max(0, gm.stock - need) : (gm.stock + need);
+    giftSh.getRange(gm.rowNo, 6).setValue(next);
+  });
+
+  return { ok: true, snapshotUpdates: snapshotUpdates };
+}
+
 function orderUpdateStatusRpc(token, orderId, newStatus, note) {
   var _sess = requireAdmin_(token);
   if (!_sess) {
@@ -5696,7 +5883,7 @@ function orderUpdateStatusRpc(token, orderId, newStatus, note) {
   }
   if (checkRotateLock_()) return { ok:false, error:'ROTATE_LOCK' };
   // --- INPUT VALIDATION ---
-  var ORDER_STATUSES = ['unpaid','paid','approved','shipped','delivered','cancelled'];
+  var ORDER_STATUSES = ['unpaid','paid','approved','shipped','delivered','cancelled','rejected'];
   var statusR = normalizeEnum_(newStatus, ORDER_STATUSES, 'สถานะ');
   if (!statusR.ok) return { ok:false, error:statusR.error };
   newStatus = statusR.value;
@@ -5706,6 +5893,12 @@ function orderUpdateStatusRpc(token, orderId, newStatus, note) {
     note = noteR.value;
   }
   // --- END VALIDATION ---
+  // Single lock covers the stock change + status write so a Reject/un-Reject is atomic.
+  var _lock = LockService.getScriptLock();
+  if (!_lock.tryLock(15000)) return { ok:false, error:'SERVER_BUSY' };
+  var _stockChanged = null;       // 'restore' | 'deduct' once a stock write succeeds (for rollback)
+  var _snapshotUpdates = [];      // patched post-lock
+  var _orderItems = null;
   try {
     const sh  = sheetOrders_();
     const n   = sh.getLastRow();
@@ -5714,6 +5907,26 @@ function orderUpdateStatusRpc(token, orderId, newStatus, note) {
     const idx = ids.indexOf(String(orderId));
     if (idx < 0) return { ok:false, error:'not found' };
     const rowNo = idx + 2;
+    const statusCol = ORDER_COLS.indexOf('status') + 1;
+
+    // Stock transition: entering a released status restores stock; leaving it
+    // re-deducts (atomically). Same-side transitions leave stock untouched.
+    var oldStatus    = String(sh.getRange(rowNo, statusCol).getValue() || '').toLowerCase();
+    var wasReleased  = _isStockReleasedStatus_(oldStatus);
+    var willReleased = _isStockReleasedStatus_(newStatus);
+    if (wasReleased !== willReleased) {
+      const itemsCol = ORDER_COLS.indexOf('items_json') + 1;
+      try { _orderItems = JSON.parse(String(sh.getRange(rowNo, itemsCol).getValue() || '[]')); } catch(_) { _orderItems = []; }
+      var _dir = willReleased ? 'restore' : 'deduct';
+      var _stockRes = _changeOrderStock_(_orderItems, _dir);
+      if (!_stockRes.ok) {
+        // Re-deduct blocked by insufficient stock — leave the status unchanged.
+        return { ok:false, error:_stockRes.error, shortages:_stockRes.shortages || [] };
+      }
+      _stockChanged    = _dir;
+      _snapshotUpdates = _stockRes.snapshotUpdates || [];
+    }
+
     const histCol = ORDER_COLS.indexOf('status_history_json') + 1;
     const histRaw = sh.getRange(rowNo, histCol).getValue();
     var history = [];
@@ -5754,9 +5967,21 @@ function orderUpdateStatusRpc(token, orderId, newStatus, note) {
         }
       }
     }
-    sh.getRange(rowNo, ORDER_COLS.indexOf('updated_at')+1).setValue(now);
-    sh.getRange(rowNo, ORDER_COLS.indexOf('status')+1).setValue(sanitizeSheetCell_(newStatus));
-    sh.getRange(rowNo, histCol).setValue(JSON.stringify(history));
+    try {
+      sh.getRange(rowNo, ORDER_COLS.indexOf('updated_at')+1).setValue(now);
+      sh.getRange(rowNo, statusCol).setValue(sanitizeSheetCell_(newStatus));
+      sh.getRange(rowNo, histCol).setValue(JSON.stringify(history));
+    } catch (writeErr) {
+      // Status write failed after a stock change — undo the stock change so inventory
+      // stays consistent with the (unchanged) order status.
+      if (_stockChanged) {
+        try {
+          var _rb = _changeOrderStock_(_orderItems, _stockChanged === 'restore' ? 'deduct' : 'restore');
+          _snapshotUpdates = (_rb && _rb.snapshotUpdates) || [];
+        } catch(_) { _snapshotUpdates = []; }
+      }
+      throw writeErr;
+    }
     enqueueLog_('order.status.update', { category:['order'], type:['change'],
       outcome:'success', route:'order', rpc:'orderUpdateStatusRpc',
       userId:_sess.userId, sessionId:token,
@@ -5764,6 +5989,9 @@ function orderUpdateStatusRpc(token, orderId, newStatus, note) {
     return { ok:true, order_id:orderId, status:newStatus, updated_at:now };
   } catch(err) {
     return { ok:false, error:String(err) };
+  } finally {
+    try { _lock.releaseLock(); } catch(_) {}
+    try { if (_snapshotUpdates && _snapshotUpdates.length) _patchSnapshotStock_(_snapshotUpdates); } catch(_) {}
   }
 }
 
@@ -7427,8 +7655,8 @@ function addManualGiftToOrderRpc(token, orderId, payload) {
     var ord = getOrderRow_(orderId);
     if (!ord) return { ok:false, error:'ไม่พบคำสั่งซื้อ' };
     var status = String(ord.sheet.getRange(ord.rowNo, 4).getValue()||'').toLowerCase();
-    if (status === 'cancelled' || status === 'delivered') {
-      return { ok:false, error:'ไม่สามารถเพิ่มของแถมในคำสั่งซื้อที่ยกเลิกหรือจัดส่งแล้ว' };
+    if (_isStockReleasedStatus_(status) || status === 'delivered') {
+      return { ok:false, error:'ไม่สามารถเพิ่มของแถมในคำสั่งซื้อที่ปฏิเสธ/ยกเลิกหรือจัดส่งแล้ว' };
     }
     var gi = getGiftItemById_(p.gift_id);
     if (!gi) return { ok:false, error:'ไม่พบของแถม' };
@@ -7485,7 +7713,9 @@ function removeGiftLineFromOrderRpc(token, orderId, giftSnapshotId) {
     if (!upd.ok) return upd;
     if (!found) return { ok:false, error:'GIFT_LINE_NOT_FOUND' };
     if (alreadyRemoved) return { ok:false, error:'GIFT_LINE_ALREADY_REMOVED' };
-    if (matched && status !== 'delivered' && status !== 'cancelled') {
+    // A released order (rejected/cancelled) already had this gift's stock returned to
+    // inventory, so removing the line must NOT restore it again.
+    if (matched && status !== 'delivered' && !_isStockReleasedStatus_(status)) {
       restoreGiftStock_(matched.giftId, matched.qty);
     }
     auditLog_('gift.order.remove', { category:['order'], type:['change'],
@@ -7507,6 +7737,12 @@ function updateGiftLineQtyRpc(token, orderId, giftSnapshotId, qty) {
     if (isNaN(newQty) || newQty < 1) return { ok:false, error:'จำนวนต้องอย่างน้อย 1' };
     if (Math.floor(newQty) !== newQty) return { ok:false, error:'INVALID_QTY' };
     if (!giftSnapshotId) return { ok:false, error:'GIFT_LINE_NOT_FOUND' };
+    // A released order (rejected/cancelled) holds no stock, so a qty change there must
+    // only update items_json — no reserve/restore. The new qty is what gets re-deducted
+    // when the order is later un-rejected.
+    var _ordRow = getOrderRow_(orderId);
+    if (!_ordRow) return { ok:false, error:'ไม่พบคำสั่งซื้อ' };
+    var _released = _isStockReleasedStatus_(String(_ordRow.sheet.getRange(_ordRow.rowNo, 4).getValue()||'').toLowerCase());
     var giftIdRef = '', oldQty = 0, diff = 0, reserved = false, found = false;
     var upd = _updateOrderItemsJsonUnlocked_(orderId, function(items){
       for (var i = 0; i < items.length; i++) {
@@ -7516,13 +7752,15 @@ function updateGiftLineQtyRpc(token, orderId, giftSnapshotId, qty) {
           giftIdRef = String(items[i].gift_id);
           oldQty = Number(items[i].gift_qty || 1);
           diff = newQty - oldQty;
-          if (diff > 0) {
-            if (!reserveGiftStock_(giftIdRef, diff)) {
-              throw new Error('ของแถมในสต็อกไม่พอ');
+          if (!_released) {
+            if (diff > 0) {
+              if (!reserveGiftStock_(giftIdRef, diff)) {
+                throw new Error('ของแถมในสต็อกไม่พอ');
+              }
+              reserved = true;
+            } else if (diff < 0) {
+              restoreGiftStock_(giftIdRef, -diff);
             }
-            reserved = true;
-          } else if (diff < 0) {
-            restoreGiftStock_(giftIdRef, -diff);
           }
           items[i].gift_qty = newQty;
           break;
