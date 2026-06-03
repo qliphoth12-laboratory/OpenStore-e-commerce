@@ -2107,7 +2107,6 @@ function writePaymentConfig_(obj, actorEmail) {
     String(actorEmail || '')
   ];
   // promptpay_number ต้องเก็บเป็นข้อความ (plain text) ไม่งั้น Sheets จะแปลงเลขที่ขึ้นต้น
-  // ด้วย 0 (เช่น "0626165822") เป็นตัวเลขแล้วตัดศูนย์นำหน้าออก กลายเป็น 626165822
   sh.getRange(2, 2).setNumberFormat('@');
   sh.getRange(2, 1, 1, PAYMENT_HEADERS.length).setValues([row]);
   try { CacheService.getScriptCache().remove(CACHE_PAYMENT_CFG); } catch(_) {}
