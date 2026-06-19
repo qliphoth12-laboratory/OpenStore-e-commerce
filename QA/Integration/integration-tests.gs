@@ -2267,6 +2267,78 @@ function qaIntegrationSpecs_() {
       requiresAdminToken: true,
       run: function(ctx) { qaRequireRealWrite_(ctx); return qaRunTokenExpiryFlow_(ctx); }
     },
+    {
+      id: 'orders.shipping-address-valid-update',
+      title: 'ออร์เดอร์: แก้ไขที่อยู่จัดส่งสำเร็จ',
+      area: 'orders',
+      type: 'write',
+      risk: 'high',
+      description: 'สร้างออร์เดอร์ จากนั้นเรียก orderUpdateFieldsRpc พร้อม shipping address fields ครบถ้วนและถูกต้อง',
+      expected: 'orderUpdateFieldsRpc ต้องคืน ok:true และข้อมูลที่อ่านกลับมาต้องตรงกับ patch ที่ส่งไป พร้อมมี address_updated ใน status_history',
+      requiresRealWrite: true,
+      requiresAdminToken: true,
+      run: function(ctx) { qaRequireRealWrite_(ctx); return qaRunShippingAddressValidUpdateFlow_(ctx); }
+    },
+    {
+      id: 'orders.shipping-address-invalid-phone',
+      title: 'ออร์เดอร์: ปฏิเสธเบอร์โทรไม่ถูกต้องเมื่อแก้ไขที่อยู่',
+      area: 'orders',
+      type: 'write',
+      risk: 'high',
+      description: 'ส่ง customer_phone ที่มีตัวเลขน้อยกว่า 7 หลักไปใน patch ของ orderUpdateFieldsRpc',
+      expected: 'orderUpdateFieldsRpc ต้องคืน ok:false และไม่บันทึกข้อมูล',
+      requiresRealWrite: true,
+      requiresAdminToken: true,
+      run: function(ctx) { qaRequireRealWrite_(ctx); return qaRunShippingAddressInvalidPhoneFlow_(ctx); }
+    },
+    {
+      id: 'orders.shipping-address-invalid-postal',
+      title: 'ออร์เดอร์: ปฏิเสธรหัสไปรษณีย์ไม่ถูกต้อง',
+      area: 'orders',
+      type: 'write',
+      risk: 'high',
+      description: 'ส่ง shipping_postal_code ที่ไม่ใช่ตัวเลข 5 หลักไปใน patch ของ orderUpdateFieldsRpc',
+      expected: 'orderUpdateFieldsRpc ต้องคืน ok:false',
+      requiresRealWrite: true,
+      requiresAdminToken: true,
+      run: function(ctx) { qaRequireRealWrite_(ctx); return qaRunShippingAddressInvalidPostalFlow_(ctx); }
+    },
+    {
+      id: 'orders.shipping-address-empty-required',
+      title: 'ออร์เดอร์: ปฏิเสธ shipping_name ว่างเปล่า',
+      area: 'orders',
+      type: 'write',
+      risk: 'high',
+      description: 'ส่ง shipping_name เป็นค่าว่างใน patch ของ orderUpdateFieldsRpc',
+      expected: 'orderUpdateFieldsRpc ต้องคืน ok:false',
+      requiresRealWrite: true,
+      requiresAdminToken: true,
+      run: function(ctx) { qaRequireRealWrite_(ctx); return qaRunShippingAddressEmptyRequiredFlow_(ctx); }
+    },
+    {
+      id: 'orders.shipping-address-no-clobber-items',
+      title: 'ออร์เดอร์: แก้ไขที่อยู่ไม่กระทบรายการสินค้า',
+      area: 'orders',
+      type: 'write',
+      risk: 'high',
+      description: 'สร้างออร์เดอร์ แก้ไขที่อยู่ แล้วตรวจว่า items_json ยังเหมือนเดิม',
+      expected: 'รายการสินค้าในออร์เดอร์ต้องไม่เปลี่ยนแปลงหลังแก้ไขที่อยู่',
+      requiresRealWrite: true,
+      requiresAdminToken: true,
+      run: function(ctx) { qaRequireRealWrite_(ctx); return qaRunShippingAddressNoClobberItemsFlow_(ctx); }
+    },
+    {
+      id: 'orders.shipping-address-no-clobber-status',
+      title: 'ออร์เดอร์: แก้ไขที่อยู่ไม่กระทบสถานะออร์เดอร์',
+      area: 'orders',
+      type: 'write',
+      risk: 'high',
+      description: 'สร้างออร์เดอร์ เปลี่ยนสถานะเป็น paid แล้วแก้ไขที่อยู่ ตรวจว่าสถานะยังเป็น paid',
+      expected: 'สถานะออร์เดอร์ต้องไม่เปลี่ยนแปลงหลังแก้ไขที่อยู่',
+      requiresRealWrite: true,
+      requiresAdminToken: true,
+      run: function(ctx) { qaRequireRealWrite_(ctx); return qaRunShippingAddressNoClobberStatusFlow_(ctx); }
+    },
     qaWriteSpec_('orders.bulk-sequential-20-success', 'Orders: bulk sequential 20 success', 'orders', 'critical', 'Submit 20 sequential orders against stock 25.', 'All 20 orders should succeed with unique order ids/tokens and stock should end at 5.', 'qaRunOrderBulkSequential20SuccessFlow_'),
     qaWriteSpec_('orders.bulk-gift-stock-limited-15', 'Orders: bulk gift stock limited 15', 'orders', 'critical', 'Submit 15 sequential gift-eligible orders against gift stock 10.', 'All orders should succeed, 10 should attach gifts, 5 should warn/skip, stock should end at 0.', 'qaRunOrderBulkGiftStockLimited15Flow_'),
     qaWriteSpec_('orders.idempotent-gift-not-double-deduct', 'Orders: idempotent gift not double deducted', 'orders', 'critical', 'Submit the same client_order_id twice for an order that receives a gift.', 'Duplicate submit should not deduct product or gift stock again.', 'qaRunOrderIdempotentGiftNotDoubleDeductFlow_'),
@@ -8913,4 +8985,157 @@ function qaRouteSmoke_(ctx, page) {
     bytes: text.length,
     hasHtml: true
   };
+}
+
+/* ============================================================
+   SHIPPING ADDRESS EDIT FLOW FUNCTIONS
+   ============================================================ */
+
+var _QA_ADDR_PATCH = {
+  shipping_name:        'QA ผู้รับทดสอบ',
+  customer_phone:       '0812345678',
+  shipping_address:     '99/9 ถนนทดสอบ',
+  shipping_district:    'แขวงทดสอบ',
+  shipping_amphoe:      'เขตทดสอบ',
+  shipping_province:    'กรุงเทพมหานคร',
+  shipping_postal_code: '10110'
+};
+
+function qaRunShippingAddressValidUpdateFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'AddrValid', 5);
+  var caught = null, output = null;
+  try {
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-addr-valid', fx.stamp, 'Buyer', fx.product.id, fx.shipping), fx.order_ids);
+    qaAssertOk_(res);
+    var orderId = qaOrderIdsFromSubmit_(res)[0];
+
+    var patch = Object.assign({}, _QA_ADDR_PATCH);
+    var upd = qaCall_('orderUpdateFieldsRpc', [fx.token, orderId, patch]);
+    qaAssertOk_(upd);
+
+    var record = qaReadOrder_(fx.token, orderId);
+    qaAssert_(record.shipping_name === patch.shipping_name, 'shipping_name mismatch', record);
+    qaAssert_(record.shipping_address === patch.shipping_address, 'shipping_address mismatch', record);
+    qaAssert_(record.shipping_district === patch.shipping_district, 'shipping_district mismatch', record);
+    qaAssert_(record.shipping_amphoe === patch.shipping_amphoe, 'shipping_amphoe mismatch', record);
+    qaAssert_(record.shipping_province === patch.shipping_province, 'shipping_province mismatch', record);
+    qaAssert_(record.shipping_postal_code === patch.shipping_postal_code, 'shipping_postal_code mismatch', record);
+    qaAssert_(record.customer_phone === patch.customer_phone, 'customer_phone mismatch', record);
+
+    var histStatuses = (record.status_history || []).map(function(h){ return h.status; });
+    qaAssert_(histStatuses.indexOf('address_updated') >= 0, 'address_updated entry missing from status_history', histStatuses);
+
+    output = { order_id: orderId, address_updated: true, history_statuses: histStatuses };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunShippingAddressInvalidPhoneFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'AddrBadPhone', 5);
+  var caught = null, output = null;
+  try {
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-addr-bad-phone', fx.stamp, 'Buyer', fx.product.id, fx.shipping), fx.order_ids);
+    qaAssertOk_(res);
+    var orderId = qaOrderIdsFromSubmit_(res)[0];
+
+    var patch = Object.assign({}, _QA_ADDR_PATCH, { customer_phone: '123' });
+    var upd = qaCall_('orderUpdateFieldsRpc', [fx.token, orderId, patch]);
+    qaAssert_(upd && upd.ok === false, 'Short phone should be rejected', upd);
+
+    output = { order_id: orderId, rejected: true, error: upd && upd.error };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunShippingAddressInvalidPostalFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'AddrBadPostal', 5);
+  var caught = null, output = null;
+  try {
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-addr-bad-postal', fx.stamp, 'Buyer', fx.product.id, fx.shipping), fx.order_ids);
+    qaAssertOk_(res);
+    var orderId = qaOrderIdsFromSubmit_(res)[0];
+
+    var patch = Object.assign({}, _QA_ADDR_PATCH, { shipping_postal_code: '1234' });
+    var upd = qaCall_('orderUpdateFieldsRpc', [fx.token, orderId, patch]);
+    qaAssert_(upd && upd.ok === false, '4-digit postal code should be rejected', upd);
+
+    output = { order_id: orderId, rejected: true, error: upd && upd.error };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunShippingAddressEmptyRequiredFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'AddrEmptyReq', 5);
+  var caught = null, output = null;
+  try {
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-addr-empty', fx.stamp, 'Buyer', fx.product.id, fx.shipping), fx.order_ids);
+    qaAssertOk_(res);
+    var orderId = qaOrderIdsFromSubmit_(res)[0];
+
+    var patch = Object.assign({}, _QA_ADDR_PATCH, { shipping_name: '' });
+    var upd = qaCall_('orderUpdateFieldsRpc', [fx.token, orderId, patch]);
+    qaAssert_(upd && upd.ok === false, 'Empty shipping_name should be rejected', upd);
+
+    output = { order_id: orderId, rejected: true, error: upd && upd.error };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunShippingAddressNoClobberItemsFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'AddrNoClobberItems', 5);
+  var caught = null, output = null;
+  try {
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-addr-items', fx.stamp, 'Buyer', fx.product.id, fx.shipping), fx.order_ids);
+    qaAssertOk_(res);
+    var orderId = qaOrderIdsFromSubmit_(res)[0];
+
+    var before = qaReadOrder_(fx.token, orderId);
+    var itemsBefore = JSON.stringify((before.items || []).map(function(i){ return { id:i.product_id, qty:i.qty }; }));
+
+    qaAssertOk_(qaCall_('orderUpdateFieldsRpc', [fx.token, orderId, Object.assign({}, _QA_ADDR_PATCH)]));
+
+    var after = qaReadOrder_(fx.token, orderId);
+    var itemsAfter = JSON.stringify((after.items || []).map(function(i){ return { id:i.product_id, qty:i.qty }; }));
+    qaAssert_(itemsBefore === itemsAfter, 'Order items changed after address update', { before: itemsBefore, after: itemsAfter });
+
+    output = { order_id: orderId, items_preserved: true };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunShippingAddressNoClobberStatusFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'AddrNoClobberStatus', 5);
+  var caught = null, output = null;
+  try {
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-addr-status', fx.stamp, 'Buyer', fx.product.id, fx.shipping), fx.order_ids);
+    qaAssertOk_(res);
+    var orderId = qaOrderIdsFromSubmit_(res)[0];
+
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'paid', 'QA paid']));
+    qaAssertOk_(qaCall_('orderUpdateFieldsRpc', [fx.token, orderId, Object.assign({}, _QA_ADDR_PATCH)]));
+
+    var record = qaReadOrder_(fx.token, orderId);
+    qaAssert_(record.status === 'paid', 'Order status changed after address update', record);
+
+    output = { order_id: orderId, status: record.status, status_preserved: true };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
 }
