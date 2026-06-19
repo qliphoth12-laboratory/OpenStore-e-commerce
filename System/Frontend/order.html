@@ -84,6 +84,7 @@
     .odm-history-dot.shipped    { background: #0ea5e9; }
     .odm-history-dot.delivered  { background: #14b8a6; }
     .odm-history-dot.rejected   { background: #ef4444; }
+    .odm-history-dot.address_updated { background: #8b5cf6; }
 
     .modal-content { border-radius: var(--radius); }
     .pill { border-radius: 999px; }
@@ -323,7 +324,12 @@
         </div>
 
         <div class="odm-section">
-          <div class="odm-section-title"><i class="bi bi-truck me-1"></i>ที่อยู่จัดส่ง</div>
+          <div class="odm-section-title d-flex align-items-center justify-content-between">
+            <span><i class="bi bi-truck me-1"></i>ที่อยู่จัดส่ง</span>
+            <button class="btn btn-sm btn-outline-secondary pill" id="btnEditAddress" onclick="openEditAddressModal()" type="button">
+              <i class="bi bi-pencil me-1"></i>แก้ไข
+            </button>
+          </div>
           <div class="odm-info-grid">
             <div class="odm-info-row">
               <span class="odm-info-label">ชื่อผู้รับ</span>
@@ -519,6 +525,68 @@
         <button type="button" class="btn btn-dark btn-sm pill px-4" id="btnConfirmManualGift">
           <span class="spinner-border spinner-border-sm me-1 d-none" id="mgSaveSpinner"></span>
           เพิ่ม
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Shipping Address Modal -->
+<div class="modal fade" id="editAddressModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:480px">
+    <div class="modal-content" style="border-radius:16px;overflow:hidden">
+      <div class="modal-header" style="background:#f8fafc">
+        <div>
+          <h5 class="modal-title fw-bold mb-0"><i class="bi bi-geo-alt me-2"></i>แก้ไขที่อยู่จัดส่ง</h5>
+          <div class="text-muted small">เลขคำสั่งซื้อ: <span id="eaOrderId">—</span></div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-2">
+          <div class="col-8">
+            <label class="form-label fw-semibold small mb-1">ชื่อผู้รับ <span class="text-danger">*</span></label>
+            <input type="text" id="eaShippingName" class="form-control form-control-sm" maxlength="200">
+            <div class="invalid-feedback" id="eaShippingNameErr"></div>
+          </div>
+          <div class="col-4">
+            <label class="form-label fw-semibold small mb-1">เบอร์โทรศัพท์ <span class="text-danger">*</span></label>
+            <input type="text" id="eaPhone" class="form-control form-control-sm" maxlength="20">
+            <div class="invalid-feedback" id="eaPhoneErr"></div>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold small mb-1">ที่อยู่ <span class="text-danger">*</span></label>
+            <textarea id="eaAddress" class="form-control form-control-sm" rows="2" maxlength="2000"></textarea>
+            <div class="invalid-feedback" id="eaAddressErr"></div>
+          </div>
+          <div class="col-6">
+            <label class="form-label fw-semibold small mb-1">แขวง/ตำบล <span class="text-danger">*</span></label>
+            <input type="text" id="eaDistrict" class="form-control form-control-sm" maxlength="200">
+            <div class="invalid-feedback" id="eaDistrictErr"></div>
+          </div>
+          <div class="col-6">
+            <label class="form-label fw-semibold small mb-1">เขต/อำเภอ <span class="text-danger">*</span></label>
+            <input type="text" id="eaAmphoe" class="form-control form-control-sm" maxlength="200">
+            <div class="invalid-feedback" id="eaAmphoeErr"></div>
+          </div>
+          <div class="col-8">
+            <label class="form-label fw-semibold small mb-1">จังหวัด <span class="text-danger">*</span></label>
+            <input type="text" id="eaProvince" class="form-control form-control-sm" maxlength="200">
+            <div class="invalid-feedback" id="eaProvinceErr"></div>
+          </div>
+          <div class="col-4">
+            <label class="form-label fw-semibold small mb-1">รหัสไปรษณีย์ <span class="text-danger">*</span></label>
+            <input type="text" id="eaPostalCode" class="form-control form-control-sm" maxlength="5" pattern="\d{5}" inputmode="numeric">
+            <div class="invalid-feedback" id="eaPostalCodeErr"></div>
+          </div>
+        </div>
+        <div id="eaSaveError" class="alert alert-danger mt-3 mb-0 d-none" style="font-size:.82rem"></div>
+      </div>
+      <div class="modal-footer" style="background:#f8fafc">
+        <button type="button" class="btn btn-outline-secondary btn-sm pill" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-dark btn-sm pill px-4" id="btnSaveAddress" onclick="saveShippingAddress()">
+          <span class="spinner-border spinner-border-sm me-1 d-none" id="eaSaveSpinner"></span>
+          บันทึก
         </button>
       </div>
     </div>
@@ -2166,6 +2234,110 @@
       hideHUD('ok', MSG.success.save);
     } catch (err) {
       hideHUD('err', translateRpcError(err, MSG.error.save));
+    }
+  }
+
+  function openEditAddressModal() {
+    if (!currentOrder) return;
+    document.getElementById('eaOrderId').textContent    = currentOrder.order_id;
+    document.getElementById('eaShippingName').value     = currentOrder.shipping_name || '';
+    document.getElementById('eaPhone').value            = currentOrder.customer_phone || '';
+    document.getElementById('eaAddress').value          = currentOrder.shipping_address || '';
+    document.getElementById('eaDistrict').value         = currentOrder.shipping_district || '';
+    document.getElementById('eaAmphoe').value           = currentOrder.shipping_amphoe || '';
+    document.getElementById('eaProvince').value         = currentOrder.shipping_province || '';
+    document.getElementById('eaPostalCode').value       = currentOrder.shipping_postal_code || '';
+    ['eaShippingName','eaPhone','eaAddress','eaDistrict','eaAmphoe','eaProvince','eaPostalCode']
+      .forEach(function(id) { document.getElementById(id).classList.remove('is-invalid'); });
+    document.getElementById('eaSaveError').classList.add('d-none');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('editAddressModal')).show();
+  }
+
+  function _validateAddressForm() {
+    var ok = true;
+    function check(id, errId, validator) {
+      var el = document.getElementById(id);
+      var v = (el.value || '').trim();
+      var msg = validator(v);
+      if (msg) {
+        el.classList.add('is-invalid');
+        document.getElementById(errId).textContent = msg;
+        ok = false;
+      } else {
+        el.classList.remove('is-invalid');
+      }
+      return v;
+    }
+    var name     = check('eaShippingName', 'eaShippingNameErr', function(v){ return v ? '' : 'กรุณากรอกชื่อผู้รับ'; });
+    var phone    = check('eaPhone',        'eaPhoneErr',        function(v) {
+      if (!v) return 'กรุณากรอกเบอร์โทรศัพท์';
+      var d = v.replace(/^\+/, '').replace(/\D/g, '');
+      if (d.length < 7) return 'เบอร์โทรศัพท์สั้นเกินไป';
+      return '';
+    });
+    var address  = check('eaAddress',      'eaAddressErr',     function(v){ return v ? '' : 'กรุณากรอกที่อยู่'; });
+    var district = check('eaDistrict',     'eaDistrictErr',    function(v){ return v ? '' : 'กรุณากรอกตำบล/แขวง'; });
+    var amphoe   = check('eaAmphoe',       'eaAmphoeErr',      function(v){ return v ? '' : 'กรุณากรอกอำเภอ/เขต'; });
+    var province = check('eaProvince',     'eaProvinceErr',    function(v){ return v ? '' : 'กรุณากรอกจังหวัด'; });
+    var postal   = check('eaPostalCode',   'eaPostalCodeErr',  function(v) {
+      if (!v) return 'กรุณากรอกรหัสไปรษณีย์';
+      if (!/^\d{5}$/.test(v.replace(/\D/g, ''))) return 'รหัสไปรษณีย์ต้องเป็นตัวเลข 5 หลัก';
+      return '';
+    });
+    if (!ok) return null;
+    return {
+      shipping_name:        name,
+      customer_phone:       phone,
+      shipping_address:     address,
+      shipping_district:    district,
+      shipping_amphoe:      amphoe,
+      shipping_province:    province,
+      shipping_postal_code: postal.replace(/\D/g, '')
+    };
+  }
+
+  async function saveShippingAddress() {
+    if (!currentOrder) return;
+    var patch = _validateAddressForm();
+    if (!patch) return;
+
+    var snapshotId = currentOrder.order_id;
+    var btn     = document.getElementById('btnSaveAddress');
+    var spinner = document.getElementById('eaSaveSpinner');
+    var errBox  = document.getElementById('eaSaveError');
+
+    btn.disabled = true;
+    spinner.classList.remove('d-none');
+    errBox.classList.add('d-none');
+
+    try {
+      if (!GAS_ENV) throw new Error('GAS not available');
+      var r = await _rpc('orderUpdateFieldsRpc', snapshotId, patch);
+      if (!r || !r.ok) throw new Error((r && r.error) || MSG.error.save);
+
+      var cached = _detailCache[snapshotId];
+      if (cached) { Object.assign(cached, patch); _detailCache[snapshotId] = cached; }
+      var _li = allOrders.findIndex(function(o){ return o.order_id === snapshotId; });
+      if (_li >= 0) Object.assign(allOrders[_li], patch);
+      if (currentOrder && currentOrder.order_id === snapshotId) Object.assign(currentOrder, patch);
+
+      document.getElementById('odmShippingName').textContent = patch.shipping_name        || '—';
+      document.getElementById('odmAddress').textContent      = patch.shipping_address     || '—';
+      document.getElementById('odmDistrict').textContent     = patch.shipping_district    || '—';
+      document.getElementById('odmAmphoe').textContent       = patch.shipping_amphoe      || '—';
+      document.getElementById('odmProvince').textContent     = patch.shipping_province    || '—';
+      document.getElementById('odmPostalCode').textContent   = patch.shipping_postal_code || '—';
+      document.getElementById('odmPhone').textContent        = patch.customer_phone       || '—';
+
+      renderTable();
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('editAddressModal')).hide();
+      hideHUD('ok', 'แก้ไขที่อยู่จัดส่งเรียบร้อย');
+    } catch (err) {
+      errBox.textContent = translateRpcError(err, MSG.error.save);
+      errBox.classList.remove('d-none');
+    } finally {
+      btn.disabled = false;
+      spinner.classList.add('d-none');
     }
   }
 

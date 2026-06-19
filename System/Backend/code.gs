@@ -769,13 +769,14 @@ function getDefaultSiteConfig_() {
     mascotSize: 300,
     mascotDisplayMode: "fullwidth",
     contact_platforms: ["facebook", "line", "twitter"],
-    logoImage: "https://scontent.fbkk8-3.fna.fbcdn.net/v/t39.30808-6/616831250_122101507461223868_6906263587877060857_n.jpg?_nc_cat=102&ccb=1-7&_nc_sid=6ee11a&_nc_ohc=D-RaW7URphoQ7kNvwGomRgB&_nc_oc=AdrQUowfHPr2Dk-xCa2ebHAQiDBgB0_BDkYwBf6qyGTZpcPmpNTvyvdqOYpY7w8mS0Zl-Kx-AGTkS-NqnK-Xzrgm&_nc_zt=23&_nc_ht=scontent.fbkk8-3.fna&_nc_gid=8Ltg685GohOgtF58VZNv5A&_nc_ss=78289&oh=00_Af5saHO7Ha3FEj_zNEUSV07iXVUhK62frY3YjhqIRsTtRA&oe=6A185E91",
+    logoImage: "https://i.ibb.co/1fbYS2kV/616831250-122101507461223868-6906263587877060857-n.jpg",
     logoImageDriveFileId: "",
-    bannerImage: "https://scontent.fbkk13-1.fna.fbcdn.net/v/t39.30808-6/705463742_122122522509237187_7233054581867222938_n.jpg?_nc_cat=108&ccb=1-7&_nc_sid=127cfc&_nc_ohc=vxfM2rWC118Q7kNvwFM-jRm&_nc_oc=AdpxeIyXU8yk-uc9xl_d_CAprhWejefJZaSqMD-K8HtJPLyTBWOK9gLqnwQBeOdlzBMk91HffdDtX2wk4jitDD9i&_nc_zt=23&_nc_ht=scontent.fbkk13-1.fna&_nc_gid=mY77MuuicO37CEzrMR5Otw&_nc_ss=7b2a8&oh=00_Af7YI2A7uC8l6fDC0J_9se8IxK1iBDNPvShtPoSXshwdJA&oe=6A1884AB",
+    bannerImage: "https://pbs.twimg.com/media/GxK2IrHbwAAdz3p?format=jpg&name=4096x4096",
     bannerImageDriveFileId: "",
     bannerTitle: "Qliphoth-12 Laboratory Shop Template",
     bannerSubtitle: "ร้านค้าของ Qliphoth-12 Laboratory",
     productsTitle: "รายการสินค้า",
+    bannerParallax: { enabled: true, strength: 0.46, scale: 1.08, start: "bottom" },
     theme: {
       bg: "#ffffff",
       bgImage: "https://pbs.twimg.com/media/GgbB2mfa8AMKPgh?format=jpg&name=4096x4096", bgImageDriveFileId: "", bgSize: "cover", bgRepeat: "no-repeat", bgPosition: "center", bgAttachment: "fixed",
@@ -6013,6 +6014,34 @@ function orderUpdateFieldsRpc(token, orderId, patch) {
       if (!cnR.ok) return { ok:false, error:cnR.error };
       p.customer_notes = cnR.value;
     }
+    var SHIP_ADDR_KEYS = ['shipping_name','shipping_address','shipping_district',
+                          'shipping_amphoe','shipping_province','shipping_postal_code'];
+    var hasAddrPatch = SHIP_ADDR_KEYS.some(function(k){ return p[k] !== undefined; });
+    if (hasAddrPatch) {
+      var _snR  = normalizePlainText_(p.shipping_name||'',     {maxLen:VLEN.SHORT,  fieldName:'ชื่อผู้รับ'});
+      if (!_snR.ok)  return {ok:false, error:_snR.error};
+      var _saR  = normalizePlainText_(p.shipping_address||'',  {maxLen:VLEN.MEDIUM, fieldName:'ที่อยู่'});
+      if (!_saR.ok)  return {ok:false, error:_saR.error};
+      var _sdR  = normalizePlainText_(p.shipping_district||'', {maxLen:VLEN.SHORT,  fieldName:'ตำบล/แขวง'});
+      if (!_sdR.ok)  return {ok:false, error:_sdR.error};
+      var _sxR  = normalizePlainText_(p.shipping_amphoe||'',   {maxLen:VLEN.SHORT,  fieldName:'อำเภอ/เขต'});
+      if (!_sxR.ok)  return {ok:false, error:_sxR.error};
+      var _spR  = normalizePlainText_(p.shipping_province||'', {maxLen:VLEN.SHORT,  fieldName:'จังหวัด'});
+      if (!_spR.ok)  return {ok:false, error:_spR.error};
+      var _spcR = normalizePostalCode_(p.shipping_postal_code||'');
+      if (!_spcR.ok) return {ok:false, error:_spcR.error};
+      p.shipping_name        = _snR.value;
+      p.shipping_address     = _saR.value;
+      p.shipping_district    = _sdR.value;
+      p.shipping_amphoe      = _sxR.value;
+      p.shipping_province    = _spR.value;
+      p.shipping_postal_code = _spcR.value;
+    }
+    if (p.customer_phone !== undefined) {
+      var _phR = normalizePhone_(p.customer_phone||'');
+      if (!_phR.ok) return {ok:false, error:_phR.error};
+      p.customer_phone = _phR.value;
+    }
     // --- END VALIDATION ---
     if (p.shipping_fee !== undefined)
       sh.getRange(rowNo, ORDER_COLS.indexOf('shipping_fee')+1).setValue(Number(p.shipping_fee));
@@ -6020,6 +6049,20 @@ function orderUpdateFieldsRpc(token, orderId, patch) {
       sh.getRange(rowNo, ORDER_COLS.indexOf('customer_notes')+1).setValue(encryptField_(p.customer_notes));
     if (p.total !== undefined)
       sh.getRange(rowNo, ORDER_COLS.indexOf('total')+1).setValue(Number(p.total));
+    if (hasAddrPatch) {
+      sh.getRange(rowNo, ORDER_COLS.indexOf('shipping_name')+1)        .setValue(encryptField_(p.shipping_name));
+      sh.getRange(rowNo, ORDER_COLS.indexOf('shipping_address')+1)     .setValue(encryptField_(p.shipping_address));
+      sh.getRange(rowNo, ORDER_COLS.indexOf('shipping_district')+1)    .setValue(encryptField_(p.shipping_district));
+      sh.getRange(rowNo, ORDER_COLS.indexOf('shipping_amphoe')+1)      .setValue(encryptField_(p.shipping_amphoe));
+      sh.getRange(rowNo, ORDER_COLS.indexOf('shipping_province')+1)    .setValue(encryptField_(p.shipping_province));
+      sh.getRange(rowNo, ORDER_COLS.indexOf('shipping_postal_code')+1) .setValue(encryptField_(p.shipping_postal_code));
+      var _addrHist = [];
+      try { _addrHist = JSON.parse(String(sh.getRange(rowNo, ORDER_COLS.indexOf('status_history_json')+1).getValue()||'[]')); } catch(_) {}
+      _addrHist.push({ status:'address_updated', timestamp:nowISO_(), note:'แก้ไขที่อยู่จัดส่ง' });
+      sh.getRange(rowNo, ORDER_COLS.indexOf('status_history_json')+1).setValue(JSON.stringify(_addrHist));
+    }
+    if (p.customer_phone !== undefined)
+      sh.getRange(rowNo, ORDER_COLS.indexOf('customer_phone')+1).setValue(encryptField_(p.customer_phone));
     sh.getRange(rowNo, ORDER_COLS.indexOf('updated_at')+1).setValue(nowISO_());
     auditLog_('order.fields.update', { category:['order'], type:['change'],
       outcome:'success', route:'order', rpc:'orderUpdateFieldsRpc',
@@ -6027,7 +6070,9 @@ function orderUpdateFieldsRpc(token, orderId, patch) {
       meta:{ resource_type:'order', order_id_hash: hashForLog_(orderId, 'o_'),
              shipping_fee_changed: p.shipping_fee !== undefined,
              total_changed: p.total !== undefined,
-             notes_changed: p.customer_notes !== undefined } }, _sess.logCtx);
+             notes_changed: p.customer_notes !== undefined,
+             address_changed: hasAddrPatch,
+             phone_changed: p.customer_phone !== undefined } }, _sess.logCtx);
     return { ok:true };
   } catch(err) {
     return { ok:false, error:String(err) };
