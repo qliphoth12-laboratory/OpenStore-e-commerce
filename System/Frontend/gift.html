@@ -753,6 +753,23 @@ function _buildVariantKey(selected) {
   var keys = Object.keys(selected || {}).filter(function(k){ return selected[k]; }).sort();
   return keys.map(function(k){ return k + '=' + selected[k]; }).join('|');
 }
+// Keep the visual selection and variant_key in sync. Each variant group starts
+// with its first available option instead of an empty "— group name —" value.
+function _withDefaultVariantSelections(product, selected) {
+  var current = selected || {};
+  var normalized = {};
+  ((product && product.variants) || []).forEach(function(group){
+    var groupName = String(group.name || '');
+    if (!groupName) return;
+    var labels = (group.options || []).map(function(option){
+      return String(option.label || '');
+    }).filter(function(label){ return !!label; });
+    if (!labels.length) return;
+    var existing = String(current[groupName] || '');
+    normalized[groupName] = labels.indexOf(existing) >= 0 ? existing : labels[0];
+  });
+  return normalized;
+}
 function _findProduct(id) { return _productsCache.filter(function(p){ return String(p.id) === String(id); })[0] || null; }
 function _findGift(id)    { return _itemsCache.filter(function(g){ return String(g.gift_id) === String(id); })[0] || null; }
 function _formatVariantKeyLabel(key) {
@@ -987,6 +1004,8 @@ function _renderVariantCondRows() {
   if (!_grVariantRows.length) { box.innerHTML = '<div class="text-muted small">— ยังไม่ได้เลือกรุ่น —</div>'; return; }
   box.innerHTML = _grVariantRows.map(function(row, idx){
     var p = _findProduct(row.product_id) || { title:'(สินค้าถูกลบ)', variants:[], image_drive_file_id:'', image_url:'' };
+    row.selected_variants = _withDefaultVariantSelections(p, row.selected_variants);
+    row.variant_key = _buildVariantKey(row.selected_variants);
     var fid = p.image_drive_file_id || _parseDriveFileId(p.image_url || '');
     var hasImg = !!(fid || p.image_url);
     var variantSelectsHtml = (p.variants||[]).map(function(group){
@@ -995,7 +1014,7 @@ function _renderVariantCondRows() {
         return '<option value="'+escHtml(o.label)+'"'+sel+'>'+escHtml(o.label)+'</option>';
       }).join('');
       return '<select class="form-select form-select-sm" data-var-group="'+escHtml(group.name)+'" data-var-row="'+idx+'" style="width:auto;min-width:100px">'
-        + '<option value="">— '+escHtml(group.name)+' —</option>' + opts + '</select>';
+        + (opts ? opts : '<option value="">— '+escHtml(group.name)+' —</option>') + '</select>';
     }).join(' ');
     return '<div class="cond-row" style="flex-wrap:wrap">'
       + '<div class="picker-thumb-wrap">'+(hasImg?'<img class="picker-thumb" data-fid="'+escHtml(fid)+'" data-url="'+escHtml(p.image_url||'')+'">':'<i class="bi bi-box picker-thumb-icon"></i>')+'</div>'
@@ -1294,7 +1313,13 @@ document.addEventListener('DOMContentLoaded', function(){
   });
   document.getElementById('btnAddVariantCond').addEventListener('click', function(){
     openProductPicker(function(prod){
-      _grVariantRows.push({ product_id: prod.id, selected_variants: {}, variant_key: '', min_qty: 1 });
+      var selected = _withDefaultVariantSelections(prod, {});
+      _grVariantRows.push({
+        product_id: prod.id,
+        selected_variants: selected,
+        variant_key: _buildVariantKey(selected),
+        min_qty: 1
+      });
       _renderVariantCondRows();
       _productPickerModal.hide();
     });

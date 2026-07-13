@@ -820,7 +820,7 @@ function getDefaultSiteConfig_() {
       sidebarPillHoverBorderW: 0,
       sidebarPillHoverOpacity: 1,
       headerBg: "linear-gradient(to bottom,   rgba(0,0,0,.65) 0%,   rgba(0,0,0,.45) 40%,   rgba(0,0,0,.15) 75%,   rgba(0,0,0,0) 100%)",
-      bannerMask: "linear-gradient()",
+      bannerMask: "linear-gradient(to right, rgba(15, 23, 42, 0.75) 0%, rgba(15, 23, 42, 0.55) 40%, rgba(15, 23, 42, 0.15) 75%, rgba(15, 23, 42, 0) 100%)",
       bannerParallax: { enabled: false, strength: 0.35, scale: 1.08, start: "bottom" },
       cardBg: "#414348",
       cardBorder: "#b8b8b8",
@@ -1547,13 +1547,14 @@ function productCreateRpc(token, payload){
     p.image.url = iuR.value;
   }
   if (Array.isArray(p.variants)) {
-    var cleanVars = [];
-    for (var vi=0; vi<p.variants.length; vi++) {
-      var vgR = sanitizeVariantGroup_(p.variants[vi]);
-      if (!vgR.ok) return { ok:false, error:vgR.error };
-      cleanVars.push(vgR.value);
+    var variantsR = sanitizeVariantGroups_(p.variants);
+    if (!variantsR.ok) return { ok:false, error:variantsR.error };
+    p.variants = variantsR.value;
+    if (p.variants.length) {
+      var derivedPrice = deriveVariantProductPrice_(p.variants, p.price);
+      if (derivedPrice === null) return { ok:false, error:'ไม่สามารถคำนวณราคาสินค้าจาก Variant ได้' };
+      p.price = derivedPrice;
     }
-    p.variants = cleanVars;
   }
   if (Array.isArray(p.extra_images)) {
     for (var ei=0; ei<p.extra_images.length; ei++) {
@@ -1661,13 +1662,9 @@ function productUpdateRpc(token, id, patch){
     patch.image.url = iuR.value;
   }
   if (Array.isArray(patch.variants)) {
-    var cleanVars = [];
-    for (var vi=0; vi<patch.variants.length; vi++) {
-      var vgR = sanitizeVariantGroup_(patch.variants[vi]);
-      if (!vgR.ok) return { ok:false, error:vgR.error };
-      cleanVars.push(vgR.value);
-    }
-    patch.variants = cleanVars;
+    var variantsR = sanitizeVariantGroups_(patch.variants);
+    if (!variantsR.ok) return { ok:false, error:variantsR.error };
+    patch.variants = variantsR.value;
   }
   if (Array.isArray(patch.extra_images)) {
     for (var ei=0; ei<patch.extra_images.length; ei++) {
@@ -1677,6 +1674,23 @@ function productUpdateRpc(token, id, patch){
         if (!eiR.ok) return { ok:false, error:eiR.error };
         eimg.url = eiR.value;
       }
+    }
+  }
+
+  // Keep product.price authoritative for variant products without changing the
+  // RPC payload shape. Recompute when variants are submitted, or when a caller
+  // tries to patch only the root price of an existing variant product.
+  var variantsForDerivedPrice = Array.isArray(patch.variants) ? patch.variants : rec.variants;
+  if (Array.isArray(variantsForDerivedPrice) && variantsForDerivedPrice.length &&
+      (patch.variants !== undefined || patch.price !== undefined)) {
+    var derivedPrice = deriveVariantProductPrice_(variantsForDerivedPrice, rec.price);
+    if (derivedPrice === null) {
+      if (patch.variants !== undefined) return { ok:false, error:'ไม่สามารถคำนวณราคาสินค้าจาก Variant ได้' };
+      // Do not let a price-only patch corrupt a legacy variant record that cannot
+      // be derived. Preserve its current root price until its variants are edited.
+      delete patch.price;
+    } else {
+      patch.price = derivedPrice;
     }
   }
   // --- END VALIDATION ---
@@ -2723,9 +2737,55 @@ function normalizeEnum_(value, allowed, fieldName) {
   return { ok:true, value: s };
 }
 
-/* ---------- sanitizeVariantGroup_(g) ----------
- * Schema validation for a single variant group object.
- */
+/* ---------- Variant validation and derived pricing ---------- */
+function deriveVariantProductPrice_(variants, basePrice) {
+  if (!Array.isArray(variants) || !variants.length) return null;
+  var rootPrice = Number(basePrice || 0);
+  var effectiveMin = isFinite(rootPrice) ? rootPrice : 0;
+
+  // Pricing throughout checkout/promotions is last-group-wins. An absolute
+  // option price replaces the prior group price; legacy delta prices are based
+  // on the product root price. Tracking the minimum per group yields the minimum
+  // purchasable combination without building a potentially huge cartesian set.
+  for (var gi=0; gi<variants.length; gi++) {
+    var options = variants[gi] && Array.isArray(variants[gi].options) ? variants[gi].options : [];
+    if (!options.length) return null;
+    var groupMin = Infinity;
+    for (var oi=0; oi<options.length; oi++) {
+      var opt = options[oi] || {};
+      var price;
+      if (opt.price !== undefined && opt.price !== null && String(opt.price).trim() !== '') {
+        price = Number(opt.price);
+      } else if (opt.delta !== undefined && opt.delta !== null && String(opt.delta).trim() !== '') {
+        price = rootPrice + Number(opt.delta);
+      } else {
+        price = effectiveMin;
+      }
+      if (!isFinite(price) || price <= 0) return null;
+      if (price < groupMin) groupMin = price;
+    }
+    effectiveMin = groupMin;
+  }
+  return isFinite(effectiveMin) && effectiveMin > 0 ? effectiveMin : null;
+}
+
+function sanitizeVariantGroups_(groups) {
+  if (!Array.isArray(groups)) return { ok:false, error:'variants ต้องเป็น array' };
+  var cleanGroups = [];
+  var seenGroupNames = {};
+  for (var i=0; i<groups.length; i++) {
+    var groupR = sanitizeVariantGroup_(groups[i]);
+    if (!groupR.ok) return groupR;
+    var groupKey = '$' + String(groupR.value.name).toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(seenGroupNames, groupKey)) {
+      return { ok:false, error:'ชื่อกลุ่ม variant "' + groupR.value.name + '" ซ้ำกัน' };
+    }
+    seenGroupNames[groupKey] = true;
+    cleanGroups.push(groupR.value);
+  }
+  return { ok:true, value:cleanGroups };
+}
+
 function sanitizeVariantGroup_(g) {
   if (!g || typeof g !== 'object') return { ok:false, error: 'variant group ไม่ถูกต้อง' };
 
@@ -2743,14 +2803,27 @@ function sanitizeVariantGroup_(g) {
   }
 
   var cleanOptions = [];
+  var seenOptionLabels = {};
   for (var i = 0; i < g.options.length; i++) {
     var opt = g.options[i];
     if (!opt || typeof opt !== 'object') return { ok:false, error: 'variant option ที่ ' + i + ': ไม่ถูกต้อง' };
     var labelR = normalizePlainText_(opt.label, { maxLen:VLEN.SHORT, fieldName:'variant.option.label' });
     if (!labelR.ok) return labelR;
+    var optionKey = '$' + String(labelR.value).toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(seenOptionLabels, optionKey)) {
+      return { ok:false, error:'variant "' + nameR.value + '": ชื่อตัวเลือก "' + labelR.value + '" ซ้ำกัน' };
+    }
+    seenOptionLabels[optionKey] = true;
+    if (opt.price === undefined || opt.price === null || String(opt.price).trim() === '') {
+      return { ok:false, error: 'variant "' + nameR.value + '" ตัวเลือกที่ ' + (i + 1) + ': กรุณาระบุราคา' };
+    }
+    var optionPrice = Number(opt.price);
+    if (!isFinite(optionPrice) || optionPrice <= 0) {
+      return { ok:false, error: 'variant "' + nameR.value + '" ตัวเลือกที่ ' + (i + 1) + ': ราคาต้องมากกว่า 0' };
+    }
     var cleanOpt = {
       label:        labelR.value,
-      price:        Number(opt.price || 0),
+      price:        optionPrice,
       weight_grams: Number(opt.weight_grams || 0),
       stock:        opt.stock !== undefined ? Number(opt.stock) : -1
     };

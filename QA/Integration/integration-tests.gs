@@ -902,8 +902,8 @@ function qaIntegrationSpecs_() {
       area: 'products',
       type: 'write',
       risk: 'high',
-      description: 'สร้างสินค้า QA ที่มี variant พร้อมราคา น้ำหนัก และสต็อก จากนั้นแก้ไข option แล้วอ่านกลับ',
-      expected: 'ข้อมูล variant หลังอ่านกลับต้องมีราคา น้ำหนัก และสต็อกตามที่ตั้งไว้',
+      description: 'สร้างและแก้ไขสินค้า QA ที่มี variant ตรวจราคา derived แล้วลองส่งราคาไม่ถูกต้อง ชื่อกลุ่มซ้ำ และชื่อตัวเลือกซ้ำ',
+      expected: 'backend ต้องคำนวณราคาหลักถูกต้อง และปฏิเสธราคา/ชื่อ variant ที่ไม่ถูกต้องโดยไม่เปลี่ยนข้อมูลเดิม',
       requiresRealWrite: true,
       requiresAdminToken: true,
       run: function(ctx) { qaRequireRealWrite_(ctx); return qaRunProductVariantReadbackFlow_(ctx); }
@@ -3486,6 +3486,7 @@ function qaRunProductScheduleVisibilityFlow_(ctx, label, startsAt, endsAt, shoul
 
 function qaRunProductVariantReadbackFlow_(ctx) {
   var fx = qaCreateOrderFixture_(ctx, 'VariantReadback', -1, {
+    price: 999,
     variants: [{ name:'Size', type:'text', options:[
       { label:'S', price:111, weight_grams:50, stock:3 },
       { label:'M', price:222, weight_grams:80, stock:4 }
@@ -3497,17 +3498,45 @@ function qaRunProductVariantReadbackFlow_(ctx) {
     var record = qaGetProductRecord_(fx.product.id);
     var optM = ((record.variants[0] || {}).options || []).filter(function(o){ return o.label === 'M'; })[0];
     qaAssert_(optM && Number(optM.price) === 222 && Number(optM.weight_grams) === 80 && Number(optM.stock) === 4, 'variant หลังสร้างไม่ถูกต้อง', record);
-    qaStep_(steps, 'อ่าน variant หลังสร้าง', 'ok', { option_m:optM });
-    var upd = qaCall_('productUpdateRpc', [fx.token, fx.product.id, { variants:[{ name:'Size', type:'text', options:[
-      { label:'S', price:111, weight_grams:50, stock:3 },
+    qaAssert_(Number(record.price) === 111, 'ราคาหลักหลังสร้างต้อง derive จาก variant ที่ถูกที่สุด', record);
+    qaStep_(steps, 'อ่าน variant และราคา derived หลังสร้าง', 'ok', { product_price:record.price, option_m:optM });
+    var upd = qaCall_('productUpdateRpc', [fx.token, fx.product.id, { price:9999, variants:[{ name:'Size', type:'text', options:[
+      { label:'S', price:444, weight_grams:50, stock:3 },
       { label:'M', price:333, weight_grams:90, stock:6 }
     ]}] }]);
     qaAssertOk_(upd);
     var after = qaGetProductRecord_(fx.product.id);
     var optM2 = ((after.variants[0] || {}).options || []).filter(function(o){ return o.label === 'M'; })[0];
     qaAssert_(optM2 && Number(optM2.price) === 333 && Number(optM2.stock) === 6, 'variant หลังแก้ไขไม่ถูกต้อง', after);
-    qaStep_(steps, 'แก้ไขและอ่าน variant กลับ', 'ok', { option_m:optM2 });
-    output = { steps:steps, product_id:fx.product.id, option_m:optM2 };
+    qaAssert_(Number(after.price) === 333, 'ราคาหลักหลังแก้ไขต้อง derive ใหม่และไม่เชื่อราคาจาก client', after);
+    qaStep_(steps, 'แก้ไขและอ่านราคา derived กลับ', 'ok', { product_price:after.price, option_m:optM2 });
+
+    var invalid = qaCall_('productUpdateRpc', [fx.token, fx.product.id, { variants:[{ name:'Size', type:'text', options:[
+      { label:'Broken', price:0, weight_grams:0, stock:-1 }
+    ]}] }]);
+    qaAssert_(invalid && invalid.ok === false, 'backend ต้องปฏิเสธ variant ราคา 0', invalid);
+    var afterInvalid = qaGetProductRecord_(fx.product.id);
+    qaAssert_(Number(afterInvalid.price) === 333 && ((afterInvalid.variants[0] || {}).options || []).length === 2,
+      'ข้อมูลสินค้าต้องไม่เปลี่ยนเมื่อ variant validation ไม่ผ่าน', afterInvalid);
+    qaStep_(steps, 'ปฏิเสธราคา variant ที่ไม่ถูกต้องโดยไม่แก้ข้อมูลเดิม', 'ok', { response:invalid });
+
+    var duplicateOptions = qaCall_('productUpdateRpc', [fx.token, fx.product.id, { variants:[{ name:'Size', type:'text', options:[
+      { label:'M', price:333, weight_grams:90, stock:6 },
+      { label:' m ', price:444, weight_grams:50, stock:3 }
+    ]}] }]);
+    qaAssert_(duplicateOptions && duplicateOptions.ok === false, 'backend ต้องปฏิเสธชื่อตัวเลือกซ้ำแบบ trim/case-insensitive', duplicateOptions);
+    qaStep_(steps, 'ปฏิเสธชื่อตัวเลือกซ้ำภายในกลุ่มเดียวกัน', 'ok', { response:duplicateOptions });
+
+    var duplicateGroups = qaCall_('productUpdateRpc', [fx.token, fx.product.id, { variants:[
+      { name:'Size', type:'text', options:[{ label:'M', price:333, weight_grams:90, stock:6 }] },
+      { name:' size ', type:'text', options:[{ label:'Black', price:444, weight_grams:50, stock:3 }] }
+    ] }]);
+    qaAssert_(duplicateGroups && duplicateGroups.ok === false, 'backend ต้องปฏิเสธชื่อกลุ่มซ้ำแบบ trim/case-insensitive', duplicateGroups);
+    var afterDuplicates = qaGetProductRecord_(fx.product.id);
+    qaAssert_(Number(afterDuplicates.price) === 333 && ((afterDuplicates.variants[0] || {}).options || []).length === 2,
+      'ข้อมูลสินค้าต้องไม่เปลี่ยนเมื่อชื่อ variant ซ้ำ', afterDuplicates);
+    qaStep_(steps, 'ปฏิเสธชื่อกลุ่มซ้ำโดยไม่แก้ข้อมูลเดิม', 'ok', { response:duplicateGroups });
+    output = { steps:steps, product_id:fx.product.id, product_price:afterDuplicates.price, option_m:optM2 };
   } catch (err) { caught = err; qaStep_(steps, 'เกิดข้อผิดพลาด', 'failed', { error:String(err && err.message || err) }); }
   var cleanup = qaCleanupProductAndShipping_(fx.token, fx.product.id, fx.shipping);
   qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);

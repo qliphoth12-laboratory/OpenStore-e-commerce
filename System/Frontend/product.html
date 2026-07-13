@@ -243,7 +243,7 @@
               <label class="form-label">ชื่อสินค้า</label>
               <input required name="title" class="form-control" maxlength="120">
             </div>
-            <div class="col-md-6">
+            <div class="col-md-6" id="priceCol">
               <label class="form-label">ราคา (บาท)</label>
               <input required name="price" type="number" min="0" step="1" class="form-control">
             </div>
@@ -518,6 +518,7 @@
     let _searchDebounce = null;
     let editingId = null, deletingId = null;
     let variantGroups = []; // [{name, type:'text'|'image', options:[{label,price,weight_grams,image}]}]
+    let standaloneProductPrice = '';
     let extraImagesState = []; // [{driveFileId, url, dataURL}]
 
     function escHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -1190,6 +1191,7 @@
       variantGroups.forEach((group, gi) => {
         const card = document.createElement('div');
         card.className = 'border rounded-3 p-3 bg-white';
+        card.dataset.variantGroup = gi;
         // header: ชื่อ variant + type + ปุ่มลบ
         const hdr = document.createElement('div');
         hdr.className = 'd-flex gap-2 align-items-center mb-2';
@@ -1330,9 +1332,12 @@
           const priceSpan = document.createElement('span');
           priceSpan.className = 'input-group-text'; priceSpan.textContent = '฿';
           const priceInput = document.createElement('input');
-          priceInput.type = 'number'; priceInput.min = '0'; priceInput.step = '1';
+          // Range is enforced by the SweetAlert validation below. Do not set
+          // min here, otherwise native form validation would block submit before
+          // the custom alert can explain zero/negative prices.
+          priceInput.type = 'number'; priceInput.step = '1';
           priceInput.className = 'form-control'; priceInput.placeholder = 'ราคา';
-          priceInput.value = Number(opt.price) || 0;
+          priceInput.value = (opt.price !== undefined && opt.price !== null && opt.price !== '') ? opt.price : '';
           priceInput.dataset.vi = gi; priceInput.dataset.oi = oi; priceInput.dataset.field = 'price';
           priceGroup.appendChild(priceSpan); priceGroup.appendChild(priceInput);
           botRow.appendChild(priceGroup);
@@ -1379,18 +1384,65 @@
       _syncProductLevelInputs();
     }
 
+    // Variant options store absolute prices. Checkout resolves multiple groups with
+    // last-group-wins semantics, so the minimum purchasable price is the minimum
+    // valid price in the last group (after every preceding group has been selected).
+    function _deriveVariantProductPrice(groups) {
+      if (!Array.isArray(groups) || !groups.length) return null;
+      let effectiveMin = null;
+      for (const group of groups) {
+        const options = Array.isArray(group?.options) ? group.options : [];
+        if (!options.length) return null;
+        let groupMin = Infinity;
+        for (const opt of options) {
+          const rawPrice = opt?.price;
+          const price = Number(rawPrice);
+          if (rawPrice === '' || rawPrice === null || rawPrice === undefined || !Number.isFinite(price) || price <= 0) return null;
+          groupMin = Math.min(groupMin, price);
+        }
+        effectiveMin = groupMin;
+      }
+      return Number.isFinite(effectiveMin) ? effectiveMin : null;
+    }
+
     function _syncProductLevelInputs() {
       const hasVariants = variantGroups.length > 0;
+      const priceInput  = document.querySelector('[name="price"]');
       const weightInput = document.querySelector('[name="weight_grams"]');
       const stockInput  = document.querySelector('[name="stock"]');
+      let priceHintEl = document.getElementById('variantPriceHint');
+      if (!priceHintEl) {
+        priceHintEl = document.createElement('div');
+        priceHintEl.id = 'variantPriceHint';
+        priceHintEl.style.cssText = 'font-size:.72rem;color:#64748B;margin-top:3px;display:none';
+        priceHintEl.innerHTML = '<i class="bi bi-lock-fill me-1"></i>คำนวณจากราคาตัวเลือกสินค้า';
+        const priceCol = document.getElementById('priceCol');
+        if (priceCol) priceCol.appendChild(priceHintEl);
+      }
       let hintEl = document.getElementById('variantLevelHint');
       if (!hintEl) {
         hintEl = document.createElement('div');
         hintEl.id = 'variantLevelHint';
-        hintEl.style.cssText = 'font-size:.72rem;color:#9333ea;margin-top:3px;display:none';
+        hintEl.style.cssText = 'font-size:.72rem;color:#64748B;margin-top:3px;display:none';
         hintEl.innerHTML = '<i class="bi bi-info-circle me-1"></i>กำหนดได้ที่ตัวเลือกสินค้า';
         const stockCol = document.getElementById('stockCol');
         if (stockCol) stockCol.appendChild(hintEl);
+      }
+      if (priceInput) {
+        if (hasVariants) {
+          if (priceInput.dataset.variantLocked !== 'true') standaloneProductPrice = priceInput.value;
+          priceInput.dataset.variantLocked = 'true';
+          priceInput.disabled = true;
+          priceInput.placeholder = 'คำนวณอัตโนมัติ';
+          const derivedPrice = _deriveVariantProductPrice(variantGroups);
+          priceInput.value = derivedPrice === null ? '' : String(derivedPrice);
+        } else {
+          if (priceInput.dataset.variantLocked === 'true') priceInput.value = standaloneProductPrice;
+          delete priceInput.dataset.variantLocked;
+          priceInput.disabled = false;
+          priceInput.placeholder = '';
+        }
+        priceHintEl.style.display = hasVariants ? '' : 'none';
       }
       if (weightInput) {
         weightInput.disabled = hasVariants;
@@ -1402,6 +1454,111 @@
         stockInput.placeholder = hasVariants ? 'กำหนดที่ตัวเลือก' : '-1';
         if (hasVariants) stockInput.value = '';
         hintEl.style.display = hasVariants ? '' : 'none';
+      }
+    }
+
+    function _collectVariantValidationIssues() {
+      const issues = [];
+      const groupNames = new Map();
+      variantGroups.forEach((group, gi) => {
+        const groupNo = gi + 1;
+        const groupName = String(group?.name || '').trim();
+        const groupKey = groupName.toLowerCase();
+        if (!groupName) {
+          issues.push({
+            message: 'Variant กลุ่มที่ ' + groupNo + ': กรุณาใส่ชื่อกลุ่ม',
+            selector: '[data-vi="' + gi + '"][data-field="name"]'
+          });
+        } else {
+          if (!groupNames.has(groupKey)) groupNames.set(groupKey, { label: groupName, indexes: [] });
+          groupNames.get(groupKey).indexes.push(gi);
+        }
+        const options = Array.isArray(group?.options) ? group.options : [];
+        if (!options.length) {
+          issues.push({
+            message: 'Variant กลุ่มที่ ' + groupNo + ': ต้องมีตัวเลือกอย่างน้อย 1 รายการ',
+            selector: '[data-add-opt="' + gi + '"]',
+            groupSelector: '[data-variant-group="' + gi + '"]'
+          });
+          return;
+        }
+        const optionNames = new Map();
+        options.forEach((opt, oi) => {
+          const optionNo = oi + 1;
+          const optionLabel = String(opt?.label || '').trim();
+          const optionKey = optionLabel.toLowerCase();
+          if (!optionLabel) {
+            issues.push({
+              message: 'Variant กลุ่มที่ ' + groupNo + ' ตัวเลือกที่ ' + optionNo + ': กรุณาใส่ชื่อตัวเลือก',
+              selector: '[data-vi="' + gi + '"][data-oi="' + oi + '"][data-field="label"]'
+            });
+          } else {
+            if (!optionNames.has(optionKey)) optionNames.set(optionKey, { label: optionLabel, indexes: [] });
+            optionNames.get(optionKey).indexes.push(oi);
+          }
+          const rawPrice = opt?.price;
+          const price = Number(rawPrice);
+          if (rawPrice === '' || rawPrice === null || rawPrice === undefined || !Number.isFinite(price) || price <= 0) {
+            issues.push({
+              message: 'Variant กลุ่มที่ ' + groupNo + ' ตัวเลือกที่ ' + optionNo + ': ราคาต้องมากกว่า 0',
+              selector: '[data-vi="' + gi + '"][data-oi="' + oi + '"][data-field="price"]'
+            });
+          }
+        });
+        optionNames.forEach(entry => {
+          if (entry.indexes.length < 2) return;
+          const selectors = entry.indexes.map(oi =>
+            '[data-vi="' + gi + '"][data-oi="' + oi + '"][data-field="label"]'
+          );
+          issues.push({
+            message: 'Variant กลุ่มที่ ' + groupNo + ': ชื่อตัวเลือก “' + entry.label + '” ซ้ำกัน',
+            selector: selectors[1],
+            selectors
+          });
+        });
+      });
+      groupNames.forEach(entry => {
+        if (entry.indexes.length < 2) return;
+        const selectors = entry.indexes.map(gi => '[data-vi="' + gi + '"][data-field="name"]');
+        issues.push({
+          message: 'ชื่อกลุ่ม Variant “' + entry.label + '” ซ้ำกัน',
+          selector: selectors[1],
+          selectors
+        });
+      });
+      return issues;
+    }
+
+    function _clearVariantValidationMarkers() {
+      document.querySelectorAll('#variantEditor .is-invalid').forEach(el => el.classList.remove('is-invalid'));
+      document.querySelectorAll('#variantEditor .border-danger').forEach(el => el.classList.remove('border-danger'));
+    }
+
+    async function _showVariantValidationIssues(issues) {
+      _clearVariantValidationMarkers();
+      issues.forEach(issue => {
+        const selectors = issue.selectors || [issue.selector];
+        selectors.forEach(selector => {
+          const field = document.querySelector('#variantEditor ' + selector);
+          if (field) field.classList.add('is-invalid');
+        });
+        if (issue.groupSelector) {
+          const group = document.querySelector('#variantEditor ' + issue.groupSelector);
+          if (group) group.classList.add('border-danger');
+        }
+      });
+      await Swal.fire({
+        icon: 'warning',
+        title: 'ข้อมูล Variant ไม่ถูกต้อง',
+        html: '<div class="text-start small">กรุณาตรวจสอบข้อมูลต่อไปนี้<ul class="mb-0 mt-2">' +
+          issues.map(issue => '<li>' + escHtml(issue.message) + '</li>').join('') + '</ul></div>',
+        confirmButtonText: 'ตกลง',
+        confirmButtonColor: '#f59e0b'
+      });
+      const first = issues[0] && document.querySelector('#variantEditor ' + issues[0].selector);
+      if (first) {
+        first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (typeof first.focus === 'function') first.focus({ preventScroll: true });
       }
     }
 
@@ -1495,11 +1652,20 @@
     document.getElementById('variantEditor').addEventListener('input', e => {
       const el = e.target, vi = el.dataset.vi, oi = el.dataset.oi, field = el.dataset.field;
       if (vi === undefined || !field) return;
+      if (field === 'name' || field === 'label') _clearVariantValidationMarkers();
+      else el.classList.remove('is-invalid');
       if (oi !== undefined) {
-        variantGroups[+vi].options[+oi][field] = (field === 'price' || field === 'weight_grams' || field === 'stock') ? (el.value === '' ? (field === 'stock' ? -1 : 0) : Number(el.value)) : el.value;
+        if (field === 'price') {
+          variantGroups[+vi].options[+oi][field] = el.value === '' ? '' : Number(el.value);
+        } else if (field === 'weight_grams' || field === 'stock') {
+          variantGroups[+vi].options[+oi][field] = el.value === '' ? (field === 'stock' ? -1 : 0) : Number(el.value);
+        } else {
+          variantGroups[+vi].options[+oi][field] = el.value;
+        }
       } else {
         variantGroups[+vi][field] = el.value;
       }
+      if (field === 'price') _syncProductLevelInputs();
     });
     // vtype toggle buttons (click) + file input change (variant image)
     document.getElementById('variantEditor').addEventListener('click', e => {
@@ -1547,11 +1713,11 @@
       const addO = e.target.closest('[data-add-opt]');
       if (delG) { variantGroups.splice(+delG.dataset.delGroup, 1); renderVariantEditor(); }
       if (delO) { const [vi, oi] = delO.dataset.delOpt.split('-').map(Number); variantGroups[vi].options.splice(oi, 1); renderVariantEditor(); }
-      if (addO) { variantGroups[+addO.dataset.addOpt].options.push({ label: '', price: 0, weight_grams: 0, stock: -1 }); renderVariantEditor(); }
+      if (addO) { variantGroups[+addO.dataset.addOpt].options.push({ label: '', price: '', weight_grams: 0, stock: -1 }); renderVariantEditor(); }
     });
     // ปุ่มเพิ่ม Variant group
     document.getElementById('btnAddVariant')?.addEventListener('click', () => {
-      variantGroups.push({ name: '', type: 'image', options: [{ label: '', price: 0, weight_grams: 0, stock: -1, image: '' }] });
+      variantGroups.push({ name: '', type: 'image', options: [{ label: '', price: '', weight_grams: 0, stock: -1, image: '' }] });
       renderVariantEditor();
     });
 
@@ -1561,6 +1727,8 @@
     function openAdd() {
       editingId = null; modalTitleEl.textContent = 'เพิ่มสินค้า';
       form.reset(); preview.src = ''; preview.classList.remove('loaded'); imageDataURL = '';
+      standaloneProductPrice = '';
+      delete form.price.dataset.variantLocked;
       _updateBadgePreview('');
       document.getElementById('modeUrl').checked = true; setMode('url');
       document.getElementById('saleMode').value = 'disabled';
@@ -1579,6 +1747,8 @@
       const p = items.find(x => String(x.id) === String(id)); if (!p) return;
       editingId = id; modalTitleEl.textContent = 'แก้ไขสินค้า';
       form.title.value = p.title || ''; form.desc.value = p.desc || ''; form.price.value = p.price || 0;
+      standaloneProductPrice = form.price.value;
+      delete form.price.dataset.variantLocked;
       form.badge.value = p.badge || '';
       _updateBadgePreview(p.badge || '');
       // Sale mode (single source of truth)
@@ -1731,16 +1901,21 @@
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      // สร้าง variants จาก variantGroups (UI state) — filter group/option ที่ไม่มีชื่อออก
-      const variants = variantGroups
-        .filter(g => String(g.name).trim())
-        .map(g => ({
+      const variantIssues = _collectVariantValidationIssues();
+      if (variantIssues.length) {
+        await _showVariantValidationIssues(variantIssues);
+        return;
+      }
+      _clearVariantValidationMarkers();
+
+      // Serialize only after raw UI state passes validation. Never silently drop
+      // an incomplete group or option, because that can turn a variant product
+      // into a different product shape without the admin noticing.
+      const variants = variantGroups.map(g => ({
           name: String(g.name).trim(),
           type: g.type || 'text',
-          options: (g.options || [])
-            .filter(o => String(o.label).trim())
-            .map(o => {
-              const opt = { label: String(o.label).trim(), price: Number(o.price)||0, weight_grams: Number(o.weight_grams)||0, stock: (o.stock !== undefined ? Number(o.stock) : -1) };
+          options: (g.options || []).map(o => {
+              const opt = { label: String(o.label).trim(), price: Number(o.price), weight_grams: Number(o.weight_grams)||0, stock: (o.stock !== undefined ? Number(o.stock) : -1) };
               if (g.type === 'image') {
                 if (o.imageDataURL) {
                   const mime = o.imageDataURL.substring(5, o.imageDataURL.indexOf(';')) || 'image/jpeg';
@@ -1772,7 +1947,7 @@
       const payload = {
         title: form.title.value.trim(),
         desc: form.desc.value.trim(),
-        price: Math.max(0, Number(form.price.value || 0)),
+        price: variants.length > 0 ? Number(_deriveVariantProductPrice(variantGroups)) : Math.max(0, Number(form.price.value || 0)),
         badge: form.badge.value.trim(),
         weight_grams: Number(form.weight_grams.value || 0),
         stock: variants.length > 0 ? 0 : (form.stock.value !== '' ? Number(form.stock.value) : -1),

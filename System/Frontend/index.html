@@ -3482,7 +3482,7 @@
         sidebarPillHoverBorderW: 0,
         sidebarPillHoverOpacity: 1,
         headerBg: "linear-gradient(to bottom,   rgba(0,0,0,.65) 0%,   rgba(0,0,0,.45) 40%,   rgba(0,0,0,.15) 75%,   rgba(0,0,0,0) 100%)",
-        bannerMask: "linear-gradient()",
+        bannerMask: "linear-gradient(to right, rgba(15, 23, 42, 0.75) 0%, rgba(15, 23, 42, 0.55) 40%, rgba(15, 23, 42, 0.15) 75%, rgba(15, 23, 42, 0) 100%)",
         bannerParallax: { enabled: false, strength: 0.35, scale: 1.08, start: "bottom" },
         cardBg: "#414348",
         cardBorder: "#b8b8b8",
@@ -4237,20 +4237,42 @@
         heroBg.innerHTML = '<img id="heroImg" alt="banner">';
       }
       const heroImg = document.getElementById('heroImg');
+      const _bannerUrl = String(SHOP.bannerImage || '');
+      const _bannerFid = SHOP.bannerImageDriveFileId || (_bannerUrl.match(/[?&]id=([^&]+)/)?.[1] ?? '');
+      const _bannerRequestKey = _bannerFid + '|' + _bannerUrl;
+      heroImg.dataset.bannerRequestKey = _bannerRequestKey;
+      heroBg.classList.remove('loaded');
       heroImg.style.cssText = 'opacity:0;transition:opacity .5s ease;';
       const _onBannerLoad = () => {
+        if (heroImg.dataset.bannerRequestKey !== _bannerRequestKey) return;
         heroImg.style.opacity = '1';
         heroBg.classList.add('loaded');
       };
+      const _onBannerError = () => {
+        if (heroImg.dataset.bannerRequestKey !== _bannerRequestKey) return;
+        heroImg.style.opacity = '0';
+        heroBg.classList.add('loaded');
+      };
       heroImg.addEventListener('load', _onBannerLoad, { once: true });
+      heroImg.addEventListener('error', _onBannerError, { once: true });
       // Load banner — use cached Drive base64 if available (also extract fid from Drive URL)
-      const _bannerFid = SHOP.bannerImageDriveFileId || (SHOP.bannerImage?.match(/[?&]id=([^&]+)/)?.[1] ?? '');
-      if (_bannerFid && GAS.available) {
+      if (!_bannerFid && !_bannerUrl) {
+        heroImg.removeAttribute('src');
+        // No image is a completed state, not a loading state. Keep the banner
+        // color/mask visible without running the shimmer forever.
+        heroBg.classList.add('loaded');
+      } else if (_bannerFid && GAS.available) {
         driveFileToDataUrlCached(_bannerFid).then(url => {
-          heroImg.src = url || (SHOP.bannerImage?.includes('drive.google.com') ? '' : SHOP.bannerImage) || '';
+          if (heroImg.dataset.bannerRequestKey !== _bannerRequestKey) return;
+          const nextSrc = url || (_bannerUrl.includes('drive.google.com') ? '' : _bannerUrl);
+          if (nextSrc) heroImg.src = nextSrc;
+          else {
+            heroImg.removeAttribute('src');
+            heroBg.classList.add('loaded');
+          }
         });
-      } else if (!SHOP.bannerImage?.includes('drive.google.com')) {
-        heroImg.src = SHOP.bannerImage;
+      } else if (!_bannerUrl.includes('drive.google.com')) {
+        heroImg.src = _bannerUrl;
       }
       bannerTitle.textContent = SHOP.bannerTitle; bannerSubtitle.textContent = SHOP.bannerSubtitle;
       productsTitle.textContent = SHOP.productsTitle || "รายการสินค้า";

@@ -3730,8 +3730,36 @@
                           type="color" class="form-control form-control-color"></div>
                       <div class="col-12"><label class="form-label">คำอธิบายใต้หัวข้อ</label><textarea id="inBannerSub"
                           class="form-control" rows="2"></textarea></div>
-                      <div class="col-12"><label class="form-label">มาสก์ไล่สีหน้าแบนเนอร์</label><input
-                          id="inBannerMask" class="form-control" placeholder="linear-gradient(...)"></div>
+                      <div class="col-12">
+                        <label class="form-label">พื้นหลังทับแบนเนอร์</label>
+                        <div id="bmBuilder" class="border rounded p-2" style="background:#fafafa">
+                          <div class="row g-2 align-items-center mb-2">
+                            <div class="col-auto"><label class="form-label mb-0 small">ทิศทาง</label></div>
+                            <div class="col">
+                              <select id="bmDir" class="form-select form-select-sm">
+                                <option value="to bottom">บนลงล่าง ↓</option>
+                                <option value="to top">ล่างขึ้นบน ↑</option>
+                                <option value="to right">ซ้ายไปขวา →</option>
+                                <option value="to left">ขวาไปซ้าย ←</option>
+                                <option value="135deg">ทแยง ↘</option>
+                                <option value="45deg">ทแยง ↗</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div id="bmStops" class="d-flex flex-column gap-2"></div>
+                          <div class="d-flex align-items-center mt-2">
+                            <button type="button" id="bmAddStop" class="btn btn-sm btn-outline-secondary flex-shrink-0"><i class="bi bi-plus-lg"></i> เพิ่มจุดสี</button>
+                            <div id="bmPreview" class="rounded border flex-grow-1 ms-2" style="height:34px;background-image:linear-gradient(45deg,#e9e9e9 25%,transparent 25%,transparent 75%,#e9e9e9 75%),linear-gradient(45deg,#e9e9e9 25%,#fff 25%,#fff 75%,#e9e9e9 75%);background-size:16px 16px;background-position:0 0,8px 8px;overflow:hidden">
+                              <div id="bmPreviewFill" style="width:100%;height:100%"></div>
+                            </div>
+                          </div>
+                          <div id="bmCustomNote" class="form-text text-warning d-none"><i class="bi bi-exclamation-triangle"></i> ค่ากำหนดเอง — ปรับในโหมดขั้นสูงด้านล่าง</div>
+                        </div>
+                        <details class="mt-2">
+                          <summary class="small text-muted" style="cursor:pointer">ขั้นสูง (แก้ CSS เอง)</summary>
+                          <input id="inBannerMask" class="form-control mt-1" placeholder="linear-gradient(...)">
+                        </details>
+                      </div>
                     </div>
                     <div class="row g-2 mt-2">
                       <div class="col-6">
@@ -6180,7 +6208,7 @@
         sidebarPillHoverBorderW: 0,
         sidebarPillHoverOpacity: 1,
         headerBg: "linear-gradient(to bottom,   rgba(0,0,0,.65) 0%,   rgba(0,0,0,.45) 40%,   rgba(0,0,0,.15) 75%,   rgba(0,0,0,0) 100%)",
-        bannerMask: "linear-gradient()",
+        bannerMask: "linear-gradient(to right, rgba(15, 23, 42, 0.75) 0%, rgba(15, 23, 42, 0.55) 40%, rgba(15, 23, 42, 0.15) 75%, rgba(15, 23, 42, 0) 100%)",
         bannerParallax: { enabled: false, strength: 0.35, scale: 1.08, start: "bottom" },
         cardBg: "#414348",
         cardBorder: "#b8b8b8",
@@ -6726,6 +6754,140 @@
       fillForm = function () { var _r = _hgOrigFillForm.apply(this, arguments); try { _hgSyncFromInput(); } catch (_) { } return _r; };
     }
 
+    /* ===== Banner mask gradient builder ===== */
+    function _bmDefaultModel() {
+      return {
+        dir: 'to right',
+        stops: [
+          { hex: '#0f172a', a: 0.75, pos: 0 },
+          { hex: '#0f172a', a: 0.55, pos: 40 },
+          { hex: '#0f172a', a: 0.15, pos: 75 },
+          { hex: '#0f172a', a: 0, pos: 100 }
+        ]
+      };
+    }
+    function _bmUpdatePreview(css) {
+      var fill = document.getElementById('bmPreviewFill');
+      if (fill) fill.style.background = css || 'transparent';
+    }
+    function _bmEnsureDirOption(dir) {
+      var sel = document.getElementById('bmDir');
+      if (!sel) return;
+      var found = Array.prototype.some.call(sel.options, function (o) { return o.value === dir; });
+      if (!found) { var o = document.createElement('option'); o.value = dir; o.textContent = dir; sel.appendChild(o); }
+      sel.value = dir;
+    }
+    function _bmRowHtml(s) {
+      var ap = Math.round(s.a * 100), pp = Math.round(s.pos);
+      return '<div class="bm-stop row g-1 align-items-center">' +
+        '<div class="col-auto"><input type="color" class="form-control form-control-color form-control-sm bm-color" value="' + s.hex + '"></div>' +
+        '<div class="col"><div class="small text-muted mb-0">ความเข้ม <span class="bm-aval">' + ap + '</span>%</div>' +
+        '<input type="range" class="form-range bm-alpha" min="0" max="100" step="1" value="' + ap + '"></div>' +
+        '<div class="col"><div class="small text-muted mb-0">ตำแหน่ง <span class="bm-pval">' + pp + '</span>%</div>' +
+        '<input type="range" class="form-range bm-pos" min="0" max="100" step="1" value="' + pp + '"></div>' +
+        '<div class="col-auto"><button type="button" class="btn btn-sm btn-outline-danger bm-del" title="ลบจุดสี"><i class="bi bi-trash"></i></button></div>' +
+        '</div>';
+    }
+    function _bmRenderRows(model) {
+      var wrap = document.getElementById('bmStops');
+      if (!wrap) return;
+      wrap.innerHTML = model.stops.map(_bmRowHtml).join('');
+      _bmEnsureDirOption(model.dir || 'to right');
+      Array.prototype.forEach.call(wrap.querySelectorAll('.bm-del'), function (b) { b.disabled = (model.stops.length <= 2); });
+    }
+    function _bmReadModel() {
+      var sel = document.getElementById('bmDir');
+      var stops = Array.prototype.map.call(document.querySelectorAll('#bmStops .bm-stop'), function (row) {
+        return {
+          hex: row.querySelector('.bm-color').value,
+          a: (+row.querySelector('.bm-alpha').value) / 100,
+          pos: +row.querySelector('.bm-pos').value
+        };
+      });
+      return { dir: sel ? sel.value : 'to right', stops: stops };
+    }
+    function _bmApply() {
+      var model = _bmReadModel();
+      if (model.stops.length < 2) return;
+      Array.prototype.forEach.call(document.querySelectorAll('#bmStops .bm-stop'), function (row) {
+        var av = row.querySelector('.bm-aval'); if (av) av.textContent = row.querySelector('.bm-alpha').value;
+        var pv = row.querySelector('.bm-pval'); if (pv) pv.textContent = row.querySelector('.bm-pos').value;
+      });
+      var css = _hgBuild(model);
+      var inp = document.getElementById('inBannerMask');
+      if (inp) inp.value = css;
+      setNested(SHOP, 'theme.bannerMask', css);
+      try { renderHeader(); } catch (_) { }
+      _bmUpdatePreview(css);
+      try { pushPreviewConfig(); } catch (_) { }
+    }
+    function _bmSyncFromInput() {
+      var inp = document.getElementById('inBannerMask');
+      if (!inp) return;
+      var note = document.getElementById('bmCustomNote');
+      var value = String(inp.value || '').trim();
+      var parsed = _hgParse(value);
+
+      // Migrate the previous single-color UI into an equivalent two-stop
+      // gradient without changing its visual result.
+      if (!parsed) {
+        var solid = _hgRgbaToHexA(value);
+        if (solid) parsed = { dir: 'to right', stops: [
+          { hex: solid.hex, a: solid.a, pos: 0 },
+          { hex: solid.hex, a: solid.a, pos: 100 }
+        ] };
+      }
+      if (!parsed && (value === '' || value === 'linear-gradient()' || value === 'transparent' || value === 'none')) {
+        parsed = _bmDefaultModel();
+        if (value === 'transparent' || value === 'none') {
+          parsed.stops.forEach(function (stop) { stop.a = 0; });
+        }
+        inp.value = _hgBuild(parsed);
+      }
+
+      if (parsed) {
+        _bmRenderRows(parsed);
+        if (note) note.classList.add('d-none');
+        _bmUpdatePreview(inp.value || _hgBuild(parsed));
+      } else {
+        var wrap = document.getElementById('bmStops'); if (wrap) wrap.innerHTML = '';
+        if (note) note.classList.remove('d-none');
+        _bmUpdatePreview(inp.value);
+      }
+    }
+    (function _bmWire() {
+      document.addEventListener('input', function (e) {
+        if (e.target && e.target.closest && e.target.closest('#bmStops')) _bmApply();
+      });
+      document.addEventListener('change', function (e) {
+        if (e.target && e.target.id === 'bmDir') _bmApply();
+      });
+      document.addEventListener('click', function (e) {
+        if (!e.target || !e.target.closest) return;
+        if (e.target.closest('#bmAddStop')) {
+          var m = _bmReadModel();
+          if (!m.stops.length) m = _bmDefaultModel();
+          else m.stops.push({ hex: '#000000', a: 0, pos: 100 });
+          _bmRenderRows(m); _bmApply();
+        } else if (e.target.closest('.bm-del')) {
+          var row = e.target.closest('.bm-stop'); if (!row || !row.parentNode) return;
+          var m2 = _bmReadModel();
+          var idx = Array.prototype.indexOf.call(row.parentNode.children, row);
+          if (m2.stops.length > 2 && idx >= 0) { m2.stops.splice(idx, 1); _bmRenderRows(m2); _bmApply(); }
+        }
+      });
+      var adv = document.getElementById('inBannerMask');
+      if (adv) adv.addEventListener('input', function () {
+        setNested(SHOP, 'theme.bannerMask', adv.value.trim());
+        try { renderHeader(); } catch (_) { }
+        _bmSyncFromInput();
+      });
+    })();
+    if (typeof fillForm === 'function') {
+      var _bmOrigFillForm = fillForm;
+      fillForm = function () { var _r = _bmOrigFillForm.apply(this, arguments); try { _bmSyncFromInput(); } catch (_) { } return _r; };
+    }
+
     function makeAnimStyle(node, anim) {
       const t = anim?.type || "float";
       const d = (anim?.duration || 6500) + "ms";
@@ -7124,20 +7286,42 @@
         heroBg.innerHTML = '<img id="heroImg" alt="banner">';
       }
       const heroImg = document.getElementById('heroImg');
+      const _bannerUrl = String(SHOP.bannerImage || '');
+      const _bannerFid = SHOP.bannerImageDriveFileId || (_bannerUrl.match(/[?&]id=([^&]+)/)?.[1] ?? '');
+      const _bannerRequestKey = _bannerFid + '|' + _bannerUrl;
+      heroImg.dataset.bannerRequestKey = _bannerRequestKey;
+      heroBg.classList.remove('loaded');
       heroImg.style.cssText = 'opacity:0;transition:opacity .5s ease;';
       const _onBannerLoad = () => {
+        if (heroImg.dataset.bannerRequestKey !== _bannerRequestKey) return;
         heroImg.style.opacity = '1';
         heroBg.classList.add('loaded');
       };
+      const _onBannerError = () => {
+        if (heroImg.dataset.bannerRequestKey !== _bannerRequestKey) return;
+        heroImg.style.opacity = '0';
+        heroBg.classList.add('loaded');
+      };
       heroImg.addEventListener('load', _onBannerLoad, { once: true });
+      heroImg.addEventListener('error', _onBannerError, { once: true });
       // Load banner — use cached Drive base64 if available (also extract fid from Drive URL)
-      const _bannerFid = SHOP.bannerImageDriveFileId || (SHOP.bannerImage?.match(/[?&]id=([^&]+)/)?.[1] ?? '');
-      if (_bannerFid && GAS.available) {
+      if (!_bannerFid && !_bannerUrl) {
+        heroImg.removeAttribute('src');
+        // No image is a completed state, not a loading state. Keep the banner
+        // color/mask visible without running the shimmer forever.
+        heroBg.classList.add('loaded');
+      } else if (_bannerFid && GAS.available) {
         driveFileToDataUrlCached(_bannerFid).then(url => {
-          heroImg.src = url || (SHOP.bannerImage?.includes('drive.google.com') ? '' : SHOP.bannerImage) || '';
+          if (heroImg.dataset.bannerRequestKey !== _bannerRequestKey) return;
+          const nextSrc = url || (_bannerUrl.includes('drive.google.com') ? '' : _bannerUrl);
+          if (nextSrc) heroImg.src = nextSrc;
+          else {
+            heroImg.removeAttribute('src');
+            heroBg.classList.add('loaded');
+          }
         });
-      } else if (!SHOP.bannerImage?.includes('drive.google.com')) {
-        heroImg.src = SHOP.bannerImage;
+      } else if (!_bannerUrl.includes('drive.google.com')) {
+        heroImg.src = _bannerUrl;
       }
       bannerTitle.textContent = SHOP.bannerTitle; bannerSubtitle.textContent = SHOP.bannerSubtitle;
       productsTitle.textContent = SHOP.productsTitle || "รายการสินค้า";
@@ -10951,12 +11135,17 @@
       SHOP.theme.headerBg = inHeaderBg.value.trim() || SHOP.theme.headerBg;
 
       // Banner
-      const _newBannerUrl = inBanner.value.trim();
-      if (_newBannerUrl && _newBannerUrl !== SHOP.bannerImage) {
-        SHOP.bannerImage = _newBannerUrl;
+      const _prevBannerUrl = SHOP.bannerImage || '';
+      const _prevBannerId = SHOP.bannerImageDriveFileId || parseDriveFileId(_prevBannerUrl);
+      const _newBannerUrlRaw = inBanner.value.trim();
+      const _newBannerId = parseDriveFileId(_newBannerUrlRaw);
+      const _newBannerUrl = _newBannerId ? driveViewUrl(_newBannerId) : _newBannerUrlRaw;
+      if (!_newBannerUrl) {
+        SHOP.bannerImage = '';
         SHOP.bannerImageDriveFileId = '';
-      } else if (_newBannerUrl) {
+      } else {
         SHOP.bannerImage = _newBannerUrl;
+        SHOP.bannerImageDriveFileId = _newBannerId || (_newBannerUrl === _prevBannerUrl ? _prevBannerId : '');
       }
       SHOP.bannerTitle = inBannerTitle.value.trim() || SHOP.bannerTitle;
       SHOP.bannerSubtitle = inBannerSub.value.trim() || SHOP.bannerSubtitle;
