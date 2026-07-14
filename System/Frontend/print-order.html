@@ -787,8 +787,8 @@
       + '.r5adr2>div:last-child{text-align:right;flex:0 0 auto}'
       + '.r5gft{padding:.5mm 0}'
       + '.r5gft-row{display:flex;justify-content:space-between;align-items:baseline;font-size:8.5pt;color:#374151;padding:.6mm 0;gap:3mm}'
-      + '.r5gft-row span:first-child{font-weight:600;color:#111827}'
-      + '.r5gft-meta{font-size:7pt;color:#6b7280;text-align:right;flex-shrink:0}'
+      + '.r5gft-row span:first-child{font-weight:600;color:#111827;min-width:0;overflow-wrap:anywhere}'
+      + '.r5gft-meta{font-size:7pt;color:#6b7280;text-align:right;flex:0 1 48%;overflow-wrap:anywhere}'
       + '</style>';
   }
 
@@ -798,6 +798,7 @@
     var o = opts.order;
     var qr = o._qrDataUrl || '';
     var items = opts.items || _orderProductLines(o);
+    var gifts = opts.gifts || [];
     var shippingInfo = o.shipping_info || [];
     var customerName = o.shipping_name || o.customer_name || '';
     var isLastPage = opts.isLast !== false;
@@ -894,12 +895,10 @@
         + '</div>';
     }
 
-    /* ── ของแถม (gifts) — compact bullet list, last page only ── */
+    /* ── ของแถม (gifts) — paginated as individual rows ── */
     var giftsBlock = '';
-    var giftsArr = isLastPage ? _orderGiftLines(o) : [];
-    var activeGifts = giftsArr.filter(function(g){ return g.status !== 'removed'; });
-    if (isLastPage && activeGifts.length) {
-      var giftRows = activeGifts.map(function(g) {
+    if (gifts.length) {
+      var giftRows = gifts.map(function(g) {
         var srcLabel = g.source === 'manual' ? 'เพิ่มโดยแอดมิน' : 'ระบบอัตโนมัติ';
         var detail = g.source === 'manual' ? (g.note || '') : (g.rule_name || '');
         var detailHtml = detail ? ' — <span style="color:#9ca3af">' + esc(detail) + '</span>' : '';
@@ -916,8 +915,7 @@
     }
 
     var totalsHtml = isLastPage
-      ? giftsBlock
-        + '<hr class="r5div">'
+      ? '<hr class="r5div">'
         + '<div class="r5tots">'
         + '<div class="r5tr"><span>ราคาสินค้า</span><span>' + fmtMoney(o.subtotal) + '</span></div>'
         + shippingRows
@@ -928,6 +926,10 @@
             : '')
       : '<div class="r5more">รายการต่อในหน้าถัดไป</div>';
 
+    var productsHtml = items.length
+      ? '<div class="r5lbl">รายการสินค้า</div><table class="r5tbl"><tbody>' + itemRows + '</tbody></table>'
+      : '';
+
     return '<div class="r5w"><div class="r5pad">'
       + '<div class="r5hdr">'
       + '<div><div class="r5shop">' + esc(storeName || _getReceiptStoreName()) + '</div><div class="r5sub">ใบเสร็จรับเงิน</div></div>'
@@ -936,28 +938,107 @@
       + '</div>'
       + '<hr class="r5div">'
       + (customerName ? '<div class="r5client">ลูกค้า: <b>' + esc(customerName) + '</b></div>' : '')
-      + '<div class="r5lbl">รายการสินค้า</div>'
-      + '<table class="r5tbl"><tbody>' + itemRows + '</tbody></table>'
+      + productsHtml
+      + giftsBlock
       + totalsHtml
       + '</div></div>';
   }
 
-  /* แบ่งรายการสินค้าของ order เดียวเป็นหน้า A5 (รายการล้น → หน้าถัดไป = ครึ่งขวา) */
-  function _buildReceiptA5Pages(order) {
-    var items = _orderProductLines(order); // pagination over products only
-    var maxItems = 8;
-    var pageCount = Math.max(1, Math.ceil(items.length / maxItems));
-    var pages = [];
-    for (var p = 0; p < pageCount; p++) {
-      pages.push({
+  /* แบ่งสินค้าและของแถมตามความสูงจริงของ A5 ก่อนจับคู่ซ้าย/ขวาบน A4 */
+  async function _buildReceiptA5Pages(order, storeName) {
+    var lines = _orderProductLines(order).map(function(v){ return { kind:'product', value:v }; })
+      .concat(_orderGiftLines(order).filter(function(g){ return g.status !== 'removed'; })
+        .map(function(v){ return { kind:'gift', value:v }; }));
+    var probe = document.createElement('div');
+    probe.setAttribute('aria-hidden', 'true');
+    probe.style.cssText = 'position:fixed;left:-9999px;top:0;width:148mm;height:210mm;overflow:hidden;background:#fff;pointer-events:none;z-index:-1';
+    document.body.appendChild(probe);
+    if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch(_) {} }
+
+    function toPage(pageLines) {
+      return {
         order: order,
-        items: items.slice(p * maxItems, (p + 1) * maxItems),
-        pageNo: p + 1,
-        pageCount: pageCount,
-        isLast: p === pageCount - 1
-      });
+        items: pageLines.filter(function(x){ return x.kind === 'product'; }).map(function(x){ return x.value; }),
+        gifts: pageLines.filter(function(x){ return x.kind === 'gift'; }).map(function(x){ return x.value; })
+      };
     }
-    return pages;
+    function measure(pageLines, isLast) {
+      var page = toPage(pageLines);
+      probe.innerHTML = _receiptA5Style() + _receiptA5Content(Object.assign({}, page, {
+        pageNo:99, pageCount:99, isLast:isLast
+      }), storeName);
+      var pad = probe.querySelector('.r5pad');
+      if (!pad) return { fits:false, usedHeight:Number.POSITIVE_INFINITY };
+      var lastChild = pad.lastElementChild;
+      var usedHeight = lastChild
+        ? lastChild.getBoundingClientRect().bottom - pad.getBoundingClientRect().top
+        : 0;
+      return {
+        fits: pad.scrollHeight <= pad.clientHeight + 1,
+        usedHeight: Math.max(0, usedHeight)
+      };
+    }
+    function fits(pageLines, isLast) {
+      return measure(pageLines, isLast).fits;
+    }
+
+    try {
+      var groups = [[]];
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var current = groups[groups.length - 1];
+        var candidate = current.concat([line]);
+        if (fits(candidate, false)) current.push(line);
+        else {
+          if (!fits([line], false)) throw new Error('มีรายการในใบเสร็จที่สูงเกินพื้นที่ A5 หนึ่งหน้า');
+          groups.push([line]);
+        }
+      }
+
+      var lastGroup = groups.pop() || [];
+      if (fits(lastGroup, true)) {
+        // Keep a single last page whenever its details and footer already fit.
+        groups.push(lastGroup);
+      } else {
+        // The footer must stay on the last page. Choose the valid split whose
+        // rendered heights are closest, instead of filling the last page first.
+        var bestSplit = null;
+        for (var cut = 1; cut <= lastGroup.length; cut++) {
+          var head = lastGroup.slice(0, cut);
+          var tail = lastGroup.slice(cut);
+          var headMeasure = measure(head, false);
+          var tailMeasure = measure(tail, true);
+          if (!headMeasure.fits || !tailMeasure.fits) continue;
+
+          // Prefer a non-empty detail section on the last page when possible.
+          var emptyTailPenalty = tail.length ? 0 : 10000;
+          var score = Math.abs(headMeasure.usedHeight - tailMeasure.usedHeight) + emptyTailPenalty;
+          if (!bestSplit || score < bestSplit.score - 0.5
+              || (Math.abs(score - bestSplit.score) <= 0.5 && cut > bestSplit.cut)) {
+            bestSplit = { head:head, tail:tail, cut:cut, score:score };
+          }
+        }
+        if (!bestSplit) throw new Error('ข้อมูลยอดรวมและที่อยู่สูงเกินพื้นที่ A5 หนึ่งหน้า');
+        groups.push(bestSplit.head);
+        groups.push(bestSplit.tail);
+      }
+
+      var pageCount = groups.length;
+      var pages = groups.map(function(group, index) {
+        return Object.assign(toPage(group), {
+          pageNo:index + 1,
+          pageCount:pageCount,
+          isLast:index === pageCount - 1
+        });
+      });
+      for (var p = 0; p < pages.length; p++) {
+        var pageLines = groups[p];
+        if (!fits(pageLines, p === pages.length - 1)) throw new Error('ไม่สามารถจัดเนื้อหาใบเสร็จให้พอดีกับ A5 ได้');
+      }
+      return pages;
+    } finally {
+      if (probe.parentNode) probe.parentNode.removeChild(probe);
+    }
   }
 
   /* จับคู่หน้า A5 ทีละ 2 (ซ้าย/ขวา) → [[p0,p1],[p2,null],…] */
@@ -978,6 +1059,16 @@
       +   'transform:translateX(-50%);border-left:.45mm dashed #6b7280;pointer-events:none"></div>'
       + '<div style="width:148.5mm;height:210mm;overflow:hidden">' + right + '</div>'
       + '</div>';
+  }
+
+  function _assertReceiptSheetFits(container) {
+    var pads = Array.from(container.querySelectorAll('.r5pad'));
+    if (!pads.length) throw new Error('ไม่พบเนื้อหาใบเสร็จสำหรับสร้าง PDF');
+    for (var i = 0; i < pads.length; i++) {
+      if (pads[i].scrollHeight > pads[i].clientHeight + 1) {
+        throw new Error('เนื้อหาใบเสร็จล้นพื้นที่ A5');
+      }
+    }
   }
 
   /* =====================================================
@@ -1063,7 +1154,7 @@
     document.body.appendChild(container);
     try {
       var allPages = [];
-      for (var oi = 0; oi < orders.length; oi++) allPages = allPages.concat(_buildReceiptA5Pages(orders[oi]));
+      for (var oi = 0; oi < orders.length; oi++) allPages = allPages.concat(await _buildReceiptA5Pages(orders[oi], storeName));
       var pairs = _pairReceiptPages(allPages);
       for (var pi = 0; pi < pairs.length; pi++) {
         if (pi > 0) doc.addPage('a4', 'landscape');
@@ -1072,6 +1163,7 @@
           if (img.complete && img.naturalWidth) return Promise.resolve();
           return new Promise(function(res) { img.onload = res; img.onerror = res; setTimeout(res, 3000); });
         }));
+        _assertReceiptSheetFits(container);
         var canvas = await html2canvas(container, {
           scale: 2, useCORS: false, logging: false, backgroundColor: '#ffffff',
           width: container.offsetWidth, height: container.offsetHeight
@@ -1138,7 +1230,7 @@
     container.style.cssText = 'position:fixed;left:-9999px;top:0;width:297mm;height:210mm;overflow:hidden;background:#fff;z-index:-1;pointer-events:none';
     document.body.appendChild(container);
     try {
-      var pairs = _pairReceiptPages(_buildReceiptA5Pages(order));
+      var pairs = _pairReceiptPages(await _buildReceiptA5Pages(order, storeName));
       for (var i = 0; i < pairs.length; i++) {
         if (i > 0) doc.addPage('a4', 'landscape');
         container.innerHTML = _receiptSheetContent(pairs[i], storeName);
@@ -1146,6 +1238,7 @@
           if (img.complete && img.naturalWidth) return Promise.resolve();
           return new Promise(function(res) { img.onload = res; img.onerror = res; setTimeout(res, 3000); });
         }));
+        _assertReceiptSheetFits(container);
         var canvas = await html2canvas(container, { scale:2, useCORS:false, logging:false, backgroundColor:'#ffffff', width:container.offsetWidth, height:container.offsetHeight });
         doc.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 297, 210);
       }

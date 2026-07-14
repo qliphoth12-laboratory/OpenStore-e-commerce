@@ -2536,6 +2536,7 @@
     var orderId  = opts.orderId  || '';
     var createdAt = opts.createdAt || '';
     var items    = opts.items    || [];
+    var gifts   = opts.gifts   || [];
     var subtotal = opts.subtotal || 0;
     var shippingFee = opts.shippingFee || 0;
     var total    = opts.total    || 0;
@@ -2574,6 +2575,20 @@
         + '<div class="riq">\u00d7' + item.qty + '\u00a0\u00a0' + priceLine + '/\u0e0a\u0e34\u0e49\u0e19</div>'
         + '</td><td class="ris">' + fmtMoney(item.unitPrice * item.qty) + '</td></tr>';
     }).join('');
+    var giftRows = gifts.map(function(gift) {
+      var detail = gift.source === 'manual' ? (gift.note || '') : (gift.ruleName || '');
+      var sourceLabel = gift.source === 'manual' ? '\u0e40\u0e1e\u0e34\u0e48\u0e21\u0e42\u0e14\u0e22\u0e41\u0e2d\u0e14\u0e21\u0e34\u0e19' : '\u0e23\u0e30\u0e1a\u0e1a\u0e2d\u0e31\u0e15\u0e42\u0e19\u0e21\u0e31\u0e15\u0e34';
+      return '<div class="rgrow">'
+        + '<div><div class="rgname">' + esc(gift.name || '') + ' \u00d7' + Number(gift.qty || 1) + '</div>'
+        + (detail ? '<div class="rgdetail">' + esc(detail) + '</div>' : '') + '</div>'
+        + '<div class="rgsource">' + sourceLabel + '</div></div>';
+    }).join('');
+    var giftsHtml = gifts.length
+      ? (items.length ? '<hr class="rdiv">' : '') + '<div class="rlbl">\u0e02\u0e2d\u0e07\u0e41\u0e16\u0e21</div><div class="rgifts">' + giftRows + '</div>'
+      : '';
+    var productsHtml = items.length
+      ? '<div class="rlbl">\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32</div><table class="rtbl"><tbody>' + itemRows + '</tbody></table>'
+      : '';
 
     var TRUCK_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:3px;flex-shrink:0"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>';
     var shippingRows = shippingInfo.length
@@ -2608,7 +2623,7 @@
       : '<div class="rmore">รายการต่อในหน้าถัดไป</div>';
 
     return '<style>'
-      + '.rw{font-family:\'Noto Sans Thai\',\'Zen Maru Gothic\',Sarabun,sans-serif;background:#fff;padding:40px 48px;color:#111827;line-height:1.5;width:760px}'
+      + '.rw{font-family:\'Noto Sans Thai\',\'Zen Maru Gothic\',Sarabun,sans-serif;background:#fff;padding:40px 48px;color:#111827;line-height:1.5;width:760px;height:1074px;box-sizing:border-box;overflow:hidden}'
       + '.rhdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}'
       + '.rshop{font-size:22px;font-weight:800;color:#111827}'
       + '.rsub{font-size:11px;color:#9ca3af;letter-spacing:.08em;text-transform:uppercase;margin-top:2px}'
@@ -2625,6 +2640,12 @@
       + '.riv{font-size:11px;color:#6b7280;margin-top:2px}'
       + '.riq{font-size:11px;color:#9ca3af;margin-top:2px}'
       + '.ris{font-size:13px;font-weight:700;text-align:right;white-space:nowrap;padding-left:12px;color:#111827}'
+      + '.rgifts{width:100%}'
+      + '.rgrow{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:8px 0;border-bottom:1px solid #f3f4f6}'
+      + '.rgrow:last-child{border-bottom:none}'
+      + '.rgname{font-size:13px;font-weight:600;color:#111827}'
+      + '.rgdetail{font-size:11px;color:#6b7280;margin-top:2px;overflow-wrap:anywhere}'
+      + '.rgsource{font-size:10px;color:#9ca3af;text-align:right;white-space:nowrap;flex-shrink:0}'
       + '.rtots{background:#f9fafb;border-radius:8px;padding:12px 16px;margin-top:4px}'
       + '.rtr{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;gap:16px;color:#374151}'
       + '.rtr span:last-child{font-weight:600}'
@@ -2641,32 +2662,74 @@
       + (pageText ? '<div class="rpage">' + esc(pageText) + '</div>' : '') + '</div>'
       + '</div>'
       + '<hr class="rdiv">'
-      + '<div class="rlbl">\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32</div>'
-      + '<table class="rtbl"><tbody>' + itemRows + '</tbody></table>'
+      + productsHtml
+      + giftsHtml
       + totalsHtml
       + '</div>';
   }
 
-  function _buildReceiptPages(order, normalizedItems) {
-    var pages = [];
-    var maxItems = 8;
-    var items = normalizedItems || [];
-    var pageCount = Math.max(1, Math.ceil(items.length / maxItems));
-    for (var p = 0; p < pageCount; p++) {
-      pages.push({
+  async function _buildReceiptPages(order, normalizedItems, normalizedGifts, baseOpts) {
+    var lines = (normalizedItems || []).map(function(v){ return { kind:'product', value:v }; })
+      .concat((normalizedGifts || []).map(function(v){ return { kind:'gift', value:v }; }));
+    var probe = document.createElement('div');
+    probe.setAttribute('aria-hidden', 'true');
+    probe.style.cssText = 'position:fixed;left:-9999px;top:0;width:760px;height:1074px;overflow:hidden;background:#fff;pointer-events:none;z-index:-1';
+    document.body.appendChild(probe);
+    if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch(_) {} }
+
+    function toPage(pageLines) {
+      return {
         order: order,
-        items: items.slice(p * maxItems, (p + 1) * maxItems),
-        pageNo: p + 1,
-        pageCount: pageCount,
-        isLast: p === pageCount - 1
-      });
+        items: pageLines.filter(function(x){ return x.kind === 'product'; }).map(function(x){ return x.value; }),
+        gifts: pageLines.filter(function(x){ return x.kind === 'gift'; }).map(function(x){ return x.value; })
+      };
     }
-    return pages;
+    function fits(pageLines, isLast) {
+      var page = toPage(pageLines);
+      probe.innerHTML = _buildReceiptHtml(Object.assign({}, baseOpts, page, { pageNo:99, pageCount:99, isLast:isLast }));
+      var el = probe.querySelector('.rw');
+      return !!el && el.scrollHeight <= el.clientHeight + 1;
+    }
+
+    try {
+      var groups = [[]];
+      for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        var line = lines[lineIndex];
+        var current = groups[groups.length - 1];
+        var candidate = current.concat([line]);
+        if (fits(candidate, false)) current.push(line);
+        else {
+          if (!fits([line], false)) throw new Error('มีรายการในใบเสร็จที่สูงเกินพื้นที่ A4 หนึ่งหน้า');
+          groups.push([line]);
+        }
+      }
+      var lastGroup = groups.pop() || [];
+      var bestTail = null, bestHead = null;
+      for (var cut = lastGroup.length; cut >= 0; cut--) {
+        var tail = lastGroup.slice(cut);
+        if (!fits(tail, true)) break;
+        bestHead = lastGroup.slice(0, cut);
+        bestTail = tail;
+      }
+      if (bestTail === null) throw new Error('ข้อมูลส่วนท้ายใบเสร็จสูงเกินพื้นที่ A4');
+      if (bestHead.length) groups.push(bestHead);
+      groups.push(bestTail);
+      var pageCount = groups.length;
+      var pages = groups.map(function(group, i) {
+        return Object.assign(toPage(group), { pageNo:i + 1, pageCount:pageCount, isLast:i === pageCount - 1 });
+      });
+      for (var pageIndex = 0; pageIndex < groups.length; pageIndex++) {
+        if (!fits(groups[pageIndex], pageIndex === groups.length - 1)) throw new Error('ไม่สามารถจัดเนื้อหาใบเสร็จให้พอดีกับ A4 ได้');
+      }
+      return pages;
+    } finally {
+      if (probe.parentNode) probe.parentNode.removeChild(probe);
+    }
   }
 
   async function _exportReceiptPagesPdf(pages, contentFn, filename) {
     var container = document.createElement('div');
-    container.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:760px;background:#fff';
+    container.style.cssText = 'position:fixed;left:-9999px;top:0;width:760px;height:1074px;overflow:hidden;background:#fff';
     document.body.appendChild(container);
     try {
       var jsPDF = window.jspdf.jsPDF;
@@ -2678,30 +2741,24 @@
           if (img.complete && img.naturalWidth) return Promise.resolve();
           return new Promise(function(res) { img.onload = res; img.onerror = res; setTimeout(res, 3000); });
         }));
+        var receiptPage = container.querySelector('.rw');
+        if (!receiptPage || receiptPage.scrollHeight > receiptPage.clientHeight + 1) throw new Error('เนื้อหาใบเสร็จล้นพื้นที่ A4');
         var canvas = await html2canvas(container, { scale: 2, useCORS: false, backgroundColor: '#fff', logging: false });
         var imgData = canvas.toDataURL('image/png');
         var pdfW = pdf.internal.pageSize.getWidth();
-        var pdfH = (canvas.height / canvas.width) * pdfW;
         var pageH = pdf.internal.pageSize.getHeight();
-        var firstPage = hasContent ? pdf.getNumberOfPages() + 1 : pdf.getNumberOfPages();
-        var y = 0;
-        while (y < pdfH || y === 0) {
-          if (hasContent) pdf.addPage();
-          hasContent = true;
-          pdf.addImage(imgData, 'PNG', 0, -y, pdfW, pdfH);
-          y += pageH;
-        }
+        if (hasContent) pdf.addPage();
+        hasContent = true;
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pageH);
         var linkEl = container.querySelector('.rl a');
         if (linkEl) {
           var sc = pdfW / 760;
           var cRect = container.getBoundingClientRect();
           var lRect = linkEl.getBoundingClientRect();
           var ly = (lRect.top - cRect.top) * sc;
-          var pg = Math.floor(ly / pageH);
-          pdf.setPage(firstPage + pg);
           pdf.link(
             (lRect.left - cRect.left) * sc,
-            ly - pg * pageH,
+            ly,
             (linkEl.offsetWidth || 200) * sc,
             Math.max(linkEl.offsetHeight || 16, 16) * sc,
             { url: linkEl.href }
@@ -2746,29 +2803,35 @@
           imgUrl:      item.image_url || ''
         };
       });
-      var pages = _buildReceiptPages(_order, normalizedItems);
+      var normalizedGifts = _orderGiftLines(_order).filter(function(g){ return g.status !== 'removed'; }).map(function(g) {
+        return { name:g.gift_name || '', qty:g.gift_qty || 1, source:g.source || '', note:g.note || '', ruleName:g.rule_name || '' };
+      });
+      var receiptBase = {
+        shopName:         cfg.siteTitle || '',
+        orderId:          _order.order_id,
+        createdAt:        _order.created_at,
+        subtotal:         _order.subtotal || 0,
+        shippingFee:      _order.shipping_fee || 0,
+        total:            _order.total || 0,
+        shippingInfo:     _order.shipping_info || [],
+        orderViewUrl:     orderViewUrl,
+        shippingName:     _order.shipping_name || '',
+        shippingAddress:  _order.shipping_address || '',
+        shippingDistrict: _order.shipping_district || '',
+        shippingAmphoe:   _order.shipping_amphoe || '',
+        shippingProvince: _order.shipping_province || '',
+        shippingPostal:   _order.shipping_postal_code || '',
+        customerNotes:    _order.customer_notes || ''
+      };
+      var pages = await _buildReceiptPages(_order, normalizedItems, normalizedGifts, receiptBase);
       await _exportReceiptPagesPdf(pages, function(page) {
-        return _buildReceiptHtml({
-          shopName:         cfg.siteTitle || '',
-          orderId:          _order.order_id,
-          createdAt:        _order.created_at,
+        return _buildReceiptHtml(Object.assign({}, receiptBase, {
           items:            page.items,
-          subtotal:         _order.subtotal || 0,
-          shippingFee:      _order.shipping_fee || 0,
-          total:            _order.total || 0,
-          shippingInfo:     _order.shipping_info || [],
-          orderViewUrl:     orderViewUrl,
-          shippingName:     _order.shipping_name || '',
-          shippingAddress:  _order.shipping_address || '',
-          shippingDistrict: _order.shipping_district || '',
-          shippingAmphoe:   _order.shipping_amphoe || '',
-          shippingProvince: _order.shipping_province || '',
-          shippingPostal:   _order.shipping_postal_code || '',
-          customerNotes:    _order.customer_notes || '',
+          gifts:            page.gifts,
           pageNo:           page.pageNo,
           pageCount:        page.pageCount,
           isLast:           page.isLast
-        });
+        }));
       }, 'receipt-' + _order.order_id.replace(/[^a-zA-Z0-9-]/g, '-') + '.pdf');
     } finally {
       if (container && container.parentNode) container.parentNode.removeChild(container);
