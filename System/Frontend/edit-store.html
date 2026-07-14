@@ -8279,6 +8279,10 @@
 
       // คีย์บรรทัดตามตัวเลือก
       const cartKey = createCartKey(currentProductIndex, selectedVariants);
+      if (!cartKey) {
+        Swal.fire({ icon: 'error', title: 'ไม่สามารถเพิ่มสินค้านี้ได้', text: 'ไม่พบรหัสสินค้า กรุณาลองโหลดหน้าใหม่', confirmButtonColor: '#111827' });
+        return;
+      }
 
       // คำนวณราคา ณ เวลานี้ + รูปตามตัวเลือก (ใช้ราคาหลังโปรโมชั่นถ้ามี)
       const _promoEntry = _resolveProductPromotion(product, selectedVariants);
@@ -8299,7 +8303,7 @@
         imgUrl,
         imgDriveFileId,
         title: product.title,
-        productId: product.id || ''  // เก็บ ID ไว้ใช้ตรวจสอบเมื่อ index เปลี่ยน
+        productId: product.id != null ? String(product.id) : ''
       };
       const existing = cart.get(cartKey);
       const line = upgradeCartValue(existing, fallbackLine) || { qty: 0, ...fallbackLine };
@@ -8315,30 +8319,57 @@
       updateCartUI();
     });
 
-    function createCartKey(productIdx, variants) {
-      if (!variants || Object.keys(variants).length === 0) {
-        return `${productIdx}`;
-      }
-      const variantStr = Object.entries(variants)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([k, v]) => `${k}:${v}`)
+    const CART_KEY_PRODUCT_PREFIX = 'pid:';
+
+    function _encodeCartKeyPart(value) {
+      return encodeURIComponent(String(value == null ? '' : value));
+    }
+
+    function _decodeCartKeyPart(value) {
+      try { return decodeURIComponent(value); }
+      catch (_) { return ''; }
+    }
+
+    function _createCartKeyByProductId(productId, variants) {
+      const pid = String(productId == null ? '' : productId);
+      if (!pid) return '';
+      const variantStr = Object.entries(variants || {})
+        .sort(([a], [b]) => String(a).localeCompare(String(b)))
+        .map(([k, v]) => `${_encodeCartKeyPart(k)}:${_encodeCartKeyPart(v)}`)
         .join('|');
-      return `${productIdx}|${variantStr}`;
+      return `${CART_KEY_PRODUCT_PREFIX}${_encodeCartKeyPart(pid)}${variantStr ? `|${variantStr}` : ''}`;
+    }
+
+    function createCartKey(productIdx, variants) {
+      const product = Array.isArray(SHOP.products) ? SHOP.products[productIdx] : null;
+      return _createCartKeyByProductId(product && product.id, variants);
     }
 
     function parseCartKey(key) {
-      const parts = key.split('|');
-      const productIdx = parseInt(parts[0]);
+      const parts = String(key || '').split('|');
       const variants = {};
+      const isProductIdKey = parts[0].startsWith(CART_KEY_PRODUCT_PREFIX);
 
-      if (parts.length > 1) {
-        parts.slice(1).forEach(part => {
-          const [k, v] = part.split(':');
-          variants[k] = v;
-        });
+      parts.slice(1).forEach(part => {
+        const separator = part.indexOf(':');
+        if (separator < 0) return;
+        const rawKey = part.slice(0, separator);
+        const rawValue = part.slice(separator + 1);
+        const variantKey = isProductIdKey ? _decodeCartKeyPart(rawKey) : rawKey;
+        const variantValue = isProductIdKey ? _decodeCartKeyPart(rawValue) : rawValue;
+        if (variantKey) variants[variantKey] = variantValue;
+      });
+
+      if (isProductIdKey) {
+        return {
+          productId: _decodeCartKeyPart(parts[0].slice(CART_KEY_PRODUCT_PREFIX.length)),
+          productIdx: -1,
+          variants,
+          isLegacy: false
+        };
       }
 
-      return { productIdx, variants };
+      return { productId: '', productIdx: parseInt(parts[0], 10), variants, isLegacy: true };
     }
 
     document.getElementById('productGrid')?.addEventListener('click', (e) => {
@@ -8367,6 +8398,118 @@
       }
       return val;
     }
+
+    function _findProductById(productId) {
+      const pid = String(productId == null ? '' : productId);
+      if (!pid || !Array.isArray(SHOP.products)) return null;
+      return SHOP.products.find(product =>
+        product && product.id != null && String(product.id) === pid
+      ) || null;
+    }
+
+    function _resolveCartLine(cartKey, val) {
+      const parsed = parseCartKey(cartKey);
+      const line = (val && typeof val === 'object' && !Array.isArray(val)) ? val : null;
+      if (!line) return null;
+      const productId = line.productId != null && String(line.productId)
+        ? String(line.productId)
+        : parsed.productId;
+      const product = _findProductById(productId);
+      if (!product) return null;
+      const variants = line.variants && typeof line.variants === 'object' && !Array.isArray(line.variants)
+        ? line.variants
+        : parsed.variants;
+      return { line, product, productId: String(product.id), variants: variants || {} };
+    }
+
+    function _saveCart() {
+      try { localStorage.setItem('SHOP_CART_V1', JSON.stringify([...cart.entries()])); }
+      catch (e) { /* ignore */ }
+    }
+
+    function reconcileCartWithProducts() {
+      const nextCart = new Map();
+      const removed = [];
+      let changed = false;
+
+      cart.forEach((val, oldKey) => {
+        const parsed = parseCartKey(oldKey);
+        const line = (val && typeof val === 'object' && !Array.isArray(val)) ? val : null;
+        const productId = line && line.productId != null && String(line.productId)
+          ? String(line.productId)
+          : parsed.productId;
+        const product = _findProductById(productId);
+        const qty = line ? Number(line.qty) : 0;
+
+        // Numeric legacy entries do not contain a verifiable product ID.
+        if (!line || !productId || !product || !Number.isFinite(qty) || qty <= 0) {
+          removed.push({ title: line && line.title ? String(line.title) : '', qty: qty > 0 ? qty : 0 });
+          changed = true;
+          return;
+        }
+
+        const variants = line.variants && typeof line.variants === 'object' && !Array.isArray(line.variants)
+          ? line.variants
+          : parsed.variants;
+        const newKey = _createCartKeyByProductId(product.id, variants);
+        if (!newKey) {
+          removed.push({ title: line.title ? String(line.title) : '', qty });
+          changed = true;
+          return;
+        }
+
+        const normalizedLine = {
+          ...line,
+          qty,
+          productId: String(product.id),
+          variants: { ...(variants || {}) }
+        };
+        const existing = nextCart.get(newKey);
+        if (existing) {
+          existing.qty = Number(existing.qty || 0) + qty;
+          nextCart.set(newKey, existing);
+          changed = true;
+        } else {
+          nextCart.set(newKey, normalizedLine);
+        }
+        if (newKey !== oldKey || String(line.productId || '') !== String(product.id)) changed = true;
+      });
+
+      if (nextCart.size !== cart.size) changed = true;
+      if (changed) {
+        cart.clear();
+        nextCart.forEach((line, key) => cart.set(key, line));
+        if (typeof _giftPreviewLastKey !== 'undefined') _giftPreviewLastKey = '';
+        if (typeof _giftPreviewLastResult !== 'undefined') _giftPreviewLastResult = null;
+        _saveCart();
+      }
+      return { changed, removed };
+    }
+
+    function _showRemovedCartItemsModal(removed) {
+      if (!Array.isArray(removed) || removed.length === 0) return;
+      Swal.fire({
+        icon: 'warning',
+        title: 'อัปเดตตะกร้าสินค้าแล้ว',
+        text: `สินค้าบางรายการไม่มีจำหน่ายแล้ว จึงถูกนำออกจากตะกร้า ${removed.length} รายการ`,
+        confirmButtonText: 'รับทราบ',
+        confirmButtonColor: '#111827'
+      });
+    }
+
+    function _ensureCartReadyForCheckout() {
+      const result = reconcileCartWithProducts();
+      if (result.changed) updateCartUI();
+      if (result.removed.length > 0) {
+        const modalEl = document.getElementById('orderConfirmModal');
+        const modal = modalEl ? bootstrap.Modal.getInstance(modalEl) : null;
+        if (modal) modal.hide();
+        _showRemovedCartItemsModal(result.removed);
+        return false;
+      }
+      return cart.size > 0;
+    }
+
     function updateCartUI() {
       // จำนวนรวม = sum(line.qty)
       const count = [...cart.values()].reduce((a, line) => a + (typeof line === 'number' ? line : line.qty), 0);
@@ -8388,25 +8531,9 @@
       let total = 0;
 
       cart.forEach((val, cartKey) => {
-        const { productIdx, variants } = parseCartKey(cartKey);
-        // ค้นหาสินค้าด้วย index ก่อน ถ้าไม่เจอให้ fallback ด้วย productId ที่เก็บไว้
-        let p = SHOP.products[productIdx];
-        if (!p && typeof val === 'object' && val.productId) {
-          p = SHOP.products.find(pr => pr.id === val.productId) || null;
-        }
-
-        // รองรับค่าเก่าเป็นตัวเลข (ต้องการ p สำหรับ fallback)
-        const pFallback = p || {};
-        let line = upgradeCartValue(val, {
-          unitPrice: pFallback.price || 0,
-          variants: variants,
-          imgUrl: null,
-          imgDriveFileId: null,
-          title: pFallback.title || '(สินค้าไม่พบ)'
-        });
-
-        // ถ้าสินค้าไม่มีในระบบแล้ว และ line ก็ไม่มี title — ข้ามรายการนี้
-        if (!p && !line.title) { cart.delete(cartKey); return; }
+        const resolved = _resolveCartLine(cartKey, val);
+        if (!resolved) return;
+        const { product: p, line, variants } = resolved;
 
         const sub = line.unitPrice * line.qty; // ใช้ราคา "ต่อหน่วย ณ ตอนเพิ่ม"
         total += sub;
@@ -8457,7 +8584,7 @@
       cartTotal.textContent = money(total);
 
       // Save cart to localStorage
-      try { localStorage.setItem('SHOP_CART_V1', JSON.stringify([...cart.entries()])); } catch (e) { /* ignore */ }
+      _saveCart();
 
       // Gift eligibility preview (debounced; backend recalculates final eligibility at submit)
       if (typeof _scheduleGiftPreview === 'function') _scheduleGiftPreview();
@@ -8526,16 +8653,12 @@
     function _buildGiftPreviewPayload() {
       var items = [];
       cart.forEach(function(val, key){
-        var line = upgradeCartValue(val, null);
-        if (!line) return;
-        var parsed = parseCartKey(key);
-        var p = SHOP.products[parsed.productIdx];
-        if (!p && line.productId) p = SHOP.products.find(function(x){ return x.id === line.productId; });
-        if (!p) return;
+        var resolved = _resolveCartLine(key, val);
+        if (!resolved) return;
         items.push({
-          product_id: p.id || String(parsed.productIdx),
-          qty: line.qty,
-          selected_variants: line.variants || parsed.variants || {}
+          product_id: resolved.productId,
+          qty: resolved.line.qty,
+          selected_variants: resolved.variants
         });
       });
       return { items: items };
@@ -8876,6 +8999,7 @@
         const cartKey = inc.getAttribute("data-inc");
         const v = cart.get(cartKey);
         const line = upgradeCartValue(v, null);
+        if (!line) return;
         line.qty += 1;
         cart.set(cartKey, line);
         updateCartUI();
@@ -8884,6 +9008,7 @@
         const cartKey = dec.getAttribute("data-dec");
         const v = cart.get(cartKey);
         const line = upgradeCartValue(v, null);
+        if (!line) return;
         line.qty -= 1;
         if (line.qty <= 0) cart.delete(cartKey);
         else cart.set(cartKey, line);
@@ -9081,28 +9206,47 @@
 
     function _buildCartItems() {
       const items = []; let subtotal = 0;
+      const removed = [];
       cart.forEach((val, cartKey) => {
-        const line = upgradeCartValue(val, null);
-        const { productIdx, variants } = parseCartKey(cartKey);
-        const p = SHOP.products[productIdx];
-        const lineSub = line.unitPrice * line.qty;
+        const resolved = _resolveCartLine(cartKey, val);
+        if (!resolved) {
+          removed.push({
+            key: cartKey,
+            title: val && typeof val === 'object' && val.title ? String(val.title) : ''
+          });
+          return;
+        }
+        const { line, product: p, productId, variants } = resolved;
+        const qty = Number(line.qty);
+        const unitPrice = Number(line.unitPrice);
+        if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+          removed.push({ key: cartKey, title: line.title ? String(line.title) : '' });
+          return;
+        }
+        const lineSub = unitPrice * qty;
         subtotal += lineSub;
         items.push({
-          product_id:        p.id || String(productIdx),
+          product_id:        productId,
           title:             line.title || p.title,
           variant_info:      Object.keys(variants).length
             ? Object.entries(variants).map(([k,v]) => `${k}: ${v}`).join(', ') : '',
           _selectedVariants: variants,
-          unit_price:        line.unitPrice,
+          unit_price:        unitPrice,
           unit_base_price:   line.unitBasePrice || null,
-          qty:               line.qty,
+          qty:               qty,
           subtotal:          lineSub,
           _imgUrl:           line.imgUrl,
           _imgDriveId:       line.imgDriveFileId,
           _p:                p
         });
       });
-      return { items, subtotal };
+      if (removed.length) {
+        removed.forEach(entry => cart.delete(entry.key));
+        if (typeof _giftPreviewLastKey !== 'undefined') _giftPreviewLastKey = '';
+        if (typeof _giftPreviewLastResult !== 'undefined') _giftPreviewLastResult = null;
+        _saveCart();
+      }
+      return { items, subtotal, removed };
     }
 
     function _calcTotalWeight(cartItems) {
@@ -9307,7 +9451,14 @@
     }
 
     function openOrderConfirmModal() {
-      const { items, subtotal } = _buildCartItems();
+      if (!_ensureCartReadyForCheckout()) return;
+      const { items, subtotal, removed } = _buildCartItems();
+      if (removed.length) {
+        updateCartUI();
+        _showRemovedCartItemsModal(removed);
+        return;
+      }
+      if (!items.length) return;
 
       // Render summary
       const listEl = document.getElementById('ocmItems');
@@ -9435,19 +9586,16 @@
       var toRemove = [];
       var toUpdate = [];
       cart.forEach(function(val, cartKey) {
-        var parsed = parseCartKey(cartKey);
-        var line   = upgradeCartValue(val, null);
-        var prod   = SHOP.products[parsed.productIdx];
-        var prodId = (prod && prod.id) || (line && line.productId) || '';
-        if (String(prodId) !== pid) return;
+        var resolved = _resolveCartLine(cartKey, val);
+        if (!resolved || resolved.productId !== pid) return;
         if (selectedVariants && Object.keys(selectedVariants).length) {
           var match = Object.keys(selectedVariants).every(function(k){
-            return String(parsed.variants[k] || '') === String(selectedVariants[k] || '');
+            return String(resolved.variants[k] || '') === String(selectedVariants[k] || '');
           });
           if (!match) return;
         }
         if (newQty <= 0) toRemove.push(cartKey);
-        else toUpdate.push({ key: cartKey, line: line });
+        else toUpdate.push({ key: cartKey, line: resolved.line });
       });
       toRemove.forEach(function(k){ cart.delete(k); });
       toUpdate.forEach(function(u){ u.line.qty = newQty; cart.set(u.key, u.line); });
@@ -9461,20 +9609,18 @@
         var pid = String(srv.product_id || '');
         if (!pid) return;
         cart.forEach(function(val, cartKey) {
-          var parsed = parseCartKey(cartKey);
-          var line   = upgradeCartValue(val, null);
-          var prod   = SHOP.products[parsed.productIdx];
-          var prodId = (prod && prod.id) || (line && line.productId) || '';
-          if (String(prodId) !== pid) return;
-          var localVk = _buildVariantKey(parsed.variants || {});
+          var resolved = _resolveCartLine(cartKey, val);
+          if (!resolved || resolved.productId !== pid) return;
+          var localVk = _buildVariantKey(resolved.variants || {});
           if (String(srv.variant_key || '') !== localVk) return;
-          line.unitPrice = Number(srv.unit_final_price) || line.unitPrice;
-          cart.set(cartKey, line);
+          resolved.line.unitPrice = Number(srv.unit_final_price) || resolved.line.unitPrice;
+          cart.set(cartKey, resolved.line);
         });
       });
     }
 
     async function submitOrderConfirm() {
+      if (!_ensureCartReadyForCheckout()) return;
       const form = document.getElementById('ocmForm');
       const firstInvalid = form.querySelector(':invalid');
       if (firstInvalid) {
@@ -9495,7 +9641,16 @@
         return;
       }
 
-      const { items } = _buildCartItems();
+      const { items, removed } = _buildCartItems();
+      if (removed.length) {
+        const modalEl = document.getElementById('orderConfirmModal');
+        const modal = modalEl ? bootstrap.Modal.getInstance(modalEl) : null;
+        if (modal) modal.hide();
+        updateCartUI();
+        _showRemovedCartItemsModal(removed);
+        return;
+      }
+      if (!items.length) return;
 
       // Collect only method IDs — no fees (backend recalculates everything)
       const shippingInfo = [];
@@ -11479,6 +11634,9 @@
       // Render immediately + Save local
       renderHeader();
       renderProducts();
+      const cartResult = reconcileCartWithProducts();
+      updateCartUI();
+      _showRemovedCartItemsModal(cartResult.removed);
       saveConfig(SHOP);
 
       // ===== 3) Publish ไป Apps Script (อย่า await modal) =====
@@ -11752,6 +11910,9 @@
       saveConfig(SHOP);
       renderHeader();
       renderProducts();
+      const cartResult = reconcileCartWithProducts();
+      updateCartUI();
+      _showRemovedCartItemsModal(cartResult.removed);
       try {
         const modalEl = document.getElementById('settingsModal');
         const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
@@ -11823,6 +11984,9 @@
           fillForm();
           renderHeader();
           renderProducts();
+          const cartResult = reconcileCartWithProducts();
+          updateCartUI();
+          _showRemovedCartItemsModal(cartResult.removed);
           saveConfig(SHOP);
           swalToast?.fire({ icon: 'success', title: 'นำเข้าไฟล์สำเร็จ' });
 
@@ -12111,8 +12275,10 @@
 
       _setLoaderProgress(92, 'เตรียมหน้าร้าน…');
       fillForm();
+      const cartResult = reconcileCartWithProducts();
       updateCartUI(); // restore cart display from localStorage
       _dismissLoader();
+      _showRemovedCartItemsModal(cartResult.removed);
     })();
 
   </script>
