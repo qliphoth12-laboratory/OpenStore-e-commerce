@@ -184,6 +184,7 @@ Google Sheets เป็นฐานข้อมูลหลัก ทุก shee
 | `slip_drive_file_id` | ไฟล์สลิปใน Drive |
 | `token_expires_at` | วันหมดอายุ token |
 | `tracking_json` | tracking result/cache เข้ารหัส at rest |
+| `fulfillment_shipping_json` | บริษัทขนส่งจริงที่ร้านใช้จัดส่ง (แยกจากที่ลูกค้าเลือก) — plaintext, ไม่มี PII |
 
 ### `store`
 
@@ -439,6 +440,38 @@ events ถูก normalize เป็น oldest-first
 
 เมื่อ tracking บอกว่าจัดส่งสำเร็จแล้ว ระบบสามารถ persist result ลง `tracking_json`
 และเปลี่ยนสถานะ order เป็น delivered ตามเงื่อนไขที่กำหนด
+
+### Fulfillment Carrier Override (บริษัทขนส่งจริง)
+
+ระบบแยก **สองแนวคิด** ของการจัดส่งออกจากกัน:
+
+1. **ที่ลูกค้าเลือกและจ่ายเงิน** — เก็บใน `shipping_method_id` + `shipping_info_json`
+   เป็น snapshot ที่ไม่เปลี่ยนแปลง (หลักฐานของสิ่งที่ลูกค้าเลือก) — **ห้ามเขียนทับ**
+2. **บริษัทขนส่งจริงที่ร้านใช้จัดส่ง** — เก็บใน `fulfillment_shipping_json`
+   ร้านเปลี่ยนได้หลังสร้าง order โดย**ไม่กระทบราคา** (ส่วนต่างค่าขนส่งร้านรับผิดชอบเอง)
+
+RPC `orderUpdateFulfillmentShippingRpc(token, orderId, companyId, methodId, reason)`:
+
+- อนุญาตเฉพาะสถานะ `unpaid` / `paid` / `approved` (ปฏิเสธ `shipped` / `delivered` /
+  `rejected` / `cancelled`) และ**ไม่เปลี่ยนสถานะหลักของ order**
+- ต้องระบุ `reason` เมื่อสถานะเป็น `paid` / `approved`
+- ตรวจสอบว่า company + method active และ method เป็นของ company นั้นจริง
+- `carrier_id` / `tracking_provider` / `tracking_url_template` **resolve ฝั่ง backend**
+  จาก shipping config แล้ว snapshot ไว้ (order ยังอ่านได้แม้ config ถูกแก้/ลบภายหลัง) —
+  ไม่เชื่อค่าจาก frontend
+- บันทึก history event `shipping_carrier_changed` (note แบบ customer-safe) + audit log
+- ทำงานภายใต้ `LockService` ป้องกัน race กับ `orderMarkShippedRpc`
+
+`orderMarkShippedRpc` เลือก carrier ตาม `fulfillment_shipping_json` ก่อน ถ้าไม่มีจึง fall
+back ไปที่ company เดิมใน `shipping_info_json`; order เก่าที่ไม่มี override ทำงานเหมือนเดิม
+
+**Monetary field locking**: เมื่อ order เคยถึงสถานะ `paid`/`approved`/`shipped`/`delivered`
+แล้ว (พิจารณาจาก status history — ล็อกถาวรแม้ย้อนกลับเป็น `unpaid`) `orderUpdateFieldsRpc`
+จะปฏิเสธการแก้ `shipping_fee` / `subtotal` / `total`; ก่อนชำระเงินที่ยังแก้ค่าส่งได้
+`total` คำนวณใหม่ฝั่ง backend จาก `subtotal + shipping_fee` เสมอ (ไม่เชื่อ `total` จาก client)
+
+หน้า `order-view.html` แสดงข้อความก่อนจัดส่งว่าจะส่งด้วยบริษัทจริงใด (เฉพาะ `company_name`
+ที่ผ่านการ sanitize — ไม่เปิดเผย reason/ผู้แก้ไข/บริษัทเดิมให้ลูกค้า)
 
 ## Authentication And Authorization
 
