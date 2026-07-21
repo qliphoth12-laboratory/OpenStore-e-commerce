@@ -2087,7 +2087,7 @@
           if (!created || created.ok === false) throw new Error((created && created.error) || 'เพิ่มสินค้าไม่สำเร็จ');
           const newId = created?.id;
           if (newId) {
-            const fresh = await callRpc('productGetRpc', newId);
+            const fresh = await callRpc('productGetRpc', newId, _getAdminToken());
             if (!isCurrentOp(tempId, token)) return;
             const idx = items.findIndex(x => String(x.id) === String(tempId));
             if (fresh && fresh.record) {

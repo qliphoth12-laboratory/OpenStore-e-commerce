@@ -27,6 +27,8 @@
     .picker-card:hover { border-color:#9ca3af; }
     .picker-card.selected { border-color:#111827; background:#f9fafb; }
     .picker-card.disabled { opacity:.5; cursor:not-allowed; }
+    .picker-card.disabled:hover { border-color:#fca5a5; transform:none; box-shadow:none; }
+    .picker-card.disabled:focus-visible { outline:3px solid rgba(239,68,68,.2); outline-offset:2px; }
     .picker-thumb-wrap { position:relative; aspect-ratio:1/1; border-radius:8px; background:#f3f4f6; overflow:hidden; }
     .picker-thumb-wrap::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.6) 50%,transparent 100%); background-size:200% 100%; animation:giftShimmer 1.25s infinite; }
     .picker-thumb-wrap.loaded::after { display:none; }
@@ -39,12 +41,25 @@
     .selected-chip .picker-thumb-wrap { width:42px; height:42px; aspect-ratio:auto; flex-shrink:0; }
     .cond-row { display:flex; align-items:center; gap:8px; padding:8px; border:1px solid var(--border); border-radius:10px; background:#fff; margin-bottom:6px; }
     .cond-row .picker-thumb-wrap { width:42px; height:42px; aspect-ratio:auto; flex-shrink:0; }
+    .cond-row.is-dup { background:#fef2f2; border-color:#fca5a5; }
     .skel.lg { height:18px; min-width:160px; }
     .skel.pill { border-radius:999px; height:20px; }
     .table-loading-overlay { position:absolute; inset:0; background:rgba(255,255,255,.6); display:flex; align-items:center; justify-content:center; z-index:10; pointer-events:none; }
     .table-loading-overlay .spinner-border { width:1.75rem; height:1.75rem; border-width:.2rem; color:#6b7280; }
     .tbl-wrap-pos { position:relative; }
     tbody.is-loading { opacity:.5; pointer-events:none; }
+    /* Live gift-reward preview inside the rule form */
+    .gr-repeat-preview { border:1px solid var(--border,#e5e7eb); border-radius:12px; background:#f9fafb; padding:10px 12px; font-size:.8rem; color:#374151; }
+    .gr-repeat-preview.is-empty { color:#9ca3af; font-style:italic; }
+    .grp-title { display:flex; align-items:center; gap:6px; font-weight:700; color:#111827; font-size:.78rem; margin-bottom:6px; }
+    .grp-req { color:#4b5563; line-height:1.5; margin-bottom:8px; overflow-wrap:anywhere; }
+    .grp-req b { color:#111827; font-weight:700; }
+    .grp-examples { display:flex; flex-direction:column; gap:6px; }
+    .grp-ex { display:flex; align-items:center; flex-wrap:wrap; gap:6px 10px; padding:6px 8px; border:1px solid #eef2f7; border-radius:8px; background:#fff; }
+    .grp-ex-buy { flex:1 1 auto; min-width:0; color:#4b5563; line-height:1.4; overflow-wrap:anywhere; }
+    .grp-ex-buy .grp-note { display:block; color:#9ca3af; font-size:.72rem; margin-top:1px; }
+    .grp-ex-get { flex:0 0 auto; display:inline-flex; align-items:center; gap:4px; white-space:nowrap; font-weight:800; color:#166534; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:999px; padding:2px 10px; }
+    .grp-ex.is-once .grp-ex-get { color:#1f2937; background:#f3f4f6; border-color:#e5e7eb; }
   </style>
 </head>
 <body>
@@ -140,7 +155,7 @@
           <div class="col-md-12"><label class="form-label fw-semibold">ชื่อของแถม *</label><input class="form-control" id="giName" maxlength="200"></div>
           <div class="col-md-12"><label class="form-label fw-semibold">รายละเอียด</label><textarea class="form-control" id="giDesc" rows="2"></textarea></div>
           <div class="col-md-6"><label class="form-label fw-semibold">สต็อก</label>
-            <input type="number" class="form-control" id="giStock" value="-1">
+            <input type="number" class="form-control" id="giStock" value="-1" step="1">
             <div class="form-text" style="font-size:.7rem">-1 = ไม่จำกัด</div>
           </div>
           <div class="col-md-6"><label class="form-label fw-semibold">เปิดใช้งาน</label>
@@ -201,7 +216,7 @@
             </button>
           </div>
           <div class="col-md-6"><label class="form-label fw-semibold">จำนวนของแถม</label>
-            <input type="number" class="form-control" id="grQty" value="1" min="1">
+            <input type="number" class="form-control" id="grQty" value="1" min="1" step="1">
           </div>
           <div class="col-md-6"><label class="form-label fw-semibold">ประเภทเงื่อนไข *</label>
             <select class="form-select" id="grType">
@@ -209,6 +224,16 @@
               <option value="required_products">ซื้อสินค้าที่กำหนด</option>
               <option value="required_variants">ซื้อรุ่น/ตัวเลือกที่กำหนด</option>
             </select>
+          </div>
+          <div class="col-md-12 d-none" id="grMatchModeWrap">
+            <label class="form-label">รูปแบบการนับเงื่อนไข</label>
+            <div class="btn-group w-100" role="group" aria-label="match mode">
+              <input type="radio" class="btn-check" name="grMatchMode" id="grMatchAll" value="all" checked>
+              <label class="btn btn-outline-dark" for="grMatchAll">ต้องซื้อครบทุกอย่าง</label>
+              <input type="radio" class="btn-check" name="grMatchMode" id="grMatchAny" value="any">
+              <label class="btn btn-outline-dark" for="grMatchAny">ซื้ออย่างใดอย่างหนึ่งก็ได้</label>
+            </div>
+            <div class="form-text">“ครบทุกอย่าง” = ต้องซื้อครบทุกรายการที่กำหนด · “อย่างใดอย่างหนึ่ง” = ซื้อรายการใดรายการหนึ่งให้ครบก็ได้ของแถม</div>
           </div>
           <div class="col-md-12" id="grCondMinSubtotal">
             <label class="form-label">ยอดขั้นต่ำ (บาท) — คำนวณจากยอดรวมหลังหักโปรโมชั่น ก่อนค่าส่ง</label>
@@ -244,6 +269,11 @@
           </div>
           <div class="col-md-6"><label class="form-label">เปิดใช้งาน</label>
             <div class="form-check form-switch mt-2"><input class="form-check-input" type="checkbox" id="grEnabled" checked><label class="form-check-label" for="grEnabled">เปิดใช้งาน</label></div>
+          </div>
+          <div class="col-12"><label class="form-label">การให้ของแถมซ้ำ</label>
+            <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="grRepeat"><label class="form-check-label" for="grRepeat">ให้ของแถมซ้ำทุกครั้งที่ครบเงื่อนไข</label></div>
+            <div class="form-text">เมื่อเปิด จะคูณจำนวนของแถมตามจำนวนครั้งที่ลูกค้าซื้อครบเงื่อนไข (เช่น ต้องซื้อ 1 ชิ้น หากซื้อ 3 ชิ้น = 3 ชุด, ต้องซื้อ 3 ชิ้น หากซื้อ 6 ชิ้น = 2 ชุด) เศษที่ไม่ครบจะถูกละไว้</div>
+            <div id="grRepeatPreview" class="gr-repeat-preview mt-2"></div>
           </div>
           <div id="grErr" class="text-danger small d-none col-12"></div>
         </div>
@@ -295,10 +325,53 @@ var _productsLoaded = false;
 var _giftOpSeq = 0;
 var _giftInFlight = Object.create(null);
 var _itemModal = null, _ruleModal = null, _giftPickerModal = null, _productPickerModal = null;
+var _giftItemSaveInFlight = false, _giftRuleSaveInFlight = false;
 var _giImageData = null;
 // Live state of the visual condition builder
 var _grProductRows = []; // [{product_id, min_qty}]
 var _grVariantRows = []; // [{product_id, variant_key, selected_variants:{...}, min_qty}]
+
+function _giftIsPositiveInteger(value) {
+  var n = Number(value);
+  return Number.isFinite(n) && Math.floor(n) === n && n >= 1;
+}
+function _giftIsValidStock(value) {
+  var n = Number(value);
+  return Number.isFinite(n) && Math.floor(n) === n && (n === -1 || n >= 0);
+}
+function _giftSetFormError(el, message) {
+  el.textContent = message;
+  el.classList.remove('d-none');
+}
+function _showGiftSaveError(el, modal, message) {
+  _giftSetFormError(el, message);
+  var modalEl = el.closest('.modal');
+  if (modal && modalEl && !modalEl.classList.contains('show')) modal.show();
+  requestAnimationFrame(function(){
+    el.scrollIntoView({ block:'nearest', behavior:'smooth' });
+  });
+}
+function _giftOperationalBadge(record) {
+  if (!record || record.operational !== false) return '';
+  var detail = (record.validation_errors || []).join(', ');
+  return ' <span class="badge bg-danger-subtle text-danger-emphasis" title="'+escAttr(detail)+'">ข้อมูลไม่ถูกต้อง</span>';
+}
+function _giftValidateVariantRow(row) {
+  var product = _findProduct(row && row.product_id);
+  if (!product) return 'ไม่พบสินค้าที่อ้างอิง';
+  var selected = (row && row.selected_variants) || {};
+  var groups = product.variants || [];
+  if (!groups.length) return 'สินค้าที่เลือกไม่มีตัวเลือกสินค้า กรุณาใช้เงื่อนไขสินค้าแทน';
+  for (var i = 0; i < groups.length; i++) {
+    var group = groups[i] || {};
+    var value = selected[group.name];
+    if (!value) return 'กรุณาเลือกตัวเลือกให้ครบทุกกลุ่มของสินค้า ' + (product.title || product.id);
+    var exists = (group.options || []).some(function(option){ return String(option.label) === String(value); });
+    if (!exists) return 'ค่าตัวเลือกของสินค้า ' + (product.title || product.id) + ' ไม่มีอยู่ในระบบ';
+  }
+  if (Object.keys(selected).length !== groups.length) return 'ชุดตัวเลือกของสินค้า ' + (product.title || product.id) + ' ไม่ถูกต้อง';
+  return '';
+}
 var _productPickerCb = null; // callback set when opening the product picker
 var _giOriginalImageUrl = '';
 var _giOriginalDriveId = '';
@@ -606,7 +679,7 @@ function renderItemsTable(){
     var stat = g.enabled ? 'active' : 'disabled';
     html += '<tr>'
       + '<td>' + img + '</td>'
-      + '<td><div class="admin-main-text">'+escHtml(g.name)+'</div></td>'
+      + '<td><div class="admin-main-text">'+escHtml(g.name)+_giftOperationalBadge(g)+'</div></td>'
       + '<td><div class="admin-sub-text">'+escHtml((g.description||'').slice(0,80))+'</div></td>'
       + '<td class="admin-cell-center">'+stockStr+'</td>'
       + '<td class="admin-cell-center">'+statusBadge(stat)+'</td>'
@@ -643,11 +716,14 @@ function renderRulesTable(){
   pageRules.forEach(function(r){
     var gName = giftMap[r.gift_id] ? giftMap[r.gift_id].name : '—';
     var typeLabel = ({min_subtotal:'ยอดขั้นต่ำ',required_products:'สินค้าที่กำหนด',required_variants:'รุ่นที่กำหนด'})[r.condition_type]||r.condition_type;
-    var period = '<div class="admin-sub-text">เริ่ม '+escHtml(fmtDateTime(r.starts_at))+'</div>';
+    if ((r.condition_type === 'required_products' || r.condition_type === 'required_variants') && (r.condition_json||{}).match_mode === 'any') {
+      typeLabel += ' <span class="badge bg-secondary-subtle text-secondary-emphasis">อย่างใดอย่างหนึ่ง</span>';
+    }
+    var period = '<div class="admin-sub-text">เริ่ม '+(r.starts_at ? escHtml(fmtDateTime(r.starts_at)) : 'ทันที')+'</div>';
     period += '<div class="admin-sub-text">' + (r.no_end_date ? 'ไม่มีวันสิ้นสุด' : ('สิ้นสุด '+escHtml(fmtDateTime(r.ends_at)))) + '</div>';
     html += '<tr>'
-      + '<td><div class="admin-main-text">'+escHtml(r.name)+'</div></td>'
-      + '<td>'+escHtml(gName)+' × '+r.gift_qty+'</td>'
+      + '<td><div class="admin-main-text">'+escHtml(r.name)+_giftOperationalBadge(r)+'</div></td>'
+      + '<td>'+escHtml(gName)+' × '+r.gift_qty+(r.repeat_mode==='per_threshold'?' <span class="badge bg-info-subtle text-info-emphasis">×ทุกเงื่อนไข</span>':'')+'</td>'
       + '<td>'+typeLabel+'</td>'
       + '<td>'+period+'</td>'
       + '<td class="admin-cell-center">'+statusBadge(r.status||(r.enabled?'active':'disabled'))+'</td>'
@@ -772,6 +848,42 @@ function _withDefaultVariantSelections(product, selected) {
 }
 function _findProduct(id) { return _productsCache.filter(function(p){ return String(p.id) === String(id); })[0] || null; }
 function _findGift(id)    { return _itemsCache.filter(function(g){ return String(g.gift_id) === String(id); })[0] || null; }
+function _giftHasSelectableVariants(product) {
+  var groups = (product && product.variants) || [];
+  return groups.length > 0 && groups.every(function(group){
+    return !!String(group && group.name || '').trim()
+      && (group.options || []).some(function(option){ return !!String(option && option.label || '').trim(); });
+  });
+}
+function _giftProductPickerReason(product, variantsOnly) {
+  if (!product) return 'ไม่พบข้อมูลสินค้า';
+  var status = String(product.sale_status || '').toLowerCase();
+  if (!status && product.sale_mode === 'disabled') status = 'disabled';
+  if (status === 'disabled') return 'สินค้านี้ปิดการขายอยู่';
+  if (status === 'invalid') {
+    if (!String(product.title || '').trim()) return 'สินค้านี้ยังไม่ได้ระบุชื่อ';
+    var variantPricesOk = (product.variants || []).length > 0 && (product.variants || []).every(function(group) {
+      return (group.options || []).length > 0 && (group.options || []).every(function(option){ return Number(option.price) > 0; });
+    });
+    if (!(Number(product.price) > 0) && !variantPricesOk) return 'สินค้านี้ยังไม่ได้กำหนดราคาที่ถูกต้อง';
+    if (!Array.isArray(product.allowed_shipping_ids) || !product.allowed_shipping_ids.length) return 'สินค้านี้ยังไม่ได้กำหนดวิธีจัดส่ง';
+    return 'วิธีจัดส่งของสินค้านี้ยังไม่เปิดใช้งาน';
+  }
+  if (variantsOnly && !_giftHasSelectableVariants(product)) return 'สินค้านี้ไม่มีรุ่น/ตัวเลือกให้เลือก';
+  return '';
+}
+function _giftPickerReasonAttrs(reason) {
+  if (!reason) return '';
+  var safe = escAttr(reason);
+  return ' role="button" tabindex="0" aria-disabled="true" aria-label="เลือกไม่ได้: ' + safe
+    + '" title="' + safe + '" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="' + safe + '"';
+}
+function _initGiftPickerTooltips(root) {
+  if (!root || !window.bootstrap || !bootstrap.Tooltip) return;
+  root.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+    bootstrap.Tooltip.getOrCreateInstance(el, { container:'body', trigger:'hover focus' });
+  });
+}
 function _formatVariantKeyLabel(key) {
   if (!key) return '';
   return key.split('|').map(function(seg){ return seg.replace('=', ': '); }).join(' • ');
@@ -820,11 +932,16 @@ function openEditItem(id){
 function saveItem(){
   var name = document.getElementById('giName').value.trim();
   if (!name){ document.getElementById('giErr').textContent = 'กรุณาระบุชื่อของแถม'; document.getElementById('giErr').classList.remove('d-none'); return; }
+  var stockRaw = document.getElementById('giStock').value;
+  if (!_giftIsValidStock(stockRaw)) {
+    _giftSetFormError(document.getElementById('giErr'), 'สต็อกต้องเป็น -1 (ไม่จำกัด) หรือจำนวนเต็มตั้งแต่ 0 ขึ้นไป');
+    return;
+  }
   document.getElementById('giErr').classList.add('d-none');
   var payload = {
     name: name,
     description: document.getElementById('giDesc').value.trim(),
-    stock: Number(document.getElementById('giStock').value || -1),
+    stock: Number(stockRaw),
     enabled: document.getElementById('giEnabled').checked
   };
   var imgMode = (document.querySelector('input[name="giImgMode"]:checked') || {}).value || 'url';
@@ -841,6 +958,7 @@ function saveItem(){
   if (saveBtn.disabled) return;
   showHUD(editingId ? 'Saving gift item...' : 'Adding gift item...');
   _setButtonBusy(saveBtn, true, 'Saving');
+  _giftItemSaveInFlight = true;
   var opId = editingId || ('temp-gift-' + Math.random().toString(36).slice(2));
   var token = _beginGiftOp(opId);
   var beforeIndex = editingId ? _itemsCache.findIndex(function(x){ return String(x.gift_id) === String(editingId); }) : -1;
@@ -863,12 +981,15 @@ function saveItem(){
       if (editingId) { if (beforeIndex >= 0 && before) _itemsCache[beforeIndex] = before; }
       else { _itemsCache = _itemsCache.filter(function(x){ return String(x.gift_id) !== String(opId); }); }
       if (_currentTab === 'items') renderItemsTable();
-      hideHUD('err', (res && res.error) || 'Save failed'); return;
+      var message = (res && res.error) || 'Save failed';
+      _showGiftSaveError(document.getElementById('giErr'), _itemModal, message);
+      hideHUD('err', message); return;
     }
     if (!editingId && res.gift_id) {
       var tmpIdx = _itemsCache.findIndex(function(x){ return String(x.gift_id) === String(opId); });
       if (tmpIdx >= 0) _itemsCache[tmpIdx].gift_id = res.gift_id;
     }
+    _giftItemSaveInFlight = false;
     _itemModal.hide();
     refresh({ showHud:false }).then(function(){ hideHUD('ok', editingId ? 'Saved' : 'Added'); });
   }).catch(function(e){
@@ -877,9 +998,12 @@ function saveItem(){
       else { _itemsCache = _itemsCache.filter(function(x){ return String(x.gift_id) !== String(opId); }); }
       if (_currentTab === 'items') renderItemsTable();
     }
-    hideHUD('err', e.message||String(e));
+    var message = e.message||String(e);
+    _showGiftSaveError(document.getElementById('giErr'), _itemModal, message);
+    hideHUD('err', message);
   }).finally(function(){
     _endGiftOp(opId, token);
+    _giftItemSaveInFlight = false;
     _setButtonBusy(saveBtn, false);
   });
 }
@@ -889,6 +1013,182 @@ function condTypeChanged(){
   document.getElementById('grCondMinSubtotal').classList.toggle('d-none', t !== 'min_subtotal');
   document.getElementById('grCondProducts').classList.toggle('d-none', t !== 'required_products');
   document.getElementById('grCondVariants').classList.toggle('d-none', t !== 'required_variants');
+  document.getElementById('grMatchModeWrap').classList.toggle('d-none', t !== 'required_products' && t !== 'required_variants');
+  _renderRepeatPreview();
+}
+
+// Currently selected match mode ('all' | 'any') for product/variant conditions.
+function _grMatchMode() {
+  var el = document.querySelector('input[name="grMatchMode"]:checked');
+  return (el && el.value === 'any') ? 'any' : 'all';
+}
+// Return every variant row involved in a duplicate (same product_id + variant_key).
+function _grDuplicateVariantIdx() {
+  var seen = {}, dup = {};
+  _grVariantRows.forEach(function(r, i){
+    var k = String(r.product_id||'') + '|' + _buildVariantKey(r.selected_variants || {});
+    if (seen[k] !== undefined) { dup[seen[k]] = true; dup[i] = true; }
+    else seen[k] = i;
+  });
+  return dup;
+}
+
+// ===== Live gift-reward preview (mirrors backend award math) =====
+// awarded = gift_qty × (repeat ? multiplier : (multiplier>=1 ? 1 : 0))
+// matchMode 'all': multiplier = min over entries of floor(bought/min); any entry <1 → 0.
+// matchMode 'any': multiplier = SUM over entries of floor(bought/min); sum 0 → not eligible.
+function _giftAwardedQty(boughtQtys, minQtys, giftQty, repeat, matchMode) {
+  if (!minQtys || !minQtys.length) return 0;
+  var anyMode = matchMode === 'any';
+  var mult = anyMode ? 0 : Infinity;
+  if (!_giftIsPositiveInteger(giftQty)) return 0;
+  for (var i = 0; i < minQtys.length; i++) {
+    var minQ = Number(minQtys[i]);
+    if (!_giftIsPositiveInteger(minQ)) return 0;
+    var times = Math.floor(Number(boughtQtys[i] || 0) / minQ);
+    if (anyMode) { mult += times; }
+    else { if (times < 1) return 0; if (times < mult) mult = times; }
+  }
+  if (anyMode) { if (mult < 1) return 0; }
+  else if (mult === Infinity) return 0;
+  return Number(giftQty) * (repeat ? mult : 1);
+}
+
+function _grFmtBaht(n) { return '฿' + Number(n || 0).toLocaleString(); }
+
+function _renderRepeatPreview() {
+  var box = document.getElementById('grRepeatPreview');
+  if (!box) return;
+  box.style.display = '';
+  var type = document.getElementById('grType').value;
+  var giftQty = Number(document.getElementById('grQty').value);
+  var repeat = document.getElementById('grRepeat').checked;
+  var gift = _findGift(document.getElementById('grGiftId').value || '');
+  var giftName = (gift && gift.name) ? gift.name : 'ของแถม';
+  var pieceWord = 'ชิ้น';
+  var matchMode = (type === 'required_products' || type === 'required_variants') ? _grMatchMode() : 'all';
+  var anyMode = matchMode === 'any';
+
+  // Duplicate rows are already highlighted in the builder. Hide the calculation preview
+  // until they are fixed so the save error remains the single textual warning.
+  var hasDup = false;
+  if (type === 'required_variants') { hasDup = Object.keys(_grDuplicateVariantIdx()).length > 0; }
+  else if (type === 'required_products') {
+    var ps = {}; _grProductRows.forEach(function(r){ var k = String(r.product_id||''); if (ps[k]) hasDup = true; else ps[k] = 1; });
+  }
+  if (hasDup) {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+
+  // entries: [{ label, minQ }]; minSub for the subtotal type; requirement summary string.
+  var entries = [], minSub = 0, configured = false, reqHtml = '';
+  if (type === 'min_subtotal') {
+    minSub = Number(document.getElementById('grMinSubtotal').value || 0);
+    configured = minSub > 0;
+    reqHtml = 'ซื้อครบยอด <b>' + _grFmtBaht(minSub) + '</b>';
+  } else {
+    var rows = (type === 'required_products') ? _grProductRows : _grVariantRows;
+    entries = rows.map(function(r){
+      var p = _findProduct(r.product_id);
+      var base = (p && p.title) ? p.title : '(สินค้าถูกลบ)';
+      if (type === 'required_variants') {
+        var vk = _formatVariantKeyLabel(_buildVariantKey(r.selected_variants || {}));
+        if (vk) base += ' (' + vk + ')';
+      }
+      return { label: base, minQ: Number(r.min_qty) };
+    });
+    configured = entries.length > 0 && entries.every(function(entry){ return _giftIsPositiveInteger(entry.minQ); });
+    var reqParts = entries.map(function(e){ return '<b>' + escHtml(e.label) + '</b> ×' + e.minQ; });
+    reqHtml = anyMode ? ('ซื้ออย่างใดอย่างหนึ่ง: ' + reqParts.join(' หรือ '))
+                      : ('ต้องซื้อครบทุกอย่าง: ' + reqParts.join(', '));
+  }
+
+  if (!configured) {
+    box.className = 'gr-repeat-preview mt-2 is-empty';
+    box.textContent = 'ตั้งค่าเงื่อนไขด้านบนเพื่อดูตัวอย่างของแถมที่ลูกค้าจะได้รับ';
+    return;
+  }
+
+  function exRow(buyHtml, awarded, note, isOnce) {
+    return '<div class="grp-ex' + (isOnce ? ' is-once' : '') + '">'
+      + '<div class="grp-ex-buy">' + buyHtml + (note ? '<span class="grp-note">' + escHtml(note) + '</span>' : '') + '</div>'
+      + '<div class="grp-ex-get"><i class="bi bi-gift"></i>' + escHtml(giftName) + ' × ' + awarded + ' ' + pieceWord + '</div>'
+      + '</div>';
+  }
+
+  var minArr = entries.map(function(e){ return e.minQ; });
+  // Show a purchase (products/variants). onlyBought omits entries the customer didn't buy (any mode).
+  function fmtBuy(bought, onlyBought) {
+    var parts = [];
+    entries.forEach(function(e, i){ if (!onlyBought || bought[i] > 0) parts.push(escHtml(e.label) + ' ×' + bought[i]); });
+    return parts.join(', ');
+  }
+  function awardBuy(bought) { return _giftAwardedQty(bought, minArr, giftQty, repeat, matchMode); }
+  function subBuy(subtotal) { return _giftAwardedQty([subtotal], [minSub], giftQty, repeat, 'all'); }
+
+  var rowsHtml = '';
+
+  if (type === 'min_subtotal') {
+    if (!repeat) {
+      rowsHtml = exRow('ยอดซื้อ <b>' + _grFmtBaht(minSub) + '</b>', subBuy(minSub), 'รับครั้งเดียว แม้ซื้อเกินก็ไม่เพิ่ม', true);
+    } else {
+      rowsHtml += exRow('ยอดซื้อ <b>' + _grFmtBaht(minSub) + '</b>', subBuy(minSub));
+      rowsHtml += exRow('ยอดซื้อ <b>' + _grFmtBaht(minSub * 2) + '</b>', subBuy(minSub * 2));
+      var rem = Math.max(1, Math.round(minSub / 2));
+      rowsHtml += exRow('ยอดซื้อ <b>' + _grFmtBaht(minSub * 2 + rem) + '</b>', subBuy(minSub * 2 + rem),
+        'เกินขั้นต่ำ 2 รอบ + เศษ ' + _grFmtBaht(rem) + ' (ไม่พอครบรอบถัดไป จึงไม่ได้เพิ่ม)');
+    }
+  } else if (entries.length === 1 || !anyMode) {
+    // ALL mode (or a single entry, where all == any): min-based rounds.
+    var full = function(mult){ return minArr.map(function(m){ return m * mult; }); };
+    if (!repeat) {
+      rowsHtml = exRow(fmtBuy(full(1)), awardBuy(full(1)), 'รับครั้งเดียว แม้ซื้อเกินก็ไม่เพิ่ม', true);
+    } else {
+      rowsHtml += exRow(fmtBuy(full(1)), awardBuy(full(1)));
+      rowsHtml += exRow(fmtBuy(full(2)), awardBuy(full(2)));
+      var bigIdx = -1;
+      for (var bi = 0; bi < entries.length; bi++) { if (entries[bi].minQ >= 2) { bigIdx = bi; break; } }
+      if (bigIdx >= 0) {
+        var b1 = full(2); b1[bigIdx] += entries[bigIdx].minQ - 1;
+        rowsHtml += exRow(fmtBuy(b1), awardBuy(b1),
+          'ซื้อ ' + entries[bigIdx].label + ' เกินมา ' + (entries[bigIdx].minQ - 1) + ' ' + pieceWord + ' (ไม่ครบอีกรอบ จึงไม่ได้เพิ่ม)');
+      } else if (entries.length >= 2) {
+        var b2 = full(2); b2[0] += 1; // extra on one item ignored — lowest multiplier wins
+        rowsHtml += exRow(fmtBuy(b2), awardBuy(b2), 'แม้ซื้อ ' + entries[0].label + ' มากกว่า แต่ระบบใช้จำนวนรอบที่น้อยที่สุด');
+      } else {
+        rowsHtml += exRow(fmtBuy(full(5)), awardBuy(full(5)), '1 ' + pieceWord + ' = 1 ชุดพอดี ไม่มีเศษ');
+      }
+    }
+  } else {
+    // ANY mode, multiple entries: multiplier = SUM of completed rounds across qualifying entries.
+    var one = function(idx, mult){ return minArr.map(function(m, i){ return i === idx ? m * mult : 0; }); };
+    if (!repeat) {
+      rowsHtml = exRow(fmtBuy(one(0, 1), true), awardBuy(one(0, 1)), 'ซื้อรายการใดรายการหนึ่งให้ครบก็ได้ · รับครั้งเดียว', true);
+    } else {
+      rowsHtml += exRow(fmtBuy(one(0, 1), true), awardBuy(one(0, 1)), 'ซื้อรายการเดียวที่ครบเงื่อนไข');
+      // entry0 = 2 rounds, entry1 = 1 round → sum = 3
+      var mix = minArr.map(function(m, i){ return i === 0 ? m * 2 : (i === 1 ? m : 0); });
+      rowsHtml += exRow(fmtBuy(mix, true), awardBuy(mix), 'รวมจำนวนรอบจากทุกรายการที่ครบ (2 + 1)');
+      // remainder: entry0 = 2 rounds + partial, others 0 → still 2
+      var remB = one(0, 2);
+      if (entries[0].minQ >= 2) {
+        remB[0] += entries[0].minQ - 1;
+        rowsHtml += exRow(fmtBuy(remB, true), awardBuy(remB),
+          'เศษของ ' + entries[0].label + ' และรายการที่ไม่ได้ซื้อ ไม่ถูกนับ');
+      } else {
+        rowsHtml += exRow(fmtBuy(remB, true), awardBuy(remB), 'รายการที่ไม่ได้ซื้อจะไม่ถูกนับ');
+      }
+    }
+  }
+
+  box.className = 'gr-repeat-preview mt-2';
+  box.innerHTML =
+    '<div class="grp-title"><i class="bi bi-eye"></i>ตัวอย่างของแถมที่ลูกค้าจะได้รับ'
+      + (repeat ? ' · ให้ซ้ำทุกครั้งที่ครบ' : ' · ให้ครั้งเดียว') + '</div>'
+    + '<div class="grp-req">เงื่อนไข: ' + reqHtml + ' · ของแถม ' + escHtml(giftName) + ' ครั้งละ ' + giftQty + ' ' + pieceWord + '</div>'
+    + '<div class="grp-examples">' + rowsHtml + '</div>';
 }
 
 // Render the "selected gift" preview chip above the picker button.
@@ -946,8 +1246,8 @@ function openGiftPicker() {
   _giftPickerModal.show();
 }
 
-// Open the product picker modal. cb is invoked with the selected product object.
-function openProductPicker(cb) {
+// Open the product picker modal. Variant mode only shows products with selectable variants.
+function openProductPicker(cb, variantsOnly) {
   _productPickerCb = cb;
   var grid = document.getElementById('productPickerGrid');
   var search = document.getElementById('productPickerSearch');
@@ -955,16 +1255,24 @@ function openProductPicker(cb) {
   function _render(filter) {
     var f = String(filter||'').toLowerCase();
     var list = _productsCache.filter(function(p){
+      if (variantsOnly && !_giftHasSelectableVariants(p)) return false;
       if (!f) return true;
       return String(p.title||'').toLowerCase().indexOf(f) >= 0;
     });
-    if (!list.length) { grid.innerHTML = '<div class="text-muted small p-3">— ไม่พบสินค้า —</div>'; return; }
+    if (!list.length) {
+      var emptyText = variantsOnly
+        ? (f ? 'ไม่พบสินค้าที่มีรุ่น/ตัวเลือก' : 'ยังไม่มีสินค้าที่มีรุ่น/ตัวเลือก')
+        : 'ไม่พบสินค้า';
+      grid.innerHTML = '<div class="text-muted small p-3">— ' + emptyText + ' —</div>';
+      return;
+    }
     grid.innerHTML = list.map(function(p){
       var fid = p.image_drive_file_id || _parseDriveFileId(p.image_url || '');
       var hasImg = !!(fid || p.image_url);
-      var disabledCls = p.sale_mode === 'disabled' ? ' disabled' : '';
+      var reason = _giftProductPickerReason(p, variantsOnly);
+      var disabledCls = reason ? ' disabled' : '';
       var priceStr = '฿' + Number(p.price||0).toLocaleString();
-      return '<div class="picker-card'+disabledCls+'" data-pick-product="'+escHtml(p.id)+'">'
+      return '<div class="picker-card'+disabledCls+'" data-pick-product="'+escHtml(p.id)+'"' + _giftPickerReasonAttrs(reason) + '>'
         + '<div class="picker-thumb-wrap">'
           + (hasImg ? '<img class="picker-thumb" data-fid="'+escHtml(fid)+'" data-url="'+escHtml(p.image_url||'')+'">' : '<i class="bi bi-box picker-thumb-icon"></i>')
         + '</div>'
@@ -973,6 +1281,7 @@ function openProductPicker(cb) {
         + '</div>';
     }).join('');
     grid.querySelectorAll('img.picker-thumb').forEach(function(img){ _loadAdminImg(img, img.dataset.fid, img.dataset.url); });
+    _initGiftPickerTooltips(grid);
   }
   _render('');
   search.oninput = function(){ _render(search.value); };
@@ -991,21 +1300,24 @@ function _renderProductCondRows() {
       + '<div class="picker-thumb-wrap">'+(hasImg?'<img class="picker-thumb" data-fid="'+escHtml(fid)+'" data-url="'+escHtml(p.image_url||'')+'">':'<i class="bi bi-box picker-thumb-icon"></i>')+'</div>'
       + '<div class="flex-grow-1"><div class="picker-name">'+escHtml(p.title)+'</div></div>'
       + '<div class="d-flex align-items-center gap-1"><span class="small text-muted">ขั้นต่ำ</span>'
-      + '<input type="number" class="form-control form-control-sm" style="width:72px" min="1" value="'+Number(row.min_qty||1)+'" data-cond-qty="'+idx+'"></div>'
+      + '<input type="number" class="form-control form-control-sm" style="width:72px" min="1" step="1" value="'+escAttr(row.min_qty === undefined ? '' : row.min_qty)+'" data-cond-qty="'+idx+'"></div>'
       + '<button type="button" class="btn btn-sm btn-outline-danger" data-cond-rm="'+idx+'"><i class="bi bi-trash"></i></button>'
       + '</div>';
   }).join('');
   box.querySelectorAll('img.picker-thumb').forEach(function(img){ _loadAdminImg(img, img.dataset.fid, img.dataset.url); });
+  _renderRepeatPreview();
 }
 
 // Render the rows for the required_variants condition builder.
 function _renderVariantCondRows() {
   var box = document.getElementById('grVariantsList');
   if (!_grVariantRows.length) { box.innerHTML = '<div class="text-muted small">— ยังไม่ได้เลือกรุ่น —</div>'; return; }
+  var dupIdx = _grDuplicateVariantIdx();
   box.innerHTML = _grVariantRows.map(function(row, idx){
     var p = _findProduct(row.product_id) || { title:'(สินค้าถูกลบ)', variants:[], image_drive_file_id:'', image_url:'' };
-    row.selected_variants = _withDefaultVariantSelections(p, row.selected_variants);
+    row.selected_variants = row.selected_variants || {};
     row.variant_key = _buildVariantKey(row.selected_variants);
+    var isDup = !!dupIdx[idx];
     var fid = p.image_drive_file_id || _parseDriveFileId(p.image_url || '');
     var hasImg = !!(fid || p.image_url);
     var variantSelectsHtml = (p.variants||[]).map(function(group){
@@ -1013,19 +1325,21 @@ function _renderVariantCondRows() {
         var sel = (row.selected_variants && row.selected_variants[group.name] === o.label) ? ' selected' : '';
         return '<option value="'+escHtml(o.label)+'"'+sel+'>'+escHtml(o.label)+'</option>';
       }).join('');
+      var placeholder = row.selected_variants[group.name] ? '' : '<option value="" selected>— '+escHtml(group.name)+' —</option>';
       return '<select class="form-select form-select-sm" data-var-group="'+escHtml(group.name)+'" data-var-row="'+idx+'" style="width:auto;min-width:100px">'
-        + (opts ? opts : '<option value="">— '+escHtml(group.name)+' —</option>') + '</select>';
+        + placeholder + (opts ? opts : '<option value="">— '+escHtml(group.name)+' —</option>') + '</select>';
     }).join(' ');
-    return '<div class="cond-row" style="flex-wrap:wrap">'
+    return '<div class="cond-row' + (isDup ? ' is-dup' : '') + '" style="flex-wrap:wrap">'
       + '<div class="picker-thumb-wrap">'+(hasImg?'<img class="picker-thumb" data-fid="'+escHtml(fid)+'" data-url="'+escHtml(p.image_url||'')+'">':'<i class="bi bi-box picker-thumb-icon"></i>')+'</div>'
-      + '<div class="flex-grow-1"><div class="picker-name">'+escHtml(p.title)+'</div>'
+      + '<div class="flex-grow-1"><div class="picker-name">'+escHtml(p.title)+(isDup?' <span class="badge bg-danger-subtle text-danger-emphasis">ซ้ำ</span>':'')+'</div>'
       + '<div class="d-flex flex-wrap gap-1 mt-1">'+variantSelectsHtml+'</div></div>'
       + '<div class="d-flex align-items-center gap-1"><span class="small text-muted">ขั้นต่ำ</span>'
-      + '<input type="number" class="form-control form-control-sm" style="width:72px" min="1" value="'+Number(row.min_qty||1)+'" data-vcond-qty="'+idx+'"></div>'
+      + '<input type="number" class="form-control form-control-sm" style="width:72px" min="1" step="1" value="'+escAttr(row.min_qty === undefined ? '' : row.min_qty)+'" data-vcond-qty="'+idx+'"></div>'
       + '<button type="button" class="btn btn-sm btn-outline-danger" data-vcond-rm="'+idx+'"><i class="bi bi-trash"></i></button>'
       + '</div>';
   }).join('');
   box.querySelectorAll('img.picker-thumb').forEach(function(img){ _loadAdminImg(img, img.dataset.fid, img.dataset.url); });
+  _renderRepeatPreview();
 }
 
 function _resetRuleForm(){
@@ -1039,6 +1353,8 @@ function _resetRuleForm(){
   document.getElementById('grEnd').value = '';
   document.getElementById('grPriority').value = 0;
   document.getElementById('grEnabled').checked = true;
+  document.getElementById('grRepeat').checked = false;
+  document.getElementById('grMatchAll').checked = true;
   _grProductRows = [];
   _grVariantRows = [];
   _renderSelectedGift();
@@ -1068,10 +1384,11 @@ function openEditRule(id){
   document.getElementById('grType').value = r.condition_type;
   var cj = r.condition_json || {};
   document.getElementById('grMinSubtotal').value = cj.min_subtotal || '';
+  document.getElementById(cj.match_mode === 'any' ? 'grMatchAny' : 'grMatchAll').checked = true;
   // Hydrate visual builder rows from existing condition_json.
   if (cj.required_products && Array.isArray(cj.required_products)) {
     _grProductRows = cj.required_products.map(function(rp){
-      return { product_id: String(rp.product_id||''), min_qty: Number(rp.min_qty||1) };
+      return { product_id: String(rp.product_id||''), min_qty: rp.min_qty === undefined ? '' : Number(rp.min_qty) };
     });
   }
   if (cj.required_variants && Array.isArray(cj.required_variants)) {
@@ -1085,7 +1402,7 @@ function openEditRule(id){
         product_id: String(rv.product_id||''),
         selected_variants: sel,
         variant_key: String(rv.variant_key||''),
-        min_qty: Number(rv.min_qty||1)
+        min_qty: rv.min_qty === undefined ? '' : Number(rv.min_qty)
       };
     });
   }
@@ -1093,6 +1410,7 @@ function openEditRule(id){
   document.getElementById('grEnd').value   = _toLocalInput(r.ends_at);
   document.getElementById('grPriority').value = r.priority || 0;
   document.getElementById('grEnabled').checked = !!r.enabled;
+  document.getElementById('grRepeat').checked = (r.repeat_mode === 'per_threshold');
   _renderSelectedGift();
   _renderProductCondRows();
   _renderVariantCondRows();
@@ -1104,38 +1422,70 @@ function saveRule(){
   var errEl = document.getElementById('grErr');
   errEl.classList.add('d-none');
   var t = document.getElementById('grType').value;
+  var ruleName = document.getElementById('grName').value.trim();
+  var giftId = document.getElementById('grGiftId').value;
+  var giftQty = Number(document.getElementById('grQty').value);
+  if (!ruleName) { _giftSetFormError(errEl, 'กรุณาระบุชื่อกฎของแถม'); return; }
+  var selectedGift = _findGift(giftId);
+  if (!selectedGift) { _giftSetFormError(errEl, 'กรุณาเลือกของแถมที่มีอยู่ในระบบ'); return; }
+  if (selectedGift.operational === false) { _giftSetFormError(errEl, 'ของแถมที่เลือกมีข้อมูลไม่ถูกต้อง กรุณาแก้สต็อกก่อนใช้งาน'); return; }
+  if (!_giftIsPositiveInteger(giftQty)) { _giftSetFormError(errEl, 'จำนวนของแถมต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป'); return; }
   var cj = {};
   if (t === 'min_subtotal') {
-    cj = { min_subtotal: Number(document.getElementById('grMinSubtotal').value || 0), calculation_base: 'after_discount_before_shipping' };
+    var minSubtotal = Number(document.getElementById('grMinSubtotal').value);
+    if (!Number.isFinite(minSubtotal) || minSubtotal <= 0) { _giftSetFormError(errEl, 'ยอดขั้นต่ำต้องเป็นตัวเลขมากกว่า 0'); return; }
+    cj = { min_subtotal: minSubtotal, calculation_base: 'after_discount_before_shipping' };
   } else if (t === 'required_products') {
     if (!_grProductRows.length) { errEl.textContent = 'กรุณาเลือกสินค้าอย่างน้อย 1 รายการ'; errEl.classList.remove('d-none'); return; }
-    cj = { required_products: _grProductRows.map(function(r){ return { product_id: r.product_id, min_qty: Math.max(1, Number(r.min_qty||1)) }; }) };
+    var pSeen = {};
+    for (var pi = 0; pi < _grProductRows.length; pi++) {
+      var ppid = String(_grProductRows[pi].product_id || '');
+      if (!_findProduct(ppid)) { _giftSetFormError(errEl, 'มีสินค้าที่อ้างอิงซึ่งไม่มีอยู่ในระบบ'); return; }
+      if (!_giftIsPositiveInteger(_grProductRows[pi].min_qty)) { _giftSetFormError(errEl, 'จำนวนขั้นต่ำของสินค้าต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป'); return; }
+      if (pSeen[ppid]) { errEl.textContent = 'มีสินค้าซ้ำกันในเงื่อนไข กรุณาแก้ไข'; errEl.classList.remove('d-none'); return; }
+      pSeen[ppid] = true;
+    }
+    cj = { match_mode: _grMatchMode(), required_products: _grProductRows.map(function(r){ return { product_id: r.product_id, min_qty: Number(r.min_qty) }; }) };
   } else if (t === 'required_variants') {
     if (!_grVariantRows.length) { errEl.textContent = 'กรุณาเลือกรุ่น/ตัวเลือกอย่างน้อย 1 รายการ'; errEl.classList.remove('d-none'); return; }
-    cj = { required_variants: _grVariantRows.map(function(r){
-      return { product_id: r.product_id, variant_key: _buildVariantKey(r.selected_variants), min_qty: Math.max(1, Number(r.min_qty||1)) };
+    var vSeen = {};
+    for (var vi2 = 0; vi2 < _grVariantRows.length; vi2++) {
+      var variantError = _giftValidateVariantRow(_grVariantRows[vi2]);
+      if (variantError) { _giftSetFormError(errEl, variantError); return; }
+      if (!_giftIsPositiveInteger(_grVariantRows[vi2].min_qty)) { _giftSetFormError(errEl, 'จำนวนขั้นต่ำของตัวเลือกสินค้าต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป'); return; }
+      var vk2 = String(_grVariantRows[vi2].product_id || '') + '|' + _buildVariantKey(_grVariantRows[vi2].selected_variants || {});
+      if (vSeen[vk2]) { errEl.textContent = 'มีรุ่น/ตัวเลือกซ้ำกันในเงื่อนไข กรุณาแก้ไข'; errEl.classList.remove('d-none'); return; }
+      vSeen[vk2] = true;
+    }
+    cj = { match_mode: _grMatchMode(), required_variants: _grVariantRows.map(function(r){
+      return { product_id: r.product_id, variant_key: _buildVariantKey(r.selected_variants), min_qty: Number(r.min_qty) };
     }) };
   }
+  var startVal = document.getElementById('grStart').value;
   var endVal = document.getElementById('grEnd').value;
+  if (startVal && endVal && new Date(endVal) <= new Date(startVal)) {
+    _giftSetFormError(errEl, 'วันที่สิ้นสุดต้องอยู่หลังวันที่เริ่ม'); return;
+  }
   var payload = {
-    name: document.getElementById('grName').value.trim(),
+    name: ruleName,
     description: document.getElementById('grDesc').value.trim(),
-    gift_id: document.getElementById('grGiftId').value,
+    gift_id: giftId,
     condition_type: t,
     condition_json: cj,
-    gift_qty: Number(document.getElementById('grQty').value || 1),
-    starts_at: _fromLocalInput(document.getElementById('grStart').value),
+    gift_qty: giftQty,
+    repeat_mode: document.getElementById('grRepeat').checked ? 'per_threshold' : 'once_per_order',
+    starts_at: startVal ? _fromLocalInput(startVal) : '',
     ends_at: endVal ? _fromLocalInput(endVal) : '',
     no_end_date: !endVal,
     priority: Number(document.getElementById('grPriority').value || 0),
     enabled: document.getElementById('grEnabled').checked
   };
-  if (!payload.gift_id) { errEl.textContent = 'กรุณาเลือกของแถม'; errEl.classList.remove('d-none'); return; }
   var editingId = _editId;
   var saveRuleBtn = document.getElementById('btnSaveRule');
   if (saveRuleBtn.disabled) return;
   showHUD(editingId ? 'Saving gift rule...' : 'Adding gift rule...');
   _setButtonBusy(saveRuleBtn, true, 'Saving');
+  _giftRuleSaveInFlight = true;
   var opId = editingId || ('temp-rule-' + Math.random().toString(36).slice(2));
   var token = _beginGiftOp(opId);
   var beforeIndex = editingId ? _rulesCache.findIndex(function(x){ return String(x.rule_id) === String(editingId); }) : -1;
@@ -1151,12 +1501,15 @@ function saveRule(){
       if (editingId) { if (beforeIndex >= 0 && before) _rulesCache[beforeIndex] = before; }
       else { _rulesCache = _rulesCache.filter(function(x){ return String(x.rule_id) !== String(opId); }); }
       if (_currentTab === 'rules') renderRulesTable();
-      errEl.textContent = (res && res.error) || 'Save failed'; errEl.classList.remove('d-none'); hideHUD('err', errEl.textContent); return;
+      var message = (res && res.error) || 'Save failed';
+      _showGiftSaveError(errEl, _ruleModal, message);
+      hideHUD('err', message); return;
     }
     if (!editingId && res.rule_id) {
       var tmpIdx = _rulesCache.findIndex(function(x){ return String(x.rule_id) === String(opId); });
       if (tmpIdx >= 0) _rulesCache[tmpIdx].rule_id = res.rule_id;
     }
+    _giftRuleSaveInFlight = false;
     _ruleModal.hide();
     refresh({ showHud:false }).then(function(){ hideHUD('ok', editingId ? 'Saved' : 'Added'); });
   }).catch(function(e){
@@ -1165,9 +1518,12 @@ function saveRule(){
       else { _rulesCache = _rulesCache.filter(function(x){ return String(x.rule_id) !== String(opId); }); }
       if (_currentTab === 'rules') renderRulesTable();
     }
-    hideHUD('err', e.message||String(e));
+    var message = e.message||String(e);
+    _showGiftSaveError(errEl, _ruleModal, message);
+    hideHUD('err', message);
   }).finally(function(){
     _endGiftOp(opId, token);
+    _giftRuleSaveInFlight = false;
     _setButtonBusy(saveRuleBtn, false);
   });
 }
@@ -1285,8 +1641,16 @@ function _optimisticDeleteGiftRule(id) {
 }
 
 document.addEventListener('DOMContentLoaded', function(){
-  _itemModal = new bootstrap.Modal(document.getElementById('itemModal'));
-  _ruleModal = new bootstrap.Modal(document.getElementById('ruleModal'));
+  var itemModalEl = document.getElementById('itemModal');
+  var ruleModalEl = document.getElementById('ruleModal');
+  _itemModal = new bootstrap.Modal(itemModalEl);
+  _ruleModal = new bootstrap.Modal(ruleModalEl);
+  itemModalEl.addEventListener('hide.bs.modal', function(e){
+    if (_giftItemSaveInFlight) e.preventDefault();
+  });
+  ruleModalEl.addEventListener('hide.bs.modal', function(e){
+    if (_giftRuleSaveInFlight) e.preventDefault();
+  });
   _giftPickerModal = new bootstrap.Modal(document.getElementById('giftPickerModal'));
   _productPickerModal = new bootstrap.Modal(document.getElementById('productPickerModal'));
 
@@ -1298,6 +1662,11 @@ document.addEventListener('DOMContentLoaded', function(){
   document.getElementById('btnSaveItem').addEventListener('click', saveItem);
   document.getElementById('btnSaveRule').addEventListener('click', saveRule);
   document.getElementById('grType').addEventListener('change', condTypeChanged);
+  document.getElementById('grQty').addEventListener('input', _renderRepeatPreview);
+  document.getElementById('grMinSubtotal').addEventListener('input', _renderRepeatPreview);
+  document.getElementById('grRepeat').addEventListener('change', _renderRepeatPreview);
+  document.getElementById('grMatchAll').addEventListener('change', _renderRepeatPreview);
+  document.getElementById('grMatchAny').addEventListener('change', _renderRepeatPreview);
 
   // Gift / product pickers
   document.getElementById('btnPickGift').addEventListener('click', openGiftPicker);
@@ -1322,7 +1691,7 @@ document.addEventListener('DOMContentLoaded', function(){
       });
       _renderVariantCondRows();
       _productPickerModal.hide();
-    });
+    }, true);
   });
 
   // Image upload
@@ -1340,16 +1709,67 @@ document.addEventListener('DOMContentLoaded', function(){
     _setGiftPreviewSrc('');
   });
 
+  // Downscale a static image via canvas so the base64 payload stays within
+  // google.script.run limits (same approach as edit-store.html's upload guard).
+  function _giftCompressImage(file, maxDim, quality) {
+    return new Promise(function(resolve, reject){
+      var rd = new FileReader();
+      rd.onload = function(){
+        var img = new Image();
+        img.onload = function(){
+          var w = img.width, h = img.height;
+          if (w <= maxDim && h <= maxDim && file.size <= 1024 * 1024) { resolve(rd.result); return; }
+          var scale = Math.min(1, maxDim / Math.max(w, h));
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.round(w * scale);
+          canvas.height = Math.round(h * scale);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = function(){ reject(new Error('ไฟล์ไม่ใช่รูปภาพที่ถูกต้อง')); };
+        img.src = rd.result;
+      };
+      rd.onerror = function(){ reject(new Error('อ่านไฟล์ไม่สำเร็จ')); };
+      rd.readAsDataURL(file);
+    });
+  }
+
   document.getElementById('giFile').addEventListener('change', function(e){
     var f = e.target.files[0]; if (!f) return;
+    var input = e.target;
+    var ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (ALLOWED.indexOf(f.type) < 0) {
+      hideHUD('err', 'ไม่รองรับประเภทไฟล์ดังกล่าว กรุณาใช้ JPEG, PNG, WebP หรือ GIF');
+      input.value = '';
+      return;
+    }
+    var isGif = f.type === 'image/gif';
+    var limit = isGif ? 3 * 1024 * 1024 : 5 * 1024 * 1024;
+    if (f.size > limit) {
+      hideHUD('err', 'ไฟล์ใหญ่เกินไป (สูงสุด ' + (limit / 1024 / 1024) + ' MB)');
+      input.value = '';
+      return;
+    }
     document.getElementById('giImageUrl').value = '';
-    var rd = new FileReader();
-    rd.onload = function(){
-      var dataUrl = rd.result;
-      _giImageData = { base64: dataUrl, filename: f.name, contentType: f.type };
+    if (isGif) {
+      // GIF — read as-is (canvas would destroy the animation)
+      var rd = new FileReader();
+      rd.onload = function(){
+        _giImageData = { base64: rd.result, filename: f.name, contentType: f.type };
+        _setGiftPreviewSrc(rd.result);
+      };
+      rd.readAsDataURL(f);
+      return;
+    }
+    _giftCompressImage(f, 1000, 0.85).then(function(dataUrl){
+      var isJpegOut = dataUrl.indexOf('data:image/jpeg') === 0 && f.type !== 'image/jpeg';
+      _giImageData = { base64: dataUrl, filename: f.name, contentType: isJpegOut ? 'image/jpeg' : f.type };
       _setGiftPreviewSrc(dataUrl);
-    };
-    rd.readAsDataURL(f);
+    }).catch(function(err){
+      _giImageData = null;
+      input.value = '';
+      hideHUD('err', (err && err.message) || 'อ่านไฟล์ไม่สำเร็จ');
+    });
   });
 
   document.getElementById('giImageUrl').addEventListener('input', function(e){
@@ -1441,12 +1861,14 @@ document.addEventListener('DOMContentLoaded', function(){
     if ((t = e.target.closest('[data-pick-gift]'))) {
       document.getElementById('grGiftId').value = t.dataset.pickGift;
       _renderSelectedGift();
+      _renderRepeatPreview();
       _giftPickerModal.hide();
     }
     // Clear selected gift
     if (e.target.closest('#btnClearGift')) {
       document.getElementById('grGiftId').value = '';
       _renderSelectedGift();
+      _renderRepeatPreview();
     }
     // Product picker: select a card
     if ((t = e.target.closest('[data-pick-product]'))) {
@@ -1471,11 +1893,13 @@ document.addEventListener('DOMContentLoaded', function(){
     var t;
     if ((t = e.target.closest('[data-cond-qty]'))) {
       var idx = Number(t.dataset.condQty);
-      if (_grProductRows[idx]) _grProductRows[idx].min_qty = Math.max(1, Number(t.value||1));
+      if (_grProductRows[idx]) _grProductRows[idx].min_qty = t.value === '' ? '' : Number(t.value);
+      _renderRepeatPreview();
     }
     if ((t = e.target.closest('[data-vcond-qty]'))) {
       var vi = Number(t.dataset.vcondQty);
-      if (_grVariantRows[vi]) _grVariantRows[vi].min_qty = Math.max(1, Number(t.value||1));
+      if (_grVariantRows[vi]) _grVariantRows[vi].min_qty = t.value === '' ? '' : Number(t.value);
+      _renderRepeatPreview();
     }
   });
   document.addEventListener('change', function(e){
@@ -1488,6 +1912,7 @@ document.addEventListener('DOMContentLoaded', function(){
         if (t.value) _grVariantRows[ri].selected_variants[grp] = t.value;
         else delete _grVariantRows[ri].selected_variants[grp];
         _grVariantRows[ri].variant_key = _buildVariantKey(_grVariantRows[ri].selected_variants);
+        _renderRepeatPreview();
       }
     }
   });

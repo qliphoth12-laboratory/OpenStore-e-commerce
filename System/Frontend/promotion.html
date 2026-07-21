@@ -20,20 +20,104 @@
     .table-loading-overlay .spinner-border { width:1.75rem; height:1.75rem; border-width:.2rem; color:#6b7280; }
     .tbl-wrap-pos { position:relative; }
     tbody.is-loading { opacity:.5; pointer-events:none; }
-    .preview-box { background:#fff7ed; border:1px solid #fdba74; border-radius:12px; padding:12px 14px; font-size:.85rem; color:#9a3412; }
-    .preview-box .num { font-weight:700; }
-    .preview-box .strike { text-decoration:line-through; color:#94a3b8; margin-left:6px; }
-    .product-pick-row { display:flex; align-items:center; gap:8px; padding:6px 8px; border-bottom:1px solid #f3f4f6; }
-    .product-pick-row:last-child { border-bottom:none; }
-    .product-pick-row label { flex:1; font-size:.85rem; cursor:pointer; margin:0; }
-    .variant-key-row { padding-left:24px; font-size:.8rem; color:#475569; }
-    .pick-thumb-wrap { position:relative; width:32px; height:32px; border-radius:6px; background:#f1f5f9; flex-shrink:0; overflow:hidden; }
-    .pick-thumb-wrap::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.6) 50%,transparent 100%); background-size:200% 100%; animation:pickShimmer 1.25s infinite; }
-    .pick-thumb-wrap.loaded::after { display:none; }
-    @keyframes pickShimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-    .pick-thumb { position:absolute; inset:0; width:100%; height:100%; border-radius:6px; object-fit:cover; opacity:0; transition:opacity .2s; }
-    .pick-thumb.is-loaded { opacity:1; }
-    .pick-thumb-icon { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#d1d5db; font-size:.875rem; }
+    /* Calculation preview — one neutral gray container, plain-text condition summary, white inner rows */
+    .pm-preview { border:1px solid var(--border); border-radius:12px; background:#f9fafb; padding:10px 12px; font-size:.8rem; color:#374151; }
+    .pm-preview-title { display:flex; align-items:center; gap:6px; font-weight:700; color:#111827; font-size:.78rem; margin-bottom:6px; }
+    .pm-preview-title .sub { font-weight:400; color:#9ca3af; }
+    .pm-preview-req { color:#4b5563; line-height:1.5; margin-bottom:6px; overflow-wrap:anywhere; }
+    .pm-preview-req b { color:#111827; font-weight:700; }
+    .pm-preview-qty { display:flex; align-items:center; flex-wrap:wrap; gap:7px 9px; margin:7px 0; padding:7px 8px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; }
+    .pm-preview-qty label { margin:0; color:#374151; font-size:.76rem; font-weight:700; }
+    .pm-preview-qty-control { display:flex; align-items:center; gap:6px; }
+    .pm-preview-qty input { width:84px; min-height:32px; padding:4px 8px; font-size:.78rem; }
+    .pm-preview-qty .hint { flex:1 1 240px; color:#6b7280; font-size:.73rem; line-height:1.4; }
+    .pm-preview-rows { display:flex; flex-direction:column; gap:6px; max-height:280px; overflow-y:auto; margin-top:2px; }
+    .pm-preview-row { padding:6px 8px; border:1px solid #eef2f7; border-radius:8px; background:#fff; }
+    .pm-preview-row .main { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:4px 8px; color:#111827; font-weight:600; }
+    .pm-preview-row .qty-badge { display:inline-flex; align-items:center; padding:2px 7px; border-radius:999px; background:#f3f4f6; color:#374151; font-size:.68rem; font-weight:700; white-space:nowrap; }
+    .pm-preview-row .note { color:#6b7280; font-size:.75rem; margin-top:2px; }
+    .pm-preview-row .note .strike { text-decoration:line-through; color:#9ca3af; }
+    .pm-preview-row .note .final { color:#111827; font-weight:700; }
+    .pm-preview-row .formula { margin-top:3px; color:#4b5563; font-size:.73rem; }
+    .pm-preview-row .saving { color:#b91c1c; font-weight:700; }
+
+    .nav-tabs .nav-link.active { background:#111827; color:#fff; border-color:#111827; }
+    .nav-tabs .nav-link { color:#374151; }
+
+    .promo-guide { margin-bottom:16px; padding:12px 14px; border:1px solid #e5e7eb; border-radius:10px; background:#fff; color:#4b5563; }
+    .promo-guide-heading { display:flex; align-items:center; gap:9px; margin-bottom:10px; padding-bottom:9px; border-bottom:1px solid #f1f5f9; }
+    .promo-guide-icon { width:26px; height:26px; flex:0 0 26px; display:flex; align-items:center; justify-content:center; border:1px solid #e5e7eb; border-radius:7px; background:#f8fafc; color:#64748b; }
+    .promo-guide-title { color:#374151; font-size:.82rem; font-weight:700; }
+    .promo-guide-points { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0; }
+    .promo-guide-point { display:flex; align-items:flex-start; gap:7px; min-width:0; padding:0 18px; font-size:.76rem; line-height:1.45; }
+    .promo-guide-point:first-child { padding-left:0; }
+    .promo-guide-point:last-child { padding-right:0; }
+    .promo-guide-point + .promo-guide-point { border-left:1px solid #e5e7eb; }
+    .promo-guide-number { width:19px; height:19px; flex:0 0 19px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; background:#f3f4f6; color:#6b7280; font-size:.66rem; font-weight:700; }
+    .promo-guide-point strong { display:block; margin-bottom:1px; color:#4b5563; font-size:.77rem; }
+
+    /* Visual pickers (ported from gift.html) */
+    .picker-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; max-height:340px; overflow-y:auto; padding:4px; }
+    .picker-card { position:relative; border:1.5px solid #d1d5db; border-radius:12px; padding:8px; background:#fff; cursor:pointer; transition:border-color .15s, background .15s, box-shadow .15s, transform .15s; display:flex; flex-direction:column; gap:6px; }
+    .picker-card:hover { border-color:#6b7280; box-shadow:0 4px 12px rgba(17,24,39,.08); transform:translateY(-1px); }
+    .picker-card:focus-visible { outline:3px solid rgba(17,24,39,.22); outline-offset:2px; }
+    .picker-card.selected { border-color:#111827; background:linear-gradient(180deg,#fff 0%,#f3f4f6 100%); box-shadow:0 0 0 1px #111827,0 8px 18px rgba(17,24,39,.16); transform:translateY(-2px); }
+    .picker-card.selected .picker-thumb-wrap { box-shadow:inset 0 0 0 2px rgba(17,24,39,.2); }
+    .picker-card.selected .picker-meta { color:#111827; font-weight:600; }
+    .picker-selected-mark { position:absolute; top:13px; right:13px; z-index:4; display:none; align-items:center; gap:4px; padding:3px 8px; border:2px solid #fff; border-radius:999px; background:#111827; color:#fff; box-shadow:0 2px 8px rgba(17,24,39,.28); font-size:.68rem; font-weight:700; line-height:1.2; }
+    .picker-card.selected .picker-selected-mark { display:inline-flex; }
+    .picker-card.disabled { opacity:.5; cursor:not-allowed; }
+    .picker-card.disabled:hover { border-color:#fca5a5; box-shadow:none; transform:none; }
+    .picker-card.disabled:focus-visible { outline:3px solid rgba(239,68,68,.2); outline-offset:2px; }
+    .picker-thumb-wrap { position:relative; aspect-ratio:1/1; border-radius:8px; background:#f3f4f6; overflow:hidden; }
+    .picker-thumb-wrap::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.6) 50%,transparent 100%); background-size:200% 100%; animation:pmShimmer 1.25s infinite; }
+    .picker-thumb-wrap.loaded::after { display:none; }
+    @keyframes pmShimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+    .picker-thumb { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0; transition:opacity .2s; }
+    .picker-thumb.is-loaded { opacity:1; }
+    .picker-thumb-icon { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#d1d5db; font-size:1.5rem; }
+    .picker-name { font-size:.78rem; font-weight:600; color:#111827; line-height:1.25; word-break:normal; overflow-wrap:anywhere; }
+    .picker-meta { font-size:.7rem; color:var(--muted); }
+    .pm-picker-price { display:flex; align-items:center; gap:5px; min-height:18px; font-variant-numeric:tabular-nums; }
+    .pm-price-discount { display:none; align-items:center; gap:5px; }
+    .pm-price-old { color:#9ca3af; font-weight:500; text-decoration:line-through; text-decoration-thickness:1px; }
+    .pm-price-arrow { color:#9ca3af; font-size:.65rem; }
+    .pm-price-new { color:#dc2626; font-weight:800; }
+    .pm-price-unit { color:#9ca3af; font-size:.66rem; white-space:nowrap; }
+    .selected .pm-picker-price.has-preview > .pm-price-normal { display:none; }
+    .selected .pm-picker-price.has-preview > .pm-price-discount { display:inline-flex; }
+    .pm-variant-price { display:inline-flex; margin-left:3px; padding-left:7px; border-left:1px solid #d1d5db; font-size:.68rem; }
+    .pm-variant-chip.selected .pm-variant-price { border-left-color:#6b7280; }
+    .pm-variant-chip.selected .pm-price-old,
+    .pm-variant-chip.selected .pm-price-arrow { color:#9ca3af; }
+    .pm-variant-chip.selected .pm-price-new { color:#fca5a5; }
+    .cond-row { display:flex; align-items:center; gap:8px; padding:8px; border:1px solid var(--border); border-radius:10px; background:#fff; margin-bottom:6px; }
+    .cond-row .picker-thumb-wrap { width:42px; height:42px; aspect-ratio:auto; flex-shrink:0; }
+    .cond-row.is-dup { background:#fef2f2; border-color:#fca5a5; }
+    .pm-picker-scroll { max-height:360px; overflow-y:auto; padding:4px; border:1px solid var(--border); border-radius:10px; }
+
+    .cond-tag { background:#e0e7ff; color:#3730a3; border:1px solid #c7d2fe; }
+    .pm-variant-chip { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border:1.5px solid #d1d5db; border-radius:999px; font-size:.75rem; cursor:pointer; background:#fff; user-select:none; transition:border-color .15s, background .15s, box-shadow .15s; }
+    .pm-variant-chip:hover { border-color:#6b7280; }
+    .pm-variant-chip:focus-visible { outline:3px solid rgba(17,24,39,.22); outline-offset:2px; }
+    .pm-variant-chip.selected { background:#111827; color:#fff; border-color:#111827; box-shadow:0 2px 7px rgba(17,24,39,.2); }
+    .pm-variant-chip.selected::before { content:'✓'; font-weight:800; }
+    .pm-variant-chip.disabled { opacity:.5; cursor:not-allowed; border-color:#d1d5db; background:#f3f4f6; color:#6b7280; }
+    .pm-variant-chip.disabled:hover { border-color:#fca5a5; }
+    .cond-row.picker-disabled { opacity:.62; cursor:not-allowed; }
+    @media (max-width:575.98px) {
+      .promo-guide { padding:11px 12px; }
+      .promo-guide-points { grid-template-columns:1fr; gap:0; }
+      .promo-guide-point { padding:10px 0; }
+      .promo-guide-point:first-child { padding-top:0; }
+      .promo-guide-point:last-child { padding-bottom:0; }
+      .promo-guide-point + .promo-guide-point { border-top:1px solid #e5e7eb; border-left:0; }
+      #promoModal .modal-body { padding:1rem; }
+      #promoModal .cond-row { align-items:flex-start; }
+      #promoModal .cond-row .flex-grow-1 { min-width:150px; }
+      #promoModal .picker-grid { grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); }
+      #promoModal .btn-group > .btn { white-space:normal; }
+    }
   </style>
 </head>
 <body>
@@ -88,6 +172,20 @@
     </div>
 
     <div class="container py-4">
+      <div class="promo-guide" role="note" aria-label="วิธีที่ระบบเลือกโปรโมชั่น">
+        <div class="promo-guide-heading">
+          <div class="promo-guide-title">ระบบตรวจและเลือกโปรโมชั่นให้อัตโนมัติ</div>
+        </div>
+        <div class="promo-guide-points">
+          <div class="promo-guide-point"><span class="promo-guide-number">1</span><div><strong>ตรวจโปรโมชั่นที่ลูกค้าใช้ได้</strong>ระบบจะตรวจโปรโมชั่นทั้งหมดที่เกี่ยวข้องกับสินค้าในตะกร้า สำหรับโปรโมชั่นตามเงื่อนไข ระบบจะนำมาคำนวณเมื่อยอดซื้อหรือรายการสินค้าในตะกร้าผ่านเงื่อนไขที่กำหนดไว้</div></div>
+          <div class="promo-guide-point"><span class="promo-guide-number">2</span><div><strong>เลือกส่วนลดที่ดีที่สุดให้แต่ละสินค้า</strong>หากสินค้ารายการเดียวกันสามารถใช้ได้มากกว่าหนึ่งโปรโมชั่น ระบบจะเปรียบเทียบราคาหลังหักส่วนลด และเลือกใช้เพียงโปรโมชั่นที่ทำให้สินค้ารายการนั้นมีราคาสุทธิต่ำที่สุด โดยไม่นำส่วนลดจากหลายโปรโมชั่นมารวมกัน</div></div>
+          <div class="promo-guide-point"><span class="promo-guide-number">3</span><div><strong>การเปิดโปรโมชั่นในช่วงเวลาเดียวกัน</strong>โปรโมชั่นแบบตรงที่มีผลกับสินค้าเดียวกันและมีช่วงเวลาใช้งานทับซ้อนกัน จะไม่สามารถเปิดใช้งานพร้อมกันได้ ส่วนโปรโมชั่นตามเงื่อนไขสามารถเปิดใช้งานในช่วงเวลาเดียวกันได้</div></div>
+        </div>
+      </div>
+      <ul class="nav nav-tabs mb-3" role="tablist">
+        <li class="nav-item"><a class="nav-link active" data-tab="direct" href="#"><i class="bi bi-tag me-1"></i>โปรโมชั่นแบบตรง</a></li>
+        <li class="nav-item"><a class="nav-link" data-tab="conditional" href="#"><i class="bi bi-list-check me-1"></i>โปรโมชั่นตามเงื่อนไข</a></li>
+      </ul>
       <div class="panel p-3 p-md-4 mb-3">
         <div class="row g-2 align-items-center">
           <div class="col-md-6">
@@ -141,43 +239,94 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
+        <div class="text-muted small mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          หากสินค้ารายการเดียวกันเข้าได้หลายโปรโมชั่น ระบบจะใช้เฉพาะโปรที่ทำให้ราคาสุทธิต่ำที่สุด (ไม่นำส่วนลดมารวมกัน)
+        </div>
         <div class="row g-3">
           <div class="col-md-12">
-            <label class="form-label fw-semibold" style="font-size:.8rem">ชื่อโปรโมชั่น *</label>
+            <label class="form-label fw-semibold">ชื่อโปรโมชั่น *</label>
             <input type="text" class="form-control" id="pmName" maxlength="200" placeholder="เช่น ลดต้อนรับสมาชิกใหม่">
           </div>
           <div class="col-md-12">
-            <label class="form-label fw-semibold" style="font-size:.8rem">รายละเอียด</label>
+            <label class="form-label fw-semibold">รายละเอียด</label>
             <textarea class="form-control" id="pmDesc" rows="2" maxlength="1000"></textarea>
           </div>
           <div class="col-md-6">
-            <label class="form-label fw-semibold" style="font-size:.8rem">ประเภทส่วนลด *</label>
+            <label class="form-label fw-semibold">ประเภทส่วนลด *</label>
             <select class="form-select" id="pmType">
               <option value="fixed">ลดเป็นบาท</option>
               <option value="percent">ลดเป็นเปอร์เซ็นต์</option>
             </select>
           </div>
           <div class="col-md-6">
-            <label class="form-label fw-semibold" style="font-size:.8rem">จำนวนส่วนลด *</label>
+            <label class="form-label fw-semibold" id="pmValueLabel">ส่วนลดต่อชิ้น *</label>
             <div class="input-group">
               <input type="number" class="form-control" id="pmValue" min="0" step="1">
               <span class="input-group-text" id="pmValueUnit">บาท</span>
             </div>
+            <div class="form-text" id="pmValueHelp">ส่วนลดจะใช้กับทุกชิ้นของสินค้าเป้าหมาย เช่น ซื้อ 50 ชิ้น ระบบลดให้ครบทั้ง 50 ชิ้น</div>
           </div>
-          <div class="col-md-6">
-            <label class="form-label fw-semibold" style="font-size:.8rem">วันที่เริ่ม *</label>
-            <input type="datetime-local" class="form-control" id="pmStart">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label fw-semibold" style="font-size:.8rem">วันที่สิ้นสุด</label>
-            <input type="datetime-local" class="form-control" id="pmEnd" disabled>
-            <div class="form-check mt-1">
-              <input class="form-check-input" type="checkbox" id="pmNoEnd" checked>
-              <label class="form-check-label" for="pmNoEnd" style="font-size:.85rem">ไม่มีวันสิ้นสุด</label>
+          <!-- Qualifying condition — shown only for the conditional tab. -->
+          <div class="col-12 pm-cond-section d-none" id="pmCondSection">
+            <div class="row g-3">
+              <!-- Discount scope — conditional only. Order-total deducts once from the whole
+                   order subtotal (ignores targeting); item discounts each targeted unit. -->
+              <div class="col-12">
+                <label class="form-label fw-semibold">รูปแบบส่วนลด *</label>
+                <div class="d-flex gap-3 flex-wrap">
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="pmDiscScope" id="pmScopeItem" value="item" checked>
+                    <label class="form-check-label" for="pmScopeItem">ลดต่อชิ้น (สินค้าเป้าหมาย)</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="pmDiscScope" id="pmScopeOrder" value="order_total">
+                    <label class="form-check-label" for="pmScopeOrder">ลดท้ายบิล (ยอดรวมทั้งออเดอร์)</label>
+                  </div>
+                </div>
+                <div class="form-text">ลดท้ายบิลจะหักส่วนลดครั้งเดียวจากยอดรวมสินค้า (ไม่คูณจำนวน) และไม่ต้องเลือกสินค้าเป้าหมาย</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">ประเภทเงื่อนไข *</label>
+                <select class="form-select" id="pmCondType">
+                  <option value="min_subtotal">ซื้อครบยอดที่กำหนด</option>
+                  <option value="required_products">ซื้อสินค้าที่กำหนด</option>
+                  <option value="required_variants">ซื้อตัวเลือกสินค้าที่กำหนด</option>
+                </select>
+              </div>
+              <div class="col-md-6 pm-cond-matchmode d-none" id="pmMatchModeWrap">
+                <label class="form-label fw-semibold">รูปแบบการนับเงื่อนไข</label>
+                <div class="btn-group w-100" role="group" aria-label="รูปแบบการนับเงื่อนไข">
+                  <input type="radio" class="btn-check" name="pmMatchMode" id="pmMatchAll" value="all" checked>
+                  <label class="btn btn-outline-dark" for="pmMatchAll">ต้องซื้อครบทุกอย่าง</label>
+                  <input type="radio" class="btn-check" name="pmMatchMode" id="pmMatchAny" value="any">
+                  <label class="btn btn-outline-dark" for="pmMatchAny">ซื้ออย่างใดอย่างหนึ่ง</label>
+                </div>
+              </div>
+              <div class="col-12 pm-cond-min" id="pmCondMin">
+                <label class="form-label">ยอดซื้อขั้นต่ำ (บาท)</label>
+                <input type="number" class="form-control" id="pmMinSubtotal" min="1" step="1" placeholder="เช่น 1000">
+                <div class="form-text">คิดจากยอดหลังหักส่วนลดปกติ ก่อนค่าจัดส่ง</div>
+              </div>
+              <div class="col-12 pm-cond-products d-none" id="pmCondProducts">
+                <label class="form-label d-flex justify-content-between align-items-center gap-2">
+                  <span>สินค้าที่ต้องซื้อ</span>
+                  <button type="button" class="btn btn-outline-dark btn-sm pill" id="btnPmAddProdCond"><i class="bi bi-plus-lg me-1"></i>เพิ่มสินค้า</button>
+                </label>
+                <div id="pmProdCondList"><div class="text-muted small">— ยังไม่ได้เลือกสินค้า —</div></div>
+              </div>
+              <div class="col-12 pm-cond-variants d-none" id="pmCondVariants">
+                <label class="form-label d-flex justify-content-between align-items-center gap-2">
+                  <span>ตัวเลือกสินค้าที่ต้องซื้อ</span>
+                  <button type="button" class="btn btn-outline-dark btn-sm pill" id="btnPmAddVarCond"><i class="bi bi-plus-lg me-1"></i>เพิ่มตัวเลือก</button>
+                </label>
+                <div id="pmVarCondList"><div class="text-muted small">— ยังไม่ได้เลือกตัวเลือกสินค้า —</div></div>
+              </div>
             </div>
           </div>
-          <div class="col-md-12">
-            <label class="form-label fw-semibold" style="font-size:.8rem">เป้าหมาย *</label>
+
+          <div class="col-12" id="pmTargetSection">
+            <label class="form-label fw-semibold" id="pmTargetLabel">สินค้าที่ได้รับส่วนลด *</label>
             <div class="d-flex gap-3 flex-wrap">
               <div class="form-check">
                 <input class="form-check-input" type="radio" name="pmTarget" id="pmTargetAll" value="all" checked>
@@ -189,22 +338,44 @@
               </div>
               <div class="form-check">
                 <input class="form-check-input" type="radio" name="pmTarget" id="pmTargetVariant" value="variant">
-                <label class="form-check-label" for="pmTargetVariant">เลือก Variant</label>
+                <label class="form-check-label" for="pmTargetVariant">เลือกตัวเลือกสินค้า</label>
               </div>
             </div>
-            <div id="pmPicker" class="mt-2" style="display:none; max-height:240px; overflow:auto; border:1px solid var(--border); border-radius:10px; padding:6px;"></div>
+            <input type="search" class="form-control mt-2 d-none" id="pmPickerSearch" placeholder="ค้นหาชื่อสินค้า…">
+            <div id="pmPicker" class="mt-2" style="display:none"></div>
           </div>
-          <div class="col-md-12">
-            <div id="pmPreview" class="preview-box" style="display:none">
-              <div><span class="text-muted">ตัวอย่างการคำนวณ:</span></div>
-              <div id="pmPreviewBody"></div>
-              <div class="text-muted mt-1" style="font-size:.78rem">* ราคาสุดท้ายปัดเป็นบาทเต็ม</div>
+
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">วันที่เริ่ม</label>
+            <input type="datetime-local" class="form-control" id="pmStart">
+            <div class="form-text">ว่าง = เริ่มทันที</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">วันที่สิ้นสุด</label>
+            <input type="datetime-local" class="form-control" id="pmEnd" disabled>
+            <div class="form-check mt-1">
+              <input class="form-check-input" type="checkbox" id="pmNoEnd" checked>
+              <label class="form-check-label" for="pmNoEnd">ไม่มีวันสิ้นสุด</label>
             </div>
           </div>
-          <div class="col-md-12">
+          <div class="col-12">
             <div class="form-check form-switch">
               <input class="form-check-input" type="checkbox" id="pmEnabled" checked>
-              <label class="form-check-label" for="pmEnabled" style="font-size:.875rem">เปิดใช้งาน</label>
+              <label class="form-check-label" for="pmEnabled">เปิดใช้งาน</label>
+            </div>
+          </div>
+          <div class="col-12">
+            <div id="pmPreview" class="pm-preview" style="display:none">
+              <div class="pm-preview-title"><i class="bi bi-eye"></i>ตัวอย่างการคำนวณส่วนลด <span class="sub">· ปัดราคาสุดท้ายเป็นบาทเต็ม</span></div>
+              <div class="pm-preview-qty">
+                <label for="pmPreviewQty">จำนวนที่ซื้อในตัวอย่าง</label>
+                <div class="pm-preview-qty-control">
+                  <input type="number" class="form-control form-control-sm" id="pmPreviewQty" min="1" max="9999" step="1" value="1">
+                  <span>ชิ้น</span>
+                </div>
+                <div class="hint"><i class="bi bi-info-circle me-1"></i>จำนวนนี้ใช้สำหรับดูตัวอย่างเท่านั้น ไม่ได้จำกัดจำนวนสินค้าที่ลูกค้าจะได้รับส่วนลด</div>
+              </div>
+              <div id="pmPreviewBody"></div>
             </div>
           </div>
           <div id="pmErr" class="text-danger small d-none"></div>
@@ -216,6 +387,22 @@
           <span class="spinner-border spinner-border-sm me-1 d-none" id="pmSaveSpinner"></span>
           บันทึก
         </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Condition Product Picker Modal (shared by required_products & required_variants) -->
+<div class="modal fade" id="pmCondPickerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold"><i class="bi bi-cart-check me-1"></i>เลือกสินค้าที่ต้องซื้อ</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="search" class="form-control form-control-sm mb-2" id="pmCondPickerSearch" placeholder="ค้นหาสินค้า…">
+        <div id="pmCondPickerGrid" class="picker-grid"></div>
       </div>
     </div>
   </div>
@@ -247,17 +434,133 @@ function _buildVariantKey(sel){
   return Object.keys(sel).sort().map(function(k){ return k + '=' + String(sel[k]||''); }).join('|');
 }
 
+// Image cache mirrors gift.html/product.html: memory for this session + IndexedDB for later visits.
+var _imgMem = {};
+var _driveInFlight = {};
+var _idb = (function() {
+  var _dbP = null;
+  var DB = 'OpenStorefrontImgCache', ST = 'imgs';
+  function open() {
+    if (!_dbP) _dbP = new Promise(function(resolve) {
+      var r;
+      try { r = indexedDB.open(DB, 1); }
+      catch(_) { resolve(null); return; }
+      r.onupgradeneeded = function(e) { e.target.result.createObjectStore(ST); };
+      r.onsuccess = function(e) { resolve(e.target.result); };
+      r.onerror = function() { resolve(null); };
+    }).catch(function() { return null; });
+    return _dbP;
+  }
+  return {
+    get: function(k) {
+      return open().then(function(db) {
+        if (!db) return null;
+        return new Promise(function(resolve) {
+          var q = db.transaction(ST).objectStore(ST).get(k);
+          q.onsuccess = function() { resolve(q.result || null); };
+          q.onerror = function() { resolve(null); };
+        });
+      }).catch(function() { return null; });
+    },
+    set: function(k, v) {
+      open().then(function(db) {
+        if (!db) return;
+        db.transaction(ST, 'readwrite').objectStore(ST).put(v, k);
+      }).catch(function() {});
+    }
+  };
+})();
+
+function driveFileToDataUrl(fileId) {
+  if (!fileId) return Promise.resolve('');
+  if (_imgMem[fileId]) return Promise.resolve(_imgMem[fileId]);
+  if (_driveInFlight[fileId]) return _driveInFlight[fileId];
+  var p = _idb.get(fileId).then(function(fromIdb) {
+    if (fromIdb) { _imgMem[fileId] = fromIdb; return fromIdb; }
+    return callRpc('getFileDataUrlRpc', fileId).then(function(r) {
+      if (r && r.dataUrl) {
+        _imgMem[fileId] = r.dataUrl;
+        _idb.set(fileId, r.dataUrl);
+        return r.dataUrl;
+      }
+      return '';
+    }).catch(function() { return ''; });
+  }).then(function(v) {
+    delete _driveInFlight[fileId];
+    return v || '';
+  }).catch(function() {
+    delete _driveInFlight[fileId];
+    return '';
+  });
+  _driveInFlight[fileId] = p;
+  return p;
+}
+
+function _parseDriveFileId(input) {
+  var s = String(input || '').trim();
+  if (!s) return '';
+  if (/^[A-Za-z0-9_-]{20,}$/.test(s)) return s;
+  var m = s.match(/\/file\/d\/([^/?#]+)/);
+  if (m) return m[1];
+  m = s.match(/[?&]id=([^&#]+)/);
+  if (m) return m[1];
+  return '';
+}
+
+function _loadAdminImg(imgEl, driveFileId, fallbackUrl) {
+  if (!imgEl) return;
+  var fid = driveFileId || _parseDriveFileId(fallbackUrl || '');
+  var rawUrl = String(fallbackUrl || '').trim();
+  var directUrl = fid ? '' : rawUrl;
+  var wrap = imgEl.closest ? imgEl.closest('.picker-thumb-wrap') : null;
+  function _showFallbackIcon() {
+    imgEl.style.display = 'none';
+    if (wrap) { wrap.classList.add('loaded'); wrap.innerHTML = '<i class="bi bi-box picker-thumb-icon"></i>'; }
+  }
+  function _applySrc(src) {
+    if (!src) { _showFallbackIcon(); return; }
+    imgEl.onload = function() {
+      imgEl.classList.add('is-loaded');
+      if (wrap) wrap.classList.add('loaded');
+    };
+    imgEl.onerror = function() { _showFallbackIcon(); };
+    imgEl.src = src;
+    imgEl.style.display = '';
+  }
+  if (!fid) {
+    if (directUrl) _applySrc(directUrl);
+    else _showFallbackIcon();
+    return;
+  }
+  if (_imgMem[fid]) { _applySrc(_imgMem[fid] || rawUrl); return; }
+  if (!GAS_ENV) { _applySrc(rawUrl); return; }
+  driveFileToDataUrl(fid).then(function(dataUrl) {
+    _applySrc(dataUrl || rawUrl);
+  }).catch(function() {
+    _applySrc(rawUrl);
+  });
+}
+
 /* ---------- State ---------- */
 var _editId = null;
 var _modal = null;
-var _promosCache = [];
+var _promoSaveInFlight = false;
+var _pmModalMode = 'direct'; // Set from the active tab on create, or the saved record on edit.
+var _promosCache = [];       // current tab + current page slice (derived, see _applyTabFilterAndPaginate)
+var _promosRawCache = [];    // ALL promos matching current {q,status}, across both application_modes
+var _currentPromoTab = 'direct'; // 'direct' | 'conditional'
 var _productsCache = [];
 var _promoOpSeq = 0;
 var _promoInFlight = Object.create(null);
-var _pgPage = 1, _pgSize = 20, _pgTotal = 0, _pgLoading = false, _firstLoad = true, _pgRefetchNeeded = false;
+var _pgPage = 1, _pgSize = 20, _pgTotal = 0, _pgLoading = false, _firstLoad = true;
 var _searchDebounce = null;
 var _productsLoaded = false;
-var _pickerImgCache = {};
+// Conditional-promotion builder state (mirrors gift.html rule builder).
+var _pmCondProdRows = []; // [{ product_id, min_qty }]
+var _pmCondVarRows  = []; // [{ product_id, variant_key, selected_variants:{...}, min_qty }]
+var _pmCondPickerCb = null;
+var _pmCondPickerModal = null;
+var _pmTargetSelection = []; // [{product_id}] or [{product_id, variant_key}] — source of truth for target picker
 
 function _beginPromoOp(id) {
   var token = ++_promoOpSeq;
@@ -282,6 +585,7 @@ function _promoStatus(p) {
   if (!p.no_end_date && end && !isNaN(end) && end < now) return 'expired';
   return 'active';
 }
+function _promoTabOf(p){ return (p && p.application_mode === 'conditional') ? 'conditional' : 'direct'; }
 
 /* ---------- Status badge ---------- */
 function statusBadge(s){
@@ -291,6 +595,7 @@ function statusBadge(s){
 
 /* ---------- Target summary ---------- */
 function summarizeTarget(promo){
+  if (promo.discount_scope === 'order_total') return '<span class="admin-tag target-tag">ลดท้ายบิล</span>';
   if (promo.target_type === 'all') return '<span class="admin-tag target-tag">ทั้งร้าน</span>';
   var arr = Array.isArray(promo.target) ? promo.target : [];
   if (!arr.length) return '<span class="admin-muted-dash">—</span>';
@@ -308,6 +613,35 @@ function summarizeTarget(promo){
   }).join('') + (arr.length > 3 ? ' <span class="admin-sub-text">+' + (arr.length-3) + '</span>' : '');
 }
 
+/* ---------- Condition summary (conditional-tab table column) ---------- */
+function summarizeCondition(promo){
+  var ct = promo.condition_type;
+  var cj = promo.condition_json || {};
+  if (ct === 'min_subtotal') {
+    return '<span class="admin-tag cond-tag">ยอดซื้อขั้นต่ำ ' + fmtMoney(Number(cj.min_subtotal||0)) + '</span>';
+  }
+  var mmBadge = (cj.match_mode === 'any') ? ' <span class="admin-sub-text">(อย่างใดอย่างหนึ่ง)</span>' : '';
+  if (ct === 'required_products') {
+    var rp = Array.isArray(cj.required_products) ? cj.required_products : [];
+    if (!rp.length) return '<span class="admin-muted-dash">—</span>';
+    var prodMap2 = {}; _productsCache.forEach(function(p){ prodMap2[p.id] = p; });
+    return rp.slice(0, 3).map(function(r){
+      var prod = prodMap2[r.product_id];
+      return '<span class="admin-tag cond-tag">' + escHtml(prod ? prod.title : r.product_id) + ' ×' + (Number(r.min_qty)||1) + '</span>';
+    }).join('') + (rp.length > 3 ? ' <span class="admin-sub-text">+' + (rp.length-3) + '</span>' : '') + mmBadge;
+  }
+  if (ct === 'required_variants') {
+    var rv = Array.isArray(cj.required_variants) ? cj.required_variants : [];
+    if (!rv.length) return '<span class="admin-muted-dash">—</span>';
+    var prodMap3 = {}; _productsCache.forEach(function(p){ prodMap3[p.id] = p; });
+    return rv.slice(0, 3).map(function(r){
+      var prod = prodMap3[r.product_id];
+      return '<span class="admin-tag cond-tag">' + escHtml((prod ? prod.title : r.product_id) + ' / ' + (r.variant_key || '')) + ' ×' + (Number(r.min_qty)||1) + '</span>';
+    }).join('') + (rv.length > 3 ? ' <span class="admin-sub-text">+' + (rv.length-3) + '</span>' : '') + mmBadge;
+  }
+  return '<span class="admin-muted-dash">—</span>';
+}
+
 /* ---------- Render table (renders _promosCache, which is current page only) ---------- */
 function _setPgControlsDisabled(disabled) {
   ['pgPrev','pgNext','pgSize'].forEach(function(id){ var el = document.getElementById(id); if (el) el.disabled = !!disabled; });
@@ -315,20 +649,23 @@ function _setPgControlsDisabled(disabled) {
 
 function _showSkeletonRows(n) {
   var wrap = document.getElementById('promoTableWrap');
+  var isCond = _currentPromoTab === 'conditional';
   var rows = '';
   for (var i=0; i<n; i++) {
-    rows += '<tr>'
-      + '<td><div class="skel lg"></div></td>'
-      + '<td><div class="skel" style="width:50px"></div></td>'
-      + '<td><div class="skel" style="width:120px"></div></td>'
-      + '<td><div class="skel pill" style="width:80px"></div></td>'
+    var tds = '<td><div class="skel lg"></div></td><td><div class="skel" style="width:50px"></div></td>';
+    if (isCond) tds += '<td><div class="skel" style="width:120px"></div></td>';
+    tds += '<td><div class="skel" style="width:120px"></div></td>'
       + '<td><div class="skel" style="width:140px"></div></td>'
-      + '<td class="text-end"><div class="skel pill" style="width:120px"></div></td>'
-      + '</tr>';
+      + '<td><div class="skel pill" style="width:80px"></div></td>'
+      + '<td class="text-end"><div class="skel pill" style="width:120px"></div></td>';
+    rows += '<tr>' + tds + '</tr>';
   }
+  var head = '<thead><tr><th>ชื่อ</th><th>ส่วนลด</th>'
+    + (isCond ? '<th class="admin-cell-center">เงื่อนไข</th>' : '')
+    + '<th class="admin-cell-center">เป้าหมาย</th><th>ช่วงเวลา</th><th class="admin-cell-center">สถานะ</th><th class="text-end">การจัดการ</th></tr></thead>';
   wrap.innerHTML = '<div class="table-responsive tbl-wrap-pos">'
     + '<table class="table promo-table admin-list-table align-middle">'
-    + '<thead><tr><th>ชื่อ</th><th>ส่วนลด</th><th class="admin-cell-center">เป้าหมาย</th><th class="admin-cell-center">สถานะ</th><th>ช่วงเวลา</th><th class="text-end">การจัดการ</th></tr></thead>'
+    + head
     + '<tbody>' + rows + '</tbody></table></div>';
 }
 
@@ -353,19 +690,22 @@ function _hideOverlay() {
 
 function renderTable(){
   var wrap = document.getElementById('promoTableWrap');
-  var bar  = document.getElementById('promoPgBar');
+  var isCond = _currentPromoTab === 'conditional';
+  var tabLabel = isCond ? 'โปรโมชั่นตามเงื่อนไข' : 'โปรโมชั่นแบบตรง';
   if (!_promosCache.length) {
     var q = (document.getElementById('qSearch').value || '').toLowerCase();
     var statusFilter = document.getElementById('qStatus').value;
     var isFiltered = q || statusFilter !== 'all';
-    var emptyMsg = isFiltered ? 'ไม่พบโปรโมชั่นที่ตรงเงื่อนไข' : 'ยังไม่มีโปรโมชั่น';
+    var emptyMsg = isFiltered ? ('ไม่พบ' + tabLabel + 'ที่ตรงเงื่อนไข') : ('ยังไม่มี' + tabLabel);
     var ctaHtml = isFiltered ? '' : '<button class="btn btn-dark btn-sm pill mt-3 empty-state-cta" onclick="document.getElementById(\'btnAdd\').click()"><i class="bi bi-plus-lg me-1"></i>เพิ่มโปรโมชั่น</button>';
-    wrap.innerHTML = '<div class="empty-state"><i class="bi bi-tag"></i><div class="fw-semibold">' + emptyMsg + '</div><div class="text-muted small mt-1">กดปุ่ม "เพิ่ม" เพื่อสร้างโปรโมชั่นแรก</div>' + ctaHtml + '</div>';
+    wrap.innerHTML = '<div class="empty-state"><i class="bi bi-tag"></i><div class="fw-semibold">' + emptyMsg + '</div><div class="text-muted small mt-1">กดปุ่ม "เพิ่ม" เพื่อสร้าง' + tabLabel + 'แรก</div>' + ctaHtml + '</div>';
     _pgUpdateBar();
     return;
   }
   var html = '<div class="table-responsive tbl-wrap-pos"><table class="table promo-table admin-list-table align-middle">';
-  html += '<thead><tr><th>ชื่อ</th><th>ส่วนลด</th><th class="admin-cell-center">เป้าหมาย</th><th class="admin-cell-center">สถานะ</th><th>ช่วงเวลา</th><th class="text-end">การจัดการ</th></tr></thead><tbody>';
+  html += '<thead><tr><th>ชื่อ</th><th>ส่วนลด</th>'
+    + (isCond ? '<th class="admin-cell-center">เงื่อนไข</th>' : '')
+    + '<th class="admin-cell-center">เป้าหมาย</th><th>ช่วงเวลา</th><th class="admin-cell-center">สถานะ</th><th class="text-end">การจัดการ</th></tr></thead><tbody>';
   _promosCache.forEach(function(p){
     var pending = _isPromoPending(p.promotion_id);
     var disabled = pending ? ' disabled' : '';
@@ -373,9 +713,10 @@ function renderTable(){
     html += '<tr>'
       + '<td><div class="admin-main-text">' + escHtml(p.name) + '</div>' + (p.description ? '<div class="admin-sub-text">' + escHtml(p.description) + '</div>' : '') + '</td>'
       + '<td>' + escHtml(discountStr) + '</td>'
+      + (isCond ? '<td class="admin-cell-center"><div class="admin-tag-wrap">' + summarizeCondition(p) + '</div></td>' : '')
       + '<td class="admin-cell-center"><div class="admin-tag-wrap">' + summarizeTarget(p) + '</div></td>'
+      + '<td><div class="admin-sub-text">เริ่ม ' + (p.starts_at ? escHtml(fmtDateTime(p.starts_at)) : 'ทันที') + '</div><div class="admin-sub-text">' + (p.no_end_date ? 'ไม่มีวันสิ้นสุด' : ('สิ้นสุด ' + escHtml(fmtDateTime(p.ends_at)))) + '</div></td>'
       + '<td class="admin-cell-center">' + statusBadge(p.status) + '</td>'
-      + '<td><div class="admin-sub-text">เริ่ม ' + escHtml(fmtDateTime(p.starts_at)) + '</div><div class="admin-sub-text">สิ้นสุด ' + escHtml(fmtDateTime(p.ends_at)) + '</div></td>'
       + '<td class="text-end"><div class="admin-actions">'
       + '<button class="admin-action-btn js-promo-edit"' + disabled + ' data-id="' + escAttr(p.promotion_id) + '" title="แก้ไข"><i class="bi bi-pencil-square"></i></button>'
       + '<button class="admin-action-btn ' + (p.enabled ? 'is-toggle-on' : 'is-toggle-off') + ' js-promo-toggle"' + disabled + ' data-id="' + escAttr(p.promotion_id) + '" data-enabled="' + (p.enabled ? '1' : '0') + '" title="' + (p.enabled?'ปิดใช้งาน':'เปิดใช้งาน') + '"><i class="bi bi-power"></i></button>'
@@ -402,25 +743,44 @@ function _pgUpdateBar(){
   var next = document.getElementById('pgNext'); if (next) next.disabled = _pgPage >= totalPages || _pgLoading;
 }
 
-function fetchPage(){
+// Applies the current tab filter (application_mode) + client-side pagination to _promosRawCache
+// and re-renders. No network round-trip — call after _promosRawCache changes.
+function _applyTabFilterAndPaginate(){
+  var filtered = _promosRawCache.filter(function(p){ return _promoTabOf(p) === _currentPromoTab; });
+  _pgTotal = filtered.length;
+  var totalPages = Math.max(1, Math.ceil(_pgTotal / _pgSize));
+  _pgPage = Math.max(1, Math.min(_pgPage, totalPages));
+  var start = (_pgPage - 1) * _pgSize;
+  _promosCache = filtered.slice(start, start + _pgSize);
+  renderTable();
+}
+
+// listPromotionsRpc has no application_mode filter and clamps limit to 100, so tab-aware
+// pagination requires fetching every promo matching {q,status} (both modes) in batches,
+// then filtering/paginating by tab entirely client-side (see _applyTabFilterAndPaginate).
+var _promoFetchBatchSize = 100;
+function fetchAllMatchingPromos(){
   if (_pgLoading) return Promise.resolve();
   _pgLoading = true;
   _setPgControlsDisabled(true);
   if (_firstLoad) _showSkeletonRows(_pgSize); else _showOverlay();
   var q = (document.getElementById('qSearch').value || '').trim();
   var statusFilter = document.getElementById('qStatus').value;
-  var opts = { q: q, status: statusFilter || 'all', offset: (_pgPage - 1) * _pgSize, limit: _pgSize };
-  return _rpc('listPromotionsRpc', opts).then(function(r){
-    _promosCache = r.promotions || [];
-    _pgTotal = Number(r.total)||0;
-    if (_promosCache.length === 0 && _pgTotal > 0) {
-      var _tp = Math.max(1, Math.ceil(_pgTotal / _pgSize));
-      var _cl = Math.max(1, Math.min(_pgPage, _tp));
-      if (_cl !== _pgPage) { _pgPage = _cl; _pgRefetchNeeded = true; return; }
-    }
-    _firstLoad = false;
-    renderTable();
-  }).catch(function(err){
+  var acc = [];
+  function loop(offset){
+    var opts = { q: q, status: statusFilter || 'all', offset: offset, limit: _promoFetchBatchSize };
+    return _rpc('listPromotionsRpc', opts).then(function(r){
+      var page = r.promotions || [];
+      acc = acc.concat(page);
+      var total = Number(r.total)||0;
+      if (acc.length < total && page.length > 0 && offset < 5000) {
+        return loop(offset + _promoFetchBatchSize);
+      }
+      _promosRawCache = acc;
+      _firstLoad = false;
+    });
+  }
+  return loop(0).catch(function(err){
     if (err && err.message === 'AUTH_REQUIRED') return;
     document.getElementById('promoTableWrap').innerHTML = '<div class="empty-state"><i class="bi bi-exclamation-circle"></i>โหลดข้อมูลไม่สำเร็จ</div>';
     _firstLoad = true;
@@ -428,97 +788,167 @@ function fetchPage(){
     _pgLoading = false;
     _setPgControlsDisabled(false);
     _hideOverlay();
-    if (_pgRefetchNeeded) { _pgRefetchNeeded = false; fetchPage(); }
   });
+}
+
+function fetchPage(){
+  return fetchAllMatchingPromos().then(function(){ _applyTabFilterAndPaginate(); });
 }
 
 /* ---------- Load data ---------- */
 function loadAll(){
-  var pProducts = _productsLoaded ? Promise.resolve(null) : _rpc('productListRpc').then(function(prRes){
+  var pProducts = _productsLoaded ? Promise.resolve(null) : _rpc('productListRpc', { includeAll:true }).then(function(prRes){
     _productsCache = (prRes && prRes.ok) ? (prRes.items || []) : [];
     _productsLoaded = true;
   });
   return pProducts.then(function(){ return fetchPage(); });
 }
 
-/* ---------- Picker rendering ---------- */
-function renderPicker(targetType, selected){
-  var box = document.getElementById('pmPicker');
-  if (targetType === 'all') { box.style.display = 'none'; box.innerHTML = ''; return; }
-  box.style.display = '';
-  if (!_productsCache.length) { box.innerHTML = '<div class="text-muted small p-2">ยังไม่มีสินค้า</div>'; return; }
-  var selSet = {};
-  (selected || []).forEach(function(t){
-    var k = String(t.product_id) + '|' + String(t.variant_key || '');
-    selSet[k] = true;
-  });
-  var html = '';
-  _productsCache.forEach(function(p){
-    var prodKey = String(p.id) + '|';
-    var thumbHtml = '<div class="pick-thumb-wrap"><img class="pick-thumb" id="pthumb_' + escAttr(p.id) + '" data-fid="' + escAttr(p.image_drive_file_id||'') + '" data-furl="' + escAttr(p.image_url||'') + '" alt=""></div>';
-    if (targetType === 'product') {
-      html += '<div class="product-pick-row">' + thumbHtml + '<input type="checkbox" id="pp_' + p.id + '" data-pid="' + p.id + '" ' + (selSet[prodKey] ? 'checked' : '') + '><label for="pp_' + p.id + '">' + escHtml(p.title) + ' <span class="text-muted small">฿' + Number(p.price||0).toLocaleString('th-TH') + '</span></label></div>';
-    } else {
-      // variant: enumerate combos
-      var combos = enumerateCombos(p);
-      if (!combos.length) {
-        html += '<div class="product-pick-row">' + thumbHtml + '<span class="text-muted small">' + escHtml(p.title) + ' (ไม่มี variant)</span></div>';
-      } else {
-        html += '<div class="product-pick-row" style="border-bottom:1px solid #f3f4f6">' + thumbHtml + '<span class="fw-semibold">' + escHtml(p.title) + '</span></div>';
-        combos.forEach(function(c){
-          var vk = c.variant_key;
-          var k = String(p.id) + '|' + vk;
-          var labelTxt = Object.keys(c.sel).map(function(g){ return g+': '+c.sel[g]; }).join(', ');
-          html += '<div class="product-pick-row variant-key-row"><input type="checkbox" id="vp_' + p.id + '_' + escAttr(vk) + '" data-pid="' + p.id + '" data-vk="' + escAttr(vk) + '" ' + (selSet[k] ? 'checked' : '') + '><label for="vp_' + p.id + '_' + escAttr(vk) + '">' + escHtml(labelTxt) + '</label></div>';
-        });
-      }
-    }
-  });
-  box.innerHTML = html;
-  box.querySelectorAll('img.pick-thumb[data-fid]').forEach(function(img) {
-    _loadPickerThumb(img, img.getAttribute('data-fid'), img.getAttribute('data-furl'));
-  });
-  box.querySelectorAll('input[type=checkbox]').forEach(function(cb){
-    cb.addEventListener('change', updatePreview);
+/* ---------- Picker rendering (target: products/variants that receive the discount) ---------- */
+function _pmPickerPriceData(basePrice){
+  var base = Math.round(Number(basePrice) || 0);
+  var typeEl = document.getElementById('pmType');
+  var valueEl = document.getElementById('pmValue');
+  var dType = typeEl ? typeEl.value : 'fixed';
+  var dVal = Number(valueEl ? valueEl.value : 0);
+  var valid = isFinite(dVal) && dVal > 0 && (dType !== 'percent' || dVal <= 100);
+  var raw = dType === 'percent' ? (base * (1 - dVal / 100)) : (base - dVal);
+  return { base:base, finalPrice:valid ? Math.max(0, Math.round(raw)) : base, valid:valid };
+}
+
+function _pmPickerPriceHtml(basePrice, extraClass, tagName){
+  var price = _pmPickerPriceData(basePrice);
+  var tag = tagName === 'span' ? 'span' : 'div';
+  return '<' + tag + ' class="pm-picker-price ' + escAttr(extraClass || '') + (price.valid ? ' has-preview' : '') + '" data-pm-base-price="' + price.base + '">'
+    + '<span class="pm-price-normal">' + fmtMoney(price.base) + '</span>'
+    + '<span class="pm-price-discount"><span class="pm-price-old">' + fmtMoney(price.base) + '</span><span class="pm-price-arrow"> </span><span class="pm-price-new">' + fmtMoney(price.finalPrice) + '</span></span>'
+    + '<span class="pm-price-unit">/ชิ้น</span>'
+    + '</' + tag + '>';
+}
+
+function _pmRefreshPickerPrices(){
+  document.querySelectorAll('#pmPicker .pm-picker-price').forEach(function(el){
+    var price = _pmPickerPriceData(el.getAttribute('data-pm-base-price'));
+    el.classList.toggle('has-preview', price.valid);
+    var normal = el.querySelector('.pm-price-normal');
+    var oldPrice = el.querySelector('.pm-price-old');
+    var newPrice = el.querySelector('.pm-price-new');
+    if (normal) normal.textContent = fmtMoney(price.base);
+    if (oldPrice) oldPrice.textContent = fmtMoney(price.base);
+    if (newPrice) newPrice.textContent = fmtMoney(price.finalPrice);
   });
 }
 
-function _loadPickerThumb(img, fileId, fallbackUrl) {
-  if (!img) return;
-  var wrap = img.closest ? img.closest('.pick-thumb-wrap') : null;
-  function _showFallback() {
-    img.style.display = 'none';
-    if (wrap) { wrap.classList.add('loaded'); wrap.insertAdjacentHTML('beforeend', '<i class="bi bi-box pick-thumb-icon"></i>'); }
-  }
-  function _applySrc(src) {
-    if (!src) { _showFallback(); return; }
-    img.onload = function() {
-      img.classList.add('is-loaded');
-      if (wrap) wrap.classList.add('loaded');
-    };
-    img.onerror = function() { _showFallback(); };
-    img.src = src;
-  }
-  if (!fileId) {
-    if (fallbackUrl) _applySrc(fallbackUrl);
-    else _showFallback();
+function renderPicker(targetType, selected){
+  var box = document.getElementById('pmPicker');
+  var searchBox = document.getElementById('pmPickerSearch');
+  _pmTargetSelection = (selected || []).slice();
+  if (targetType === 'all') {
+    box.style.display = 'none'; box.innerHTML = '';
+    if (searchBox) { searchBox.classList.add('d-none'); searchBox.value = ''; }
     return;
   }
-  if (_pickerImgCache[fileId]) { _applySrc(_pickerImgCache[fileId]); return; }
-  if (!GAS_ENV) {
-    if (fallbackUrl) _applySrc(fallbackUrl);
-    else _showFallback();
-    return;
+  box.style.display = '';
+  if (searchBox) searchBox.classList.remove('d-none');
+  function _isSelected(pid, vk){
+    return _pmTargetSelection.some(function(t){ return String(t.product_id) === String(pid) && String(t.variant_key||'') === String(vk||''); });
   }
-  callRpc('getFileDataUrlRpc', fileId).then(function(r) {
-    var dataUrl = r && r.dataUrl;
-    if (dataUrl) { _pickerImgCache[fileId] = dataUrl; _applySrc(dataUrl); }
-    else if (fallbackUrl) _applySrc(fallbackUrl);
-    else _showFallback();
-  }).catch(function() {
-    if (fallbackUrl) _applySrc(fallbackUrl);
-    else _showFallback();
-  });
+  function _render(filter){
+    var f = String(filter||'').toLowerCase();
+    if (!_productsCache.length) { box.className = 'mt-2'; box.innerHTML = '<div class="text-muted small p-2">ยังไม่มีสินค้า</div>'; return; }
+    var list = _productsCache.filter(function(p){
+      if (targetType === 'variant' && !_pmHasSelectableVariants(p)) return false;
+      return !f || String(p.title||'').toLowerCase().indexOf(f) >= 0;
+    });
+    if (!list.length) {
+      box.className = 'mt-2';
+      box.innerHTML = '<div class="text-muted small p-2">'
+        + (targetType === 'variant'
+          ? (f ? 'ไม่พบสินค้าที่มีตัวเลือก' : 'ยังไม่มีสินค้าที่มีตัวเลือก')
+          : 'ไม่พบสินค้า')
+        + '</div>';
+      return;
+    }
+    if (targetType === 'product') {
+      box.className = 'mt-2 picker-grid';
+      box.innerHTML = list.map(function(p){
+        var fid = p.image_drive_file_id || _parseDriveFileId(p.image_url || '');
+        var hasImg = !!(fid || p.image_url);
+        var isSel = _isSelected(p.id, '');
+        var sel = isSel ? ' selected' : '';
+        var reason = _pmProductPickerReason(p, false);
+        var blocked = !!reason && !isSel;
+        var disabledCls = blocked ? ' disabled' : '';
+        var aria = reason ? _pmPickerReasonAttrs(reason, blocked) : (' aria-label="เลือกสินค้า ' + escAttr(p.title||'') + '"');
+        return '<div class="picker-card' + sel + disabledCls + '" role="checkbox" tabindex="0" aria-checked="' + (isSel ? 'true' : 'false') + '" data-pm-target-pid="' + escAttr(p.id) + '"' + aria + '>'
+          + '<span class="picker-selected-mark"><i class="bi bi-check-lg"></i>เลือกแล้ว</span>'
+          + '<div class="picker-thumb-wrap">' + (hasImg ? '<img class="picker-thumb" data-fid="' + escAttr(fid) + '" data-url="' + escAttr(p.image_url||'') + '">' : '<i class="bi bi-box picker-thumb-icon"></i>') + '</div>'
+          + '<div class="picker-name">' + escHtml(p.title||'—') + '</div>'
+          + _pmPickerPriceHtml(p.price, 'picker-meta', 'div')
+          + '</div>';
+      }).join('');
+      box.querySelectorAll('img.picker-thumb').forEach(function(img){ _loadAdminImg(img, img.dataset.fid, img.dataset.url); });
+      _initPmPickerTooltips(box);
+    } else {
+      // variant: one product header (thumbnail + title) + a wrapped row of toggle-chips, one per combo.
+      box.className = 'mt-2 pm-picker-scroll';
+      var html = '';
+      list.forEach(function(p){
+        var fid = p.image_drive_file_id || _parseDriveFileId(p.image_url || '');
+        var hasImg = !!(fid || p.image_url);
+        var combos = enumerateCombos(p);
+        var productReason = _pmProductPickerReason(p, true);
+        var hasSelectedCombo = combos.some(function(c){ return _isSelected(p.id, c.variant_key); });
+        var rowBlocked = !!productReason && !hasSelectedCombo;
+        html += '<div class="cond-row' + (rowBlocked ? ' picker-disabled' : '') + '" style="flex-wrap:wrap; align-items:flex-start;">'
+          + '<div class="picker-thumb-wrap">' + (hasImg ? '<img class="picker-thumb" data-fid="' + escAttr(fid) + '" data-url="' + escAttr(p.image_url||'') + '">' : '<i class="bi bi-box picker-thumb-icon"></i>') + '</div>'
+          + '<div class="flex-grow-1">'
+          + '<div class="picker-name">' + escHtml(p.title) + '</div>';
+        if (!combos.length) {
+          html += '<div class="text-muted small mt-1">(ไม่มีตัวเลือกสินค้า)</div>';
+        } else {
+          html += '<div class="d-flex flex-wrap gap-1 mt-1">' + combos.map(function(c){
+            var vk = c.variant_key;
+            var isSel = _isSelected(p.id, vk);
+            var sel = isSel ? ' selected' : '';
+            var blocked = !!productReason && !isSel;
+            var disabledCls = blocked ? ' disabled' : '';
+            var labelTxt = Object.keys(c.sel).map(function(g){ return c.sel[g]; }).join(' / ');
+            return '<span class="pm-variant-chip' + sel + disabledCls + '" role="checkbox" tabindex="0" aria-checked="' + (isSel ? 'true' : 'false') + '" data-pm-target-pid="' + escAttr(p.id) + '" data-pm-target-vk="' + escAttr(vk) + '"' + _pmPickerReasonAttrs(productReason, blocked) + '><span>' + escHtml(labelTxt) + '</span>' + _pmPickerPriceHtml(c.basePrice, 'pm-variant-price', 'span') + '</span>';
+          }).join('') + '</div>';
+        }
+        html += '</div></div>';
+      });
+      box.innerHTML = html;
+      box.querySelectorAll('img.picker-thumb').forEach(function(img){ _loadAdminImg(img, img.dataset.fid, img.dataset.url); });
+      _initPmPickerTooltips(box);
+    }
+  }
+  _render('');
+  if (searchBox) { searchBox.value = ''; searchBox.oninput = function(){ _render(searchBox.value); }; }
+}
+
+function _pmToggleTargetSelection(pid, vk){
+  var idx = _pmTargetSelection.findIndex(function(t){ return String(t.product_id) === String(pid) && String(t.variant_key||'') === String(vk||''); });
+  if (idx >= 0) _pmTargetSelection.splice(idx, 1);
+  else _pmTargetSelection.push(vk ? { product_id: String(pid), variant_key: String(vk) } : { product_id: String(pid) });
+}
+
+function _pmToggleTargetElement(el){
+  if (!el || el.getAttribute('data-pm-picker-disabled') === '1') return;
+  var pid = el.getAttribute('data-pm-target-pid');
+  var vk = el.getAttribute('data-pm-target-vk') || '';
+  var wasSelected = el.classList.contains('selected');
+  var reason = _pmProductPickerReason(_pmProdById(pid), !!vk);
+  if (reason && !wasSelected) return;
+  _pmToggleTargetSelection(pid, vk);
+  var isSelected = el.classList.toggle('selected');
+  el.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+  if (reason && wasSelected) {
+    var targetInput = document.querySelector('input[name="pmTarget"]:checked');
+    renderPicker(targetInput ? targetInput.value : (vk ? 'variant' : 'product'), _pmTargetSelection);
+  }
+  updatePreview();
 }
 
 function enumerateCombos(product){
@@ -549,60 +979,360 @@ function enumerateCombos(product){
   }
   return combos.map(function(c){ return { sel: c.sel, basePrice: c.basePrice, variant_key: _buildVariantKey(c.sel) }; });
 }
+function _pmHasSelectableVariants(product) { return enumerateCombos(product).length > 0; }
+function _pmProductPickerReason(product, variantsOnly) {
+  if (!product) return 'ไม่พบข้อมูลสินค้า';
+  var status = String(product.sale_status || '').toLowerCase();
+  if (!status && product.sale_mode === 'disabled') status = 'disabled';
+  if (status === 'disabled') return 'สินค้านี้ปิดการขายอยู่';
+  if (status === 'invalid') {
+    if (!String(product.title || '').trim()) return 'สินค้านี้ยังไม่ได้ระบุชื่อ';
+    var variantPricesOk = (product.variants || []).length > 0 && (product.variants || []).every(function(group) {
+      return (group.options || []).length > 0 && (group.options || []).every(function(option){ return Number(option.price) > 0; });
+    });
+    if (!(Number(product.price) > 0) && !variantPricesOk) return 'สินค้านี้ยังไม่ได้กำหนดราคาที่ถูกต้อง';
+    if (!Array.isArray(product.allowed_shipping_ids) || !product.allowed_shipping_ids.length) return 'สินค้านี้ยังไม่ได้กำหนดวิธีจัดส่ง';
+    return 'วิธีจัดส่งของสินค้านี้ยังไม่เปิดใช้งาน';
+  }
+  if (variantsOnly && !_pmHasSelectableVariants(product)) return 'สินค้านี้ไม่มีรุ่น/ตัวเลือกให้เลือก';
+  return '';
+}
+function _pmPickerReasonAttrs(reason, disabled) {
+  if (!reason) return '';
+  var text = disabled ? reason : (reason + ' — คลิกเพื่อนำออกจากรายการ');
+  var safe = escAttr(text);
+  return ' aria-disabled="' + (disabled ? 'true' : 'false') + '" aria-label="' + safe
+    + '" title="' + safe + '" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="' + safe + '"'
+    + (disabled ? ' data-pm-picker-disabled="1"' : '');
+}
+function _initPmPickerTooltips(root) {
+  if (!root || !window.bootstrap || !bootstrap.Tooltip) return;
+  root.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+    bootstrap.Tooltip.getOrCreateInstance(el, { container:'body', trigger:'hover focus' });
+  });
+}
 
 function readPickerSelection(targetType){
-  var box = document.getElementById('pmPicker');
-  var out = [];
-  box.querySelectorAll('input[type=checkbox]:checked').forEach(function(cb){
-    if (targetType === 'product') out.push({ product_id: cb.dataset.pid });
-    else out.push({ product_id: cb.dataset.pid, variant_key: cb.dataset.vk });
+  return _pmTargetSelection.slice();
+}
+
+/* ---------- Conditional-promotion builders ---------- */
+function _pmMode(){
+  return _pmModalMode === 'conditional' ? 'conditional' : 'direct';
+}
+function _pmCondType(){ var el = document.getElementById('pmCondType'); return el ? el.value : 'min_subtotal'; }
+function _pmMatchMode(){
+  var el = document.querySelector('input[name=pmMatchMode]:checked');
+  return (el && el.value === 'any') ? 'any' : 'all';
+}
+// Discount scope. Only meaningful for conditional promos; 'item' otherwise. Order-total is
+// deducted once from the whole-order subtotal and ignores product/variant targeting.
+function _pmScope(){
+  if (_pmMode() !== 'conditional') return 'item';
+  var el = document.querySelector('input[name=pmDiscScope]:checked');
+  return (el && el.value === 'order_total') ? 'order_total' : 'item';
+}
+function _pmProdById(id){
+  return _productsCache.filter(function(p){ return String(p.id) === String(id); })[0] || null;
+}
+// Default first-option-per-group selection for a variant condition row.
+function _withDefaultVarSel(product, sel){
+  var out = {};
+  (product && product.variants || []).forEach(function(g){
+    var name = String(g.name || '');
+    var opts = g.options || [];
+    out[name] = (sel && sel[name] != null) ? String(sel[name]) : (opts.length ? String(opts[0].label || '') : '');
   });
   return out;
 }
+function _pmDupProdIdx(){
+  var seen = {}, dups = {};
+  _pmCondProdRows.forEach(function(r, i){
+    var k = String(r.product_id || '');
+    if (seen[k] !== undefined) { dups[seen[k]] = true; dups[i] = true; }
+    else seen[k] = i;
+  });
+  return dups;
+}
+function _pmDupVarIdx(){
+  var seen = {}, dups = {};
+  _pmCondVarRows.forEach(function(r, i){
+    var k = String(r.product_id || '') + '|' + _buildVariantKey(r.selected_variants || {});
+    if (seen[k] !== undefined) { dups[seen[k]] = true; dups[i] = true; }
+    else seen[k] = i;
+  });
+  return dups;
+}
+
+function syncPromoModeUi(){
+  var isCond = _pmMode() === 'conditional';
+  document.getElementById('pmCondSection').classList.toggle('d-none', !isCond);
+  // Direct promos can never be order-total — force scope back to per-item.
+  if (!isCond) { var si = document.getElementById('pmScopeItem'); if (si) si.checked = true; }
+  if (isCond) pmCondTypeChanged();
+  syncPromoScopeUi();
+}
+// Reflect the item/order-total scope choice: order-total hides product/variant targeting and
+// relabels the discount + preview to whole-order wording; item restores the targeting controls.
+function syncPromoScopeUi(){
+  var isOrder = _pmScope() === 'order_total';
+  var tgt = document.getElementById('pmTargetSection');
+  if (tgt) tgt.classList.toggle('d-none', isOrder);
+  var vLabel = document.getElementById('pmValueLabel');
+  var vHelp  = document.getElementById('pmValueHelp');
+  if (vLabel) vLabel.textContent = isOrder ? 'ส่วนลดท้ายบิล *' : 'ส่วนลดต่อชิ้น *';
+  if (vHelp)  vHelp.textContent  = isOrder
+    ? 'หักส่วนลดครั้งเดียวจากยอดรวมสินค้า (ไม่คูณจำนวน) ก่อนค่าจัดส่ง'
+    : 'ส่วนลดจะใช้กับทุกชิ้นของสินค้าเป้าหมาย เช่น ซื้อ 50 ชิ้น ระบบลดให้ครบทั้ง 50 ชิ้น';
+  updatePreview();
+}
+function pmCondTypeChanged(){
+  var t = _pmCondType();
+  document.getElementById('pmCondMin').classList.toggle('d-none', t !== 'min_subtotal');
+  document.getElementById('pmCondProducts').classList.toggle('d-none', t !== 'required_products');
+  document.getElementById('pmCondVariants').classList.toggle('d-none', t !== 'required_variants');
+  document.getElementById('pmMatchModeWrap').classList.toggle('d-none', t === 'min_subtotal');
+  if (t === 'required_products') _renderPmProdCondRows();
+  if (t === 'required_variants') _renderPmVarCondRows();
+  updatePreview();
+}
+
+function _renderPmProdCondRows(){
+  var box = document.getElementById('pmProdCondList');
+  if (!_pmCondProdRows.length) { box.innerHTML = '<div class="text-muted small">— ยังไม่ได้เลือกสินค้า —</div>'; return; }
+  var dups = _pmDupProdIdx();
+  box.innerHTML = _pmCondProdRows.map(function(r, i){
+    var prod = _pmProdById(r.product_id);
+    var name = prod ? prod.title : String(r.product_id);
+    var fid = prod ? (prod.image_drive_file_id || _parseDriveFileId(prod.image_url || '')) : '';
+    var hasImg = !!(fid || (prod && prod.image_url));
+    return '<div class="cond-row' + (dups[i] ? ' is-dup' : '') + '">'
+      + '<div class="picker-thumb-wrap">' + (hasImg ? '<img class="picker-thumb" data-fid="' + escAttr(fid) + '" data-url="' + escAttr(prod.image_url||'') + '">' : '<i class="bi bi-box picker-thumb-icon"></i>') + '</div>'
+      + '<div class="flex-grow-1"><div class="picker-name">' + escHtml(name) + (dups[i] ? ' <span class="text-danger small">(ซ้ำ)</span>' : '') + '</div></div>'
+      + '<div class="d-flex align-items-center gap-1"><span class="small text-muted">ขั้นต่ำ</span>'
+      + '<input type="number" min="1" step="1" class="form-control form-control-sm" style="width:72px" data-pm-cond-qty="' + i + '" value="' + (Number(r.min_qty)||1) + '"></div>'
+      + '<button type="button" class="btn btn-sm btn-outline-danger" data-pm-cond-rm="' + i + '" title="ลบ"><i class="bi bi-trash"></i></button>'
+      + '</div>';
+  }).join('');
+  box.querySelectorAll('img.picker-thumb').forEach(function(img){ _loadAdminImg(img, img.dataset.fid, img.dataset.url); });
+}
+
+function _renderPmVarCondRows(){
+  var box = document.getElementById('pmVarCondList');
+  if (!_pmCondVarRows.length) { box.innerHTML = '<div class="text-muted small">— ยังไม่ได้เลือกตัวเลือก —</div>'; return; }
+  var dups = _pmDupVarIdx();
+  box.innerHTML = _pmCondVarRows.map(function(r, i){
+    var prod = _pmProdById(r.product_id);
+    var name = prod ? prod.title : String(r.product_id);
+    r.selected_variants = _withDefaultVarSel(prod, r.selected_variants);
+    var fid = prod ? (prod.image_drive_file_id || _parseDriveFileId(prod.image_url || '')) : '';
+    var hasImg = !!(fid || (prod && prod.image_url));
+    var groupSelects = (prod && prod.variants || []).map(function(g){
+      var gname = String(g.name || '');
+      var opts = (g.options || []).map(function(o){
+        var lbl = String(o.label || '');
+        var selAttr = (String(r.selected_variants[gname] || '') === lbl) ? ' selected' : '';
+        return '<option value="' + escAttr(lbl) + '"' + selAttr + '>' + escHtml(lbl) + '</option>';
+      }).join('');
+      return '<select class="form-select form-select-sm" data-pm-var-row="' + i + '" data-pm-var-group="' + escAttr(gname) + '" style="width:auto">' + opts + '</select>';
+    }).join('');
+    return '<div class="cond-row' + (dups[i] ? ' is-dup' : '') + '" style="flex-wrap:wrap;">'
+      + '<div class="picker-thumb-wrap">' + (hasImg ? '<img class="picker-thumb" data-fid="' + escAttr(fid) + '" data-url="' + escAttr(prod.image_url||'') + '">' : '<i class="bi bi-box picker-thumb-icon"></i>') + '</div>'
+      + '<div class="flex-grow-1"><div class="picker-name">' + escHtml(name) + (dups[i] ? ' <span class="badge bg-danger-subtle text-danger-emphasis">ซ้ำ</span>' : '') + '</div>'
+      + '<div class="d-flex flex-wrap gap-1 mt-1">' + groupSelects + '</div></div>'
+      + '<div class="d-flex align-items-center gap-1"><span class="small text-muted">ขั้นต่ำ</span>'
+      + '<input type="number" min="1" step="1" class="form-control form-control-sm" style="width:72px" data-pm-vcond-qty="' + i + '" value="' + (Number(r.min_qty)||1) + '"></div>'
+      + '<button type="button" class="btn btn-sm btn-outline-danger" data-pm-vcond-rm="' + i + '" title="ลบ"><i class="bi bi-trash"></i></button>'
+      + '</div>';
+  }).join('');
+  box.querySelectorAll('img.picker-thumb').forEach(function(img){ _loadAdminImg(img, img.dataset.fid, img.dataset.url); });
+}
+
+function openPmCondPicker(cb, variantsOnly){
+  _pmCondPickerCb = cb;
+  var grid = document.getElementById('pmCondPickerGrid');
+  var search = document.getElementById('pmCondPickerSearch');
+  function _render(filter){
+    var f = String(filter||'').toLowerCase();
+    var list = _productsCache.filter(function(p){
+      if (variantsOnly && !_pmHasSelectableVariants(p)) return false;
+      return !f || String(p.title||'').toLowerCase().indexOf(f) >= 0;
+    });
+    if (!list.length) {
+      var emptyText = variantsOnly
+        ? (f ? 'ไม่พบสินค้าที่มีตัวเลือก' : 'ยังไม่มีสินค้าที่มีตัวเลือก')
+        : 'ไม่พบสินค้า';
+      grid.innerHTML = '<div class="text-muted small p-3">— ' + emptyText + ' —</div>';
+      return;
+    }
+    grid.innerHTML = list.map(function(p){
+      var fid = p.image_drive_file_id || _parseDriveFileId(p.image_url || '');
+      var hasImg = !!(fid || p.image_url);
+      var reason = _pmProductPickerReason(p, variantsOnly);
+      var disabledCls = reason ? ' disabled' : '';
+      var priceStr = '฿' + Number(p.price||0).toLocaleString('th-TH');
+      return '<div class="picker-card' + disabledCls + '" role="button" tabindex="0" data-pm-pick-pid="' + escAttr(p.id) + '"' + _pmPickerReasonAttrs(reason, !!reason) + '>'
+        + '<div class="picker-thumb-wrap">' + (hasImg ? '<img class="picker-thumb" data-fid="' + escAttr(fid) + '" data-url="' + escAttr(p.image_url||'') + '">' : '<i class="bi bi-box picker-thumb-icon"></i>') + '</div>'
+        + '<div class="picker-name">' + escHtml(p.title||'—') + '</div>'
+        + '<div class="picker-meta">' + priceStr + '</div>'
+        + '</div>';
+    }).join('');
+    grid.querySelectorAll('img.picker-thumb').forEach(function(img){ _loadAdminImg(img, img.dataset.fid, img.dataset.url); });
+    _initPmPickerTooltips(grid);
+  }
+  _render('');
+  if (search) { search.value = ''; search.oninput = function(){ _render(search.value); }; }
+  if (!_pmCondPickerModal) _pmCondPickerModal = new bootstrap.Modal(document.getElementById('pmCondPickerModal'));
+  _pmCondPickerModal.show();
+}
 
 /* ---------- Live preview ---------- */
+function _pmHasPreviewCondition(){
+  if (_pmMode() !== 'conditional') return true;
+  var t = _pmCondType();
+  if (t === 'min_subtotal') return Number(document.getElementById('pmMinSubtotal').value || 0) > 0;
+  if (t === 'required_products') return _pmCondProdRows.length > 0 && Object.keys(_pmDupProdIdx()).length === 0;
+  if (t === 'required_variants') return _pmCondVarRows.length > 0 && Object.keys(_pmDupVarIdx()).length === 0;
+  return false;
+}
+
+function _pmPreviewSamples(tType){
+  if (tType === 'all') {
+    return [{ base:500, title:'สินค้าตัวอย่างราคา 500 บาท (ใช้กับทั้งร้าน)' }];
+  }
+  return readPickerSelection(tType).map(function(target){
+    var prod = _pmProdById(target.product_id);
+    if (!prod) return null;
+    var base = Number(prod.price || 0);
+    if (tType === 'variant' && target.variant_key) {
+      var combo = enumerateCombos(prod).filter(function(item){
+        return item.variant_key === target.variant_key;
+      })[0];
+      if (combo) base = combo.basePrice;
+    }
+    return {
+      base:base,
+      title:(prod.title || target.product_id) + (target.variant_key ? ' / ' + target.variant_key : '')
+    };
+  }).filter(Boolean);
+}
+
 function updatePreview(){
   var tType = document.querySelector('input[name=pmTarget]:checked').value;
   var dType = document.getElementById('pmType').value;
   var dVal = Number(document.getElementById('pmValue').value || 0);
   var box = document.getElementById('pmPreview');
-  if (!dVal) { box.style.display = 'none'; return; }
-  var sample;
-  if (tType === 'all') {
-    sample = { base: 500 };
-  } else {
-    var sel = readPickerSelection(tType);
-    if (!sel.length) { box.style.display = 'none'; return; }
-    var first = sel[0];
-    var prod = _productsCache.filter(function(p){ return String(p.id) === String(first.product_id); })[0];
-    if (!prod) { box.style.display = 'none'; return; }
-    var base = Number(prod.price || 0);
-    if (tType === 'variant' && first.variant_key) {
-      var combos = enumerateCombos(prod);
-      var match = combos.filter(function(c){ return c.variant_key === first.variant_key; })[0];
-      if (match) base = match.basePrice;
-    }
-    sample = { base: base, title: prod.title };
+  if (!dVal || !_pmHasPreviewCondition()) { box.style.display = 'none'; return; }
+
+  // Order-total scope: preview a single whole-order deduction (never per-piece).
+  if (_pmScope() === 'order_total') {
+    var minSub = Number(document.getElementById('pmMinSubtotal').value || 0);
+    var sampleSub = minSub > 0 ? minSub : 1000;
+    var disc = dType === 'percent' ? Math.round(sampleSub * dVal / 100) : Math.round(dVal);
+    disc = Math.max(0, Math.min(sampleSub, disc));
+    var netSub = sampleSub - disc;
+    var dLabel = dType === 'percent'
+      ? ('ลด ' + dVal.toLocaleString('th-TH') + '% จากยอดรวมสินค้า')
+      : ('ลด ' + fmtMoney(dVal) + ' จากยอดรวมสินค้า');
+    var reqHtmlOt = '<div class="pm-preview-req"><b>เงื่อนไข:</b> ' + _pmConditionPreviewText() + '</div>'
+      + '<div class="pm-preview-req"><b>วิธีคิด:</b> ' + escHtml(dLabel) + ' หักครั้งเดียวต่อออเดอร์ (ไม่คูณจำนวน)</div>';
+    var rowsHtmlOt = '<div class="pm-preview-rows"><div class="pm-preview-row">'
+      + '<div class="main"><span>ตัวอย่างยอดรวมสินค้า</span><span class="qty-badge">หักท้ายบิล</span></div>'
+      + '<div class="formula"><b>ยอดรวมสินค้า ' + fmtMoney(sampleSub) + ':</b> '
+      + '<span class="strike">' + fmtMoney(sampleSub) + '</span> → <span class="final">' + fmtMoney(netSub) + '</span>'
+      + ' <span class="saving">(ลดท้ายบิล ' + fmtMoney(disc) + ')</span></div>'
+      + '</div></div>';
+    document.getElementById('pmPreviewBody').innerHTML = reqHtmlOt + rowsHtmlOt;
+    box.style.display = '';
+    return;
   }
-  var raw = dType === 'percent' ? (sample.base * (1 - dVal/100)) : (sample.base - dVal);
-  var finalP = Math.max(0, Math.round(raw));
-  var html = (sample.title ? '<div>' + escHtml(sample.title) + '</div>' : '')
-    + '<div>ราคาปกติ <span class="strike num">' + fmtMoney(Math.round(sample.base)) + '</span> → ราคาหลังลด <span class="num">' + fmtMoney(finalP) + '</span></div>';
-  document.getElementById('pmPreviewBody').innerHTML = html;
+
+  var samples = _pmPreviewSamples(tType);
+  if (!samples.length) { box.style.display = 'none'; return; }
+  var qtyInput = document.getElementById('pmPreviewQty');
+  var qty = Math.max(1, Math.min(9999, Math.floor(Number(qtyInput && qtyInput.value || 1) || 1)));
+  var discountLabel = dType === 'percent'
+    ? ('ลด ' + dVal.toLocaleString('th-TH') + '% ต่อชิ้น')
+    : ('ลด ' + fmtMoney(dVal) + ' ต่อชิ้น');
+
+  var reqHtml = '';
+  if (_pmMode() === 'conditional') {
+    reqHtml += '<div class="pm-preview-req"><b>เงื่อนไข:</b> ' + _pmConditionPreviewText() + '</div>';
+  }
+  reqHtml += '<div class="pm-preview-req"><b>ใช้ส่วนลดกับ:</b> ' + _pmTargetPreviewText(tType) + '</div>'
+    + '<div class="pm-preview-req"><b>วิธีคิดจำนวน:</b> ' + escHtml(discountLabel)
+    + ' และลดทุกชิ้นของสินค้าเป้าหมาย - ถ้าซื้อ ' + qty.toLocaleString('th-TH')
+    + ' ชิ้น จะได้รับส่วนลดครบทั้ง ' + qty.toLocaleString('th-TH') + ' ชิ้น</div>';
+
+  var rowsHtml = '<div class="pm-preview-rows">' + samples.map(function(sample){
+    var base = Math.round(Number(sample.base) || 0);
+    var raw = dType === 'percent' ? (base * (1 - dVal/100)) : (base - dVal);
+    var finalP = Math.max(0, Math.round(raw));
+    var baseTotal = base * qty;
+    var finalTotal = finalP * qty;
+    var savingTotal = baseTotal - finalTotal;
+    return '<div class="pm-preview-row">'
+      + '<div class="main"><span>' + escHtml(sample.title || 'สินค้าตัวอย่าง') + '</span>'
+      + '<span class="qty-badge">ลดทุกชิ้น × ' + qty.toLocaleString('th-TH') + '</span></div>'
+      + '<div class="note"><b>ต่อชิ้น:</b> <span class="strike">' + fmtMoney(base) + '</span> → <span class="final">' + fmtMoney(finalP) + '</span></div>'
+      + '<div class="formula"><b>ซื้อ ' + qty.toLocaleString('th-TH') + ' ชิ้น:</b> '
+      + '<span class="strike">' + fmtMoney(baseTotal) + '</span> → <span class="final">' + fmtMoney(finalTotal) + '</span>'
+      + ' <span class="saving">(ลดรวม ' + fmtMoney(savingTotal) + ')</span></div>'
+      + '</div>';
+  }).join('') + '</div>';
+
+  document.getElementById('pmPreviewBody').innerHTML = reqHtml + rowsHtml;
   box.style.display = '';
+}
+
+// Human-readable summary of the current condition builder state (for the live preview).
+function _pmConditionPreviewText(){
+  var t = _pmCondType();
+  if (t === 'min_subtotal') {
+    var m = Number(document.getElementById('pmMinSubtotal').value || 0);
+    return m > 0 ? ('ยอดซื้อรวมอย่างน้อย ' + fmtMoney(m)) : '<span class="text-danger">ยังไม่ได้ระบุยอดขั้นต่ำ</span>';
+  }
+  var join = _pmMatchMode() === 'any' ? ' หรือ ' : ' และ ';
+  if (t === 'required_products') {
+    if (!_pmCondProdRows.length) return '<span class="text-danger">ยังไม่ได้เลือกสินค้า</span>';
+    return _pmCondProdRows.map(function(r){
+      var pr = _pmProdById(r.product_id);
+      return escHtml((pr ? pr.title : r.product_id)) + ' ≥ ' + (Number(r.min_qty)||1) + ' ชิ้น';
+    }).join(join);
+  }
+  if (t === 'required_variants') {
+    if (!_pmCondVarRows.length) return '<span class="text-danger">ยังไม่ได้เลือกตัวเลือก</span>';
+    return _pmCondVarRows.map(function(r){
+      var pr = _pmProdById(r.product_id);
+      var vtxt = Object.keys(r.selected_variants||{}).map(function(g){ return r.selected_variants[g]; }).join('/');
+      return escHtml((pr ? pr.title : r.product_id) + (vtxt ? ' ('+vtxt+')' : '')) + ' ≥ ' + (Number(r.min_qty)||1) + ' ชิ้น';
+    }).join(join);
+  }
+  return '—';
+}
+function _pmTargetPreviewText(tType){
+  if (tType === 'all') return 'ทุกสินค้าในตะกร้า';
+  var sel = readPickerSelection(tType);
+  if (!sel.length) return '<span class="text-danger">ยังไม่ได้เลือกเป้าหมาย</span>';
+  return sel.slice(0,3).map(function(t){
+    var pr = _pmProdById(t.product_id);
+    return escHtml((pr ? pr.title : t.product_id) + (t.variant_key ? ' / '+t.variant_key : ''));
+  }).join(', ') + (sel.length > 3 ? ' +' + (sel.length-3) : '');
 }
 
 /* ---------- Modal handling ---------- */
 function openCreate(){
   _editId = null;
-  document.getElementById('promoModalTitle').textContent = 'สร้างโปรโมชั่น';
+  _pmModalMode = _currentPromoTab === 'conditional' ? 'conditional' : 'direct';
+  document.getElementById('promoModalTitle').textContent = _pmModalMode === 'conditional'
+    ? 'สร้างโปรโมชั่นตามเงื่อนไข'
+    : 'สร้างโปรโมชั่นแบบตรง';
   document.getElementById('pmName').value = '';
   document.getElementById('pmDesc').value = '';
   document.getElementById('pmType').value = 'fixed';
   document.getElementById('pmValueUnit').textContent = 'บาท';
   document.getElementById('pmValue').value = '';
-  var now = new Date(); var end = new Date(Date.now() + 7*86400000);
-  document.getElementById('pmStart').value = _toLocalInput(now.toISOString());
+  document.getElementById('pmStart').value = '';
   document.getElementById('pmEnd').value   = '';
   document.getElementById('pmEnd').disabled = true;
   document.getElementById('pmNoEnd').checked = true;
@@ -610,6 +1340,14 @@ function openCreate(){
   document.getElementById('pmEnabled').checked = true;
   document.getElementById('pmErr').classList.add('d-none');
   document.getElementById('pmPreview').style.display = 'none';
+  document.getElementById('pmPreviewQty').value = '1';
+  document.getElementById('pmCondType').value = 'min_subtotal';
+  document.getElementById('pmMinSubtotal').value = '';
+  document.getElementById('pmMatchAll').checked = true;
+  document.getElementById('pmScopeItem').checked = true;
+  _pmCondProdRows = [];
+  _pmCondVarRows = [];
+  syncPromoModeUi();
   renderPicker('all', []);
   _modal.show();
 }
@@ -629,12 +1367,16 @@ function openEdit(promotionId){
   var p = _promosCache.filter(function(x){ return x.promotion_id === promotionId; })[0];
   if (!p) return;
   _editId = promotionId;
-  document.getElementById('promoModalTitle').textContent = 'แก้ไขโปรโมชั่น';
+  _pmModalMode = p.application_mode === 'conditional' ? 'conditional' : 'direct';
+  document.getElementById('promoModalTitle').textContent = _pmModalMode === 'conditional'
+    ? 'แก้ไขโปรโมชั่นตามเงื่อนไข'
+    : 'แก้ไขโปรโมชั่นแบบตรง';
   document.getElementById('pmName').value = p.name || '';
   document.getElementById('pmDesc').value = p.description || '';
   document.getElementById('pmType').value = p.discount_type;
   document.getElementById('pmValueUnit').textContent = p.discount_type === 'percent' ? '%' : 'บาท';
   document.getElementById('pmValue').value = p.discount_value;
+  document.getElementById('pmPreviewQty').value = '1';
   document.getElementById('pmStart').value = _toLocalInput(p.starts_at);
   var pmNoEndChk = document.getElementById('pmNoEnd');
   var pmEndInp = document.getElementById('pmEnd');
@@ -651,8 +1393,57 @@ function openEdit(promotionId){
   document.getElementById('pmEnabled').checked = !!p.enabled;
   document.getElementById('pmErr').classList.add('d-none');
   renderPicker(p.target_type, p.target || []);
+
+  // Hydrate conditional builder. Legacy rows (no application_mode) open as direct.
+  var mode = _pmModalMode;
+  document.getElementById('pmCondType').value = 'min_subtotal';
+  document.getElementById('pmMinSubtotal').value = '';
+  document.getElementById('pmMatchAll').checked = true;
+  // Discount scope: only conditional promos can be order-total; legacy/direct rows are item.
+  var _scope = (mode === 'conditional' && p.discount_scope === 'order_total') ? 'order_total' : 'item';
+  document.getElementById('pmScopeItem').checked  = (_scope === 'item');
+  document.getElementById('pmScopeOrder').checked = (_scope === 'order_total');
+  _pmCondProdRows = [];
+  _pmCondVarRows = [];
+  if (mode === 'conditional') {
+    var cj = p.condition_json || {};
+    var ct = p.condition_type || 'min_subtotal';
+    document.getElementById('pmCondType').value = ct;
+    var mm = (cj.match_mode === 'any') ? 'any' : 'all';
+    document.getElementById('pmMatchAll').checked = (mm === 'all');
+    document.getElementById('pmMatchAny').checked = (mm === 'any');
+    if (ct === 'min_subtotal') {
+      document.getElementById('pmMinSubtotal').value = Number(cj.min_subtotal || 0) || '';
+    } else if (ct === 'required_products') {
+      _pmCondProdRows = (cj.required_products || []).map(function(r){
+        return { product_id: String(r.product_id), min_qty: Math.max(1, Number(r.min_qty)||1) };
+      });
+    } else if (ct === 'required_variants') {
+      _pmCondVarRows = (cj.required_variants || []).map(function(r){
+        var prod = _pmProdById(r.product_id);
+        var sel = {};
+        String(r.variant_key || '').split('|').forEach(function(pair){
+          var eq = pair.indexOf('='); if (eq < 0) return;
+          sel[pair.slice(0, eq)] = pair.slice(eq + 1);
+        });
+        return { product_id: String(r.product_id), variant_key: String(r.variant_key||''), selected_variants: _withDefaultVarSel(prod, sel), min_qty: Math.max(1, Number(r.min_qty)||1) };
+      });
+    }
+  }
+  syncPromoModeUi();
   updatePreview();
   _modal.show();
+}
+
+function _showPromoSaveError(message) {
+  var errEl = document.getElementById('pmErr');
+  errEl.textContent = message;
+  errEl.classList.remove('d-none');
+  var modalEl = document.getElementById('promoModal');
+  if (_modal && modalEl && !modalEl.classList.contains('show')) _modal.show();
+  requestAnimationFrame(function(){
+    errEl.scrollIntoView({ block:'nearest', behavior:'smooth' });
+  });
 }
 
 function savePromo(){
@@ -669,74 +1460,155 @@ function savePromo(){
   };
   payload.target = payload.target_type === 'all' ? [] : readPickerSelection(payload.target_type);
 
+  // Discount scope (conditional only). Order-total ignores targeting — force whole-store target.
+  payload.discount_scope = _pmScope();
+  if (payload.discount_scope === 'order_total') {
+    payload.target_type = 'all';
+    payload.target = [];
+  }
+
   var errEl = document.getElementById('pmErr');
   errEl.classList.add('d-none');
 
+  if (!payload.name) { _showPromoSaveError('กรุณาระบุชื่อโปรโมชั่น'); return; }
+  if (!payload.no_end_date) {
+    if (!payload.ends_at) { _showPromoSaveError('กรุณาระบุวันที่สิ้นสุด หรือเลือก "ไม่มีวันสิ้นสุด"'); return; }
+    if (payload.starts_at && new Date(payload.ends_at) <= new Date(payload.starts_at)) {
+      _showPromoSaveError('วันที่สิ้นสุดต้องอยู่หลังวันที่เริ่ม'); return;
+    }
+  }
+  if (!(payload.discount_value > 0)) { _showPromoSaveError('กรุณาระบุมูลค่าส่วนลดมากกว่า 0'); return; }
+  if (payload.discount_type === 'percent' && payload.discount_value > 100) {
+    _showPromoSaveError('ส่วนลดแบบเปอร์เซ็นต์ต้องไม่เกิน 100%'); return;
+  }
+  if (payload.target_type !== 'all' && !payload.target.length) {
+    _showPromoSaveError('กรุณาเลือกสินค้า/ตัวเลือกเป้าหมายอย่างน้อย 1 รายการ'); return;
+  }
+
+  // Application mode + condition serialization/validation (mirrors backend).
+  var mode = _pmMode();
+  payload.application_mode = mode;
+  if (mode === 'direct') {
+    payload.condition_type = '';
+    payload.condition_json = {};
+  } else {
+    var ct = _pmCondType();
+    payload.condition_type = ct;
+    var _showErr = _showPromoSaveError;
+    if (ct === 'min_subtotal') {
+      var m = Number(document.getElementById('pmMinSubtotal').value || 0);
+      if (!(m > 0)) { _showErr('กรุณาระบุยอดซื้อขั้นต่ำมากกว่า 0'); return; }
+      payload.condition_json = { min_subtotal: m, calculation_base: 'after_discount_before_shipping' };
+    } else if (ct === 'required_products') {
+      if (!_pmCondProdRows.length) { _showErr('กรุณาเลือกสินค้าเงื่อนไขอย่างน้อย 1 รายการ'); return; }
+      if (Object.keys(_pmDupProdIdx()).length) { _showErr('มีสินค้าซ้ำกันในเงื่อนไข กรุณาแก้ไข'); return; }
+      if (_pmCondProdRows.some(function(r){ var q = Number(r.min_qty); return !Number.isInteger(q) || q < 1; })) {
+        _showErr('จำนวนขั้นต่ำของสินค้าเงื่อนไขต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป'); return;
+      }
+      payload.condition_json = {
+        match_mode: _pmMatchMode(),
+        required_products: _pmCondProdRows.map(function(r){ return { product_id: String(r.product_id), min_qty: Number(r.min_qty) }; })
+      };
+    } else if (ct === 'required_variants') {
+      if (!_pmCondVarRows.length) { _showErr('กรุณาเลือกตัวเลือกเงื่อนไขอย่างน้อย 1 รายการ'); return; }
+      if (Object.keys(_pmDupVarIdx()).length) { _showErr('มีรุ่น/ตัวเลือกซ้ำกันในเงื่อนไข กรุณาแก้ไข'); return; }
+      if (_pmCondVarRows.some(function(r){ var q = Number(r.min_qty); return !Number.isInteger(q) || q < 1; })) {
+        _showErr('จำนวนขั้นต่ำของตัวเลือกเงื่อนไขต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป'); return;
+      }
+      payload.condition_json = {
+        match_mode: _pmMatchMode(),
+        required_variants: _pmCondVarRows.map(function(r){
+          return { product_id: String(r.product_id), variant_key: _buildVariantKey(r.selected_variants || {}), min_qty: Number(r.min_qty) };
+        })
+      };
+    }
+  }
+
   var btn = document.getElementById('btnSavePromo');
   if (btn.disabled) return;
+  var editingId = _editId;
   var spinner = document.getElementById('pmSaveSpinner');
   btn.disabled = true; spinner.classList.remove('d-none');
+  _promoSaveInFlight = true;
   showHUD('กำลังบันทึก…');
 
-  var opId = _editId || ('temp-promo-' + Math.random().toString(36).slice(2));
+  var opId = editingId || ('temp-promo-' + Math.random().toString(36).slice(2));
   var token = _beginPromoOp(opId);
   var before = null, beforeIndex = -1;
   var optimisticRecord = Object.assign({}, payload, {
     promotion_id: opId,
     status: _promoStatus(payload)
   });
-  if (_editId) {
-    beforeIndex = _promosCache.findIndex(function(x){ return String(x.promotion_id) === String(_editId); });
-    before = beforeIndex >= 0 ? Object.assign({}, _promosCache[beforeIndex]) : null;
-    if (beforeIndex >= 0) _promosCache[beforeIndex] = Object.assign({}, _promosCache[beforeIndex], optimisticRecord);
+  if (editingId) {
+    beforeIndex = _promosRawCache.findIndex(function(x){ return String(x.promotion_id) === String(editingId); });
+    before = beforeIndex >= 0 ? Object.assign({}, _promosRawCache[beforeIndex]) : null;
+    if (beforeIndex >= 0) _promosRawCache[beforeIndex] = Object.assign({}, _promosRawCache[beforeIndex], optimisticRecord);
   } else {
-    _promosCache.unshift(optimisticRecord);
+    _promosRawCache.unshift(optimisticRecord);
   }
-  renderTable();
+  _applyTabFilterAndPaginate();
 
-  var p = _editId
-    ? _rpc('updatePromotionRpc', _editId, payload)
+  var p = editingId
+    ? _rpc('updatePromotionRpc', editingId, payload)
     : _rpc('createPromotionRpc', payload);
   p.then(function(res){
     if (!_isCurrentPromoOp(opId, token)) return;
+    // Clear the pending flag before any corrective render so the row isn't left disabled
+    // (renderTable/_applyTabFilterAndPaginate bakes `disabled` onto action buttons while pending).
+    _endPromoOp(opId, token);
     if (!res || res.ok === false) {
-      var _msg = translateRpcError(res, MSG.error.save);
-      if (_editId) {
-        if (beforeIndex >= 0 && before) _promosCache[beforeIndex] = before;
+      var _msg = _promoOverlapMsg(res) || translateRpcError(res, MSG.error.save);
+      if (editingId) {
+        if (beforeIndex >= 0 && before) _promosRawCache[beforeIndex] = before;
       } else {
-        _promosCache = _promosCache.filter(function(x){ return String(x.promotion_id) !== String(opId); });
+        _promosRawCache = _promosRawCache.filter(function(x){ return String(x.promotion_id) !== String(opId); });
       }
-      renderTable();
-      errEl.textContent = _msg;
-      errEl.classList.remove('d-none');
+      _applyTabFilterAndPaginate();
+      _showPromoSaveError(_msg);
       hideHUD('err', _msg);
       return;
     }
-    if (!_editId && res.promotion_id) {
-      var tmpIdx = _promosCache.findIndex(function(x){ return String(x.promotion_id) === String(opId); });
-      if (tmpIdx >= 0) _promosCache[tmpIdx].promotion_id = res.promotion_id;
+    if (!editingId && res.promotion_id) {
+      var tmpIdx = _promosRawCache.findIndex(function(x){ return String(x.promotion_id) === String(opId); });
+      if (tmpIdx >= 0) _promosRawCache[tmpIdx].promotion_id = res.promotion_id;
     }
+    _applyTabFilterAndPaginate();
+    _promoSaveInFlight = false;
     _modal.hide();
     hideHUD('ok', MSG.success.save);
     return loadAll();
   }).catch(function(err){
     if (err && err.message === 'AUTH_REQUIRED') return;
-    if (_isCurrentPromoOp(opId, token)) {
-      if (_editId) {
-        if (beforeIndex >= 0 && before) _promosCache[beforeIndex] = before;
+    // Compute once: clearing the flag first would make _isCurrentPromoOp always read false afterward.
+    var isCurrent = _isCurrentPromoOp(opId, token);
+    if (isCurrent) _endPromoOp(opId, token);
+    if (isCurrent) {
+      if (editingId) {
+        if (beforeIndex >= 0 && before) _promosRawCache[beforeIndex] = before;
       } else {
-        _promosCache = _promosCache.filter(function(x){ return String(x.promotion_id) !== String(opId); });
+        _promosRawCache = _promosRawCache.filter(function(x){ return String(x.promotion_id) !== String(opId); });
       }
-      renderTable();
+      _applyTabFilterAndPaginate();
     }
     var _msg = translateRpcError(err, MSG.error.save);
-    errEl.textContent = _msg;
-    errEl.classList.remove('d-none');
+    _showPromoSaveError(_msg);
     hideHUD('err', _msg);
   }).finally(function(){
-    _endPromoOp(opId, token);
+    _endPromoOp(opId, token); // idempotent safety net
+    _promoSaveInFlight = false;
     btn.disabled = false; spinner.classList.add('d-none');
   });
+}
+
+// Specific message for a PROMO_OVERLAP rejection, naming the conflicting promotion.
+// Returns null when the error is not an overlap (caller falls back to translateRpcError).
+function _promoOverlapMsg(res){
+  if (!res || res.error !== 'PROMO_OVERLAP' || !res.conflict) return null;
+  var c = res.conflict;
+  var period = c.no_end_date
+    ? ((c.starts_at ? 'เริ่ม ' + fmtDateTime(c.starts_at) + ' ' : '') + 'ไม่มีวันสิ้นสุด')
+    : (fmtDateTime(c.starts_at) + ' – ' + fmtDateTime(c.ends_at));
+  return 'ทับซ้อนกับโปรโมชั่น "' + String(c.name || '') + '" (' + period + ') — กรุณาปิดหรือแก้ไขช่วงเวลา/เป้าหมายของโปรโมชั่นใดโปรโมชั่นหนึ่งก่อน';
 }
 
 // In-flight guard: prevents rapid double-toggle from firing multiple RPCs.
@@ -745,32 +1617,41 @@ function toggleEnabled(promotionId, newEnabled){
   if (_toggleInFlight[promotionId] || _isPromoPending(promotionId)) return;
   _toggleInFlight[promotionId] = true;
   var token = _beginPromoOp(promotionId);
-  var idx = _promosCache.findIndex(function(x){ return String(x.promotion_id) === String(promotionId); });
-  var before = idx >= 0 ? Object.assign({}, _promosCache[idx]) : null;
+  var idx = _promosRawCache.findIndex(function(x){ return String(x.promotion_id) === String(promotionId); });
+  var before = idx >= 0 ? Object.assign({}, _promosRawCache[idx]) : null;
   if (idx >= 0) {
-    _promosCache[idx] = Object.assign({}, _promosCache[idx], { enabled: !!newEnabled });
-    _promosCache[idx].status = _promoStatus(_promosCache[idx]);
-    renderTable();
+    _promosRawCache[idx] = Object.assign({}, _promosRawCache[idx], { enabled: !!newEnabled });
+    _promosRawCache[idx].status = _promoStatus(_promosRawCache[idx]);
+    _applyTabFilterAndPaginate();
   }
   showHUD(newEnabled ? MSG.loading.toggleOn : MSG.loading.toggleOff);
   _rpc('togglePromotionRpc', promotionId, !!newEnabled).then(function(res){
     if (!_isCurrentPromoOp(promotionId, token)) return;
+    // Clear the pending flag before any corrective render — this is the toggle-button bug fix:
+    // previously the flag was only cleared in .finally(), which runs AFTER the renderTable()
+    // triggered by loadAll() below, leaving the row's buttons baked-in `disabled` until an
+    // unrelated re-render happened.
+    _endPromoOp(promotionId, token);
+    delete _toggleInFlight[promotionId];
     if (!res || !res.ok) {
-      if (idx >= 0 && before) { _promosCache[idx] = before; renderTable(); }
-      hideHUD('err', translateRpcError(res, MSG.error.update));
+      if (idx >= 0 && before) { _promosRawCache[idx] = before; _applyTabFilterAndPaginate(); }
+      hideHUD('err', _promoOverlapMsg(res) || translateRpcError(res, MSG.error.update));
       return;
     }
+    _applyTabFilterAndPaginate();
     hideHUD('ok', newEnabled ? MSG.success.toggleOn : MSG.success.toggleOff);
     return loadAll();
   }).catch(function(err){
     if (err && err.message === 'AUTH_REQUIRED') return;
-    if (_isCurrentPromoOp(promotionId, token) && idx >= 0 && before) {
-      _promosCache[idx] = before;
-      renderTable();
+    var isCurrent = _isCurrentPromoOp(promotionId, token);
+    if (isCurrent) { _endPromoOp(promotionId, token); delete _toggleInFlight[promotionId]; }
+    if (isCurrent && idx >= 0 && before) {
+      _promosRawCache[idx] = before;
+      _applyTabFilterAndPaginate();
     }
     hideHUD('err', translateRpcError(err, MSG.error.update));
   }).finally(function(){
-    _endPromoOp(promotionId, token);
+    _endPromoOp(promotionId, token); // idempotent safety net
     delete _toggleInFlight[promotionId];
   });
 }
@@ -780,34 +1661,41 @@ function deletePromo(promotionId){
   confirmDanger({ title:'ยืนยันการลบโปรโมชั่น', text:'การดำเนินการนี้ไม่สามารถย้อนกลับได้' }).then(function(ok){
     if (!ok) return;
     var token = _beginPromoOp(promotionId);
-    var idx = _promosCache.findIndex(function(x){ return String(x.promotion_id) === String(promotionId); });
-    var backup = idx >= 0 ? _promosCache[idx] : null;
+    var idx = _promosRawCache.findIndex(function(x){ return String(x.promotion_id) === String(promotionId); });
+    var backup = idx >= 0 ? _promosRawCache[idx] : null;
     if (idx >= 0) {
-      _promosCache.splice(idx, 1);
-      renderTable();
+      _promosRawCache.splice(idx, 1);
+      _applyTabFilterAndPaginate();
     }
     showHUD(MSG.loading.delete);
     _rpc('deletePromotionRpc', promotionId).then(function(res){
       if (!_isCurrentPromoOp(promotionId, token)) return;
       if (!res || res.ok === false) throw res;
+      _endPromoOp(promotionId, token);
       hideHUD('ok', MSG.success.delete);
       return loadAll();
     }).catch(function(err){
       if (err && err.message === 'AUTH_REQUIRED') return;
-      if (_isCurrentPromoOp(promotionId, token) && backup) {
-        _promosCache.splice(Math.min(idx, _promosCache.length), 0, backup);
-        renderTable();
+      var isCurrent = _isCurrentPromoOp(promotionId, token);
+      if (isCurrent) _endPromoOp(promotionId, token);
+      if (isCurrent && backup) {
+        _promosRawCache.splice(Math.min(idx, _promosRawCache.length), 0, backup);
+        _applyTabFilterAndPaginate();
       }
       hideHUD('err', translateRpcError(err, MSG.error.delete));
     }).finally(function(){
-      _endPromoOp(promotionId, token);
+      _endPromoOp(promotionId, token); // idempotent safety net
     });
   });
 }
 
 /* ---------- Event wiring ---------- */
 document.addEventListener('DOMContentLoaded', function(){
-  _modal = new bootstrap.Modal(document.getElementById('promoModal'));
+  var promoModalEl = document.getElementById('promoModal');
+  _modal = new bootstrap.Modal(promoModalEl);
+  promoModalEl.addEventListener('hide.bs.modal', function(e){
+    if (_promoSaveInFlight) e.preventDefault();
+  });
   document.getElementById('btnAdd').addEventListener('click', openCreate);
   document.getElementById('btnRefresh').addEventListener('click', function(){
     showHUD(MSG.loading.fetch);
@@ -820,16 +1708,101 @@ document.addEventListener('DOMContentLoaded', function(){
     _searchDebounce = setTimeout(function(){ _pgPage = 1; fetchPage(); }, 300);
   });
   document.getElementById('qStatus').addEventListener('change', function(){ _pgPage = 1; fetchPage(); });
-  document.getElementById('pgPrev').addEventListener('click', function(){ if (_pgPage > 1 && !_pgLoading) { _pgPage--; fetchPage(); } });
-  document.getElementById('pgNext').addEventListener('click', function(){ var _tp = Math.max(1, Math.ceil(_pgTotal / _pgSize)); if (!_pgLoading && _pgPage < _tp) { _pgPage++; fetchPage(); } });
-  document.getElementById('pgSize').addEventListener('change', function(){ _pgSize = parseInt(this.value, 10) || 20; _pgPage = 1; fetchPage(); });
+  // Pagination/tab switching are purely client-side (data for both tabs is already cached in
+  // _promosRawCache), so these recompute the visible slice directly instead of re-fetching.
+  document.getElementById('pgPrev').addEventListener('click', function(){ if (_pgPage > 1) { _pgPage--; _applyTabFilterAndPaginate(); } });
+  document.getElementById('pgNext').addEventListener('click', function(){ var _tp = Math.max(1, Math.ceil(_pgTotal / _pgSize)); if (_pgPage < _tp) { _pgPage++; _applyTabFilterAndPaginate(); } });
+  document.getElementById('pgSize').addEventListener('change', function(){ _pgSize = parseInt(this.value, 10) || 20; _pgPage = 1; _applyTabFilterAndPaginate(); });
+  document.querySelectorAll('.nav-tabs .nav-link').forEach(function(a){
+    a.addEventListener('click', function(e){
+      e.preventDefault();
+      document.querySelectorAll('.nav-tabs .nav-link').forEach(function(x){ x.classList.remove('active'); });
+      a.classList.add('active');
+      _currentPromoTab = a.dataset.tab;
+      _pgPage = 1;
+      _applyTabFilterAndPaginate();
+    });
+  });
   document.getElementById('pmType').addEventListener('change', function(){
     document.getElementById('pmValueUnit').textContent = this.value === 'percent' ? '%' : 'บาท';
+    _pmRefreshPickerPrices();
     updatePreview();
   });
-  document.getElementById('pmValue').addEventListener('input', updatePreview);
+  document.getElementById('pmValue').addEventListener('input', function(){
+    _pmRefreshPickerPrices();
+    updatePreview();
+  });
+  document.getElementById('pmPreviewQty').addEventListener('input', updatePreview);
   document.querySelectorAll('input[name=pmTarget]').forEach(function(r){
     r.addEventListener('change', function(){ renderPicker(this.value, []); updatePreview(); });
+  });
+
+  // Conditional-promotion builder wiring. The mode itself is fixed by the tab/record.
+  document.getElementById('pmCondType').addEventListener('change', pmCondTypeChanged);
+  document.querySelectorAll('input[name=pmDiscScope]').forEach(function(r){ r.addEventListener('change', syncPromoScopeUi); });
+  document.querySelectorAll('input[name=pmMatchMode]').forEach(function(r){ r.addEventListener('change', updatePreview); });
+  document.getElementById('pmMinSubtotal').addEventListener('input', updatePreview);
+  document.getElementById('btnPmAddProdCond').addEventListener('click', function(){
+    openPmCondPicker(function(prod){
+      var existing = _pmCondProdRows.filter(function(r){ return String(r.product_id) === String(prod.id); })[0];
+      if (existing) existing.min_qty = (Number(existing.min_qty)||1) + 1;
+      else _pmCondProdRows.push({ product_id: String(prod.id), min_qty: 1 });
+      _renderPmProdCondRows(); updatePreview();
+    });
+  });
+  document.getElementById('btnPmAddVarCond').addEventListener('click', function(){
+    openPmCondPicker(function(prod){
+      _pmCondVarRows.push({ product_id: String(prod.id), selected_variants: _withDefaultVarSel(prod, {}), variant_key: '', min_qty: 1 });
+      _renderPmVarCondRows(); updatePreview();
+    }, true);
+  });
+
+  // Delegated: condition picker select
+  document.getElementById('pmCondPickerGrid').addEventListener('click', function(e){
+    var row = e.target.closest('[data-pm-pick-pid]');
+    if (!row) return;
+    if (row.getAttribute('data-pm-picker-disabled') === '1') return;
+    var prod = _pmProdById(row.getAttribute('data-pm-pick-pid'));
+    if (prod && _pmCondPickerCb) _pmCondPickerCb(prod);
+    if (_pmCondPickerModal) _pmCondPickerModal.hide();
+  });
+  // Delegated: remove / qty / variant-select on condition rows, and target-picker toggle-select
+  document.addEventListener('click', function(e){
+    var rm = e.target.closest('[data-pm-cond-rm]');
+    if (rm) { _pmCondProdRows.splice(Number(rm.getAttribute('data-pm-cond-rm')), 1); _renderPmProdCondRows(); updatePreview(); return; }
+    var vrm = e.target.closest('[data-pm-vcond-rm]');
+    if (vrm) { _pmCondVarRows.splice(Number(vrm.getAttribute('data-pm-vcond-rm')), 1); _renderPmVarCondRows(); updatePreview(); return; }
+    var tgt = e.target.closest('[data-pm-target-pid]');
+    if (tgt && tgt.closest('#pmPicker')) {
+      _pmToggleTargetElement(tgt);
+      return;
+    }
+  });
+  document.getElementById('pmPicker').addEventListener('keydown', function(e){
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var tgt = e.target.closest('[data-pm-target-pid]');
+    if (!tgt) return;
+    e.preventDefault();
+    _pmToggleTargetElement(tgt);
+  });
+  document.addEventListener('input', function(e){
+    var q = e.target.closest('[data-pm-cond-qty]');
+    if (q) { var i = Number(q.getAttribute('data-pm-cond-qty')); if (_pmCondProdRows[i]) _pmCondProdRows[i].min_qty = Math.max(1, parseInt(q.value,10)||1); updatePreview(); return; }
+    var vq = e.target.closest('[data-pm-vcond-qty]');
+    if (vq) { var j = Number(vq.getAttribute('data-pm-vcond-qty')); if (_pmCondVarRows[j]) _pmCondVarRows[j].min_qty = Math.max(1, parseInt(vq.value,10)||1); updatePreview(); return; }
+  });
+  document.addEventListener('change', function(e){
+    var vs = e.target.closest('[data-pm-var-row]');
+    if (vs) {
+      var i = Number(vs.getAttribute('data-pm-var-row'));
+      var g = vs.getAttribute('data-pm-var-group');
+      if (_pmCondVarRows[i]) {
+        _pmCondVarRows[i].selected_variants = _pmCondVarRows[i].selected_variants || {};
+        _pmCondVarRows[i].selected_variants[g] = vs.value;
+        _pmCondVarRows[i].variant_key = _buildVariantKey(_pmCondVarRows[i].selected_variants);
+        _renderPmVarCondRows(); updatePreview();
+      }
+    }
   });
 });
 
