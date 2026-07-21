@@ -107,6 +107,21 @@ async function prepareFixture(page, scenario) {
   return result;
 }
 
+async function prepareMegaPromotionGiftFixture(page) {
+  const result = await gasRun(page, 'e2ePrepareMegaPromotionGiftFixtureRpc', [adminToken()]);
+  if (!result || !result.ok) {
+    throw new Error(`prepare mega promotion/gift fixture failed: ${result && result.error}`);
+  }
+  const productTitles = Object.values(result.products || {}).map((product) => product.title);
+  try {
+    await waitForPreparedProducts(page, productTitles, result.runId);
+  } catch (err) {
+    await cleanupMegaPromotionGiftFixture(page, result.fixture).catch(() => {});
+    throw err;
+  }
+  return result;
+}
+
 async function cleanupAllCheckoutFixtures(page) {
   const result = await gasRun(page, 'e2eCleanupAllCheckoutWarningFixturesRpc', [adminToken()]);
   if (!result || !result.ok) throw new Error(`cleanup all E2E fixtures failed: ${result && result.error}`);
@@ -123,6 +138,46 @@ async function cleanupFixture(page, runId) {
   if (!runId) return;
   const result = await gasRun(page, 'e2eCleanupCheckoutWarningFixtureRpc', [adminToken(), runId]);
   if (!result || !result.ok) throw new Error(`cleanup ${runId} failed: ${result && result.error}`);
+}
+
+async function inspectMegaPromotionGiftFixture(page, fixture) {
+  const result = await gasRun(page, 'e2eInspectMegaPromotionGiftFixtureRpc', [adminToken(), fixture]);
+  if (!result || !result.ok) throw new Error(`inspect mega fixture failed: ${result && result.error}`);
+  return result;
+}
+
+async function prepareOrderTotalPromoFixture(page) {
+  const result = await gasRun(page, 'e2ePrepareOrderTotalPromoFixtureRpc', [adminToken()]);
+  if (!result || !result.ok) {
+    throw new Error(`prepare order-total promo fixture failed: ${result && result.error}`);
+  }
+  try {
+    await waitForPreparedProducts(page, [result.product.title], result.runId);
+  } catch (err) {
+    await cleanupOrderTotalPromoFixture(page, result.fixture).catch(() => {});
+    throw err;
+  }
+  return result;
+}
+
+async function inspectOrderTotalPromoFixture(page, fixture) {
+  const result = await gasRun(page, 'e2eInspectOrderTotalPromoFixtureRpc', [adminToken(), fixture]);
+  if (!result || !result.ok) throw new Error(`inspect order-total fixture failed: ${result && result.error}`);
+  return result;
+}
+
+async function cleanupOrderTotalPromoFixture(page, fixture) {
+  if (!fixture) return;
+  const result = await gasRun(page, 'e2eCleanupOrderTotalPromoFixtureRpc', [adminToken(), fixture]);
+  if (!result || !result.ok) throw new Error(`cleanup order-total fixture failed: ${result && result.error}`);
+  return result;
+}
+
+async function cleanupMegaPromotionGiftFixture(page, fixture) {
+  if (!fixture) return;
+  const result = await gasRun(page, 'e2eCleanupMegaPromotionGiftFixtureRpc', [adminToken(), fixture]);
+  if (!result || !result.ok) throw new Error(`cleanup mega fixture failed: ${result && result.error}`);
+  return result;
 }
 
 async function waitForPreparedProduct(page, productTitle, runId) {
@@ -151,6 +206,39 @@ async function waitForPreparedProduct(page, productTitle, runId) {
   );
 }
 
+async function waitForPreparedProducts(page, productTitles, runId) {
+  const cfg = loadE2eConfig();
+  const titles = (productTitles || []).filter(Boolean);
+  const deadline = Date.now() + cfg.fixtureVisibleTimeoutMs;
+  let lastBodyText = '';
+  let missingTitles = titles.slice();
+  let attempts = 0;
+
+  while (Date.now() < deadline) {
+    attempts += 1;
+    await page.goto(`${indexUrl()}&e2eRun=${encodeURIComponent(runId)}&e2eTs=${Date.now()}`);
+    await page.waitForLoadState('domcontentloaded');
+    const frame = await waitForGoogleScriptRun(page);
+    await frame.locator('body').waitFor({ state: 'visible' });
+
+    missingTitles = [];
+    for (const title of titles) {
+      const card = frame.locator('.product-card').filter({ hasText: title }).first();
+      if (!await card.isVisible().catch(() => false)) missingTitles.push(title);
+    }
+    if (!missingTitles.length) return;
+
+    lastBodyText = await frame.locator('body').innerText().catch(() => '');
+    await sleep(cfg.fixturePollMs);
+  }
+
+  throw new Error(
+    `Prepared mega products did not all appear after ${cfg.fixtureVisibleTimeoutMs}ms. `
+    + `Missing: ${missingTitles.join(', ')}. Attempts: ${attempts}. `
+    + `Last page text: ${lastBodyText.slice(0, 700)}`
+  );
+}
+
 async function openProductDetails(page, productTitle) {
   const frame = await waitForGoogleScriptRun(page);
   const productCard = frame.locator('.product-card').filter({ hasText: productTitle }).first();
@@ -164,10 +252,36 @@ async function addProductToCart(page, productTitle, qty = 1) {
   await openProductDetails(page, productTitle);
   const frame = await waitForGoogleScriptRun(page);
   const qtyInput = frame.locator('#productQty');
+  const cartCount = frame.locator('#cartCount');
+  const countBeforeAdd = Number((await cartCount.innerText()).trim());
   await expect(qtyInput).toBeVisible();
   await qtyInput.fill(String(qty));
   await frame.locator('#addToCartFromDetail').click();
-  await expect(frame.locator('#cartCount')).not.toHaveText(/^0$/, { timeout: 45000 });
+  await expect(cartCount).toHaveText(String(countBeforeAdd + qty), { timeout: 45000 });
+
+  const detailModal = frame.locator('#productDetailsModal');
+  if (await detailModal.isVisible().catch(() => false)) {
+    const closeButton = frame
+      .locator('#productDetailsModal .pdm-close, #productDetailsModal [data-bs-dismiss="modal"]')
+      .first();
+    if (await closeButton.isVisible().catch(() => false)) {
+      await closeButton.click({ force: true }).catch(() => {});
+    }
+    await expect(detailModal).toBeHidden({ timeout: 10000 }).catch(() => {});
+  }
+}
+
+async function addProductVariantToCart(page, productTitle, optionLabel, qty = 1) {
+  await openProductDetails(page, productTitle);
+  await selectVariant(page, optionLabel);
+  const frame = await waitForGoogleScriptRun(page);
+  const qtyInput = frame.locator('#productQty');
+  const cartCount = frame.locator('#cartCount');
+  const countBeforeAdd = Number((await cartCount.innerText()).trim());
+  await expect(qtyInput).toBeVisible();
+  await qtyInput.fill(String(qty));
+  await frame.locator('#addToCartFromDetail').click();
+  await expect(cartCount).toHaveText(String(countBeforeAdd + qty), { timeout: 45000 });
 
   const detailModal = frame.locator('#productDetailsModal');
   if (await detailModal.isVisible().catch(() => false)) {
@@ -309,9 +423,11 @@ async function closeSwal(page) {
 
 module.exports = {
   addProductToCart,
+  addProductVariantToCart,
   appLocator,
   cleanupAllCheckoutFixtures,
   cleanupFixture,
+  cleanupMegaPromotionGiftFixture,
   clearBrowserState,
   clickCheckoutSubmit,
   closeSwal,
@@ -323,13 +439,19 @@ module.exports = {
   fillCheckoutForm,
   getCartCount,
   incrementFirstCartItem,
+  inspectMegaPromotionGiftFixture,
+  inspectOrderTotalPromoFixture,
+  cleanupOrderTotalPromoFixture,
+  prepareOrderTotalPromoFixture,
   mutateFixture,
   openCart,
   openCheckout,
   openProductDetails,
   openStorefront,
   prepareFixture,
+  prepareMegaPromotionGiftFixture,
   removeFirstCartItem,
   selectVariant,
-  submitCheckout
+  submitCheckout,
+  waitForGoogleScriptRun
 };

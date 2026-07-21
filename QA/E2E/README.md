@@ -63,6 +63,12 @@ npm run e2e:ui
 
 ค่า default รันเฉพาะ Chromium desktop, `workers=1`, เก็บ trace และ screenshot เฉพาะตอน fail
 
+รันเฉพาะ Mega promotion/gift workflow:
+
+```powershell
+npm run e2e:mega
+```
+
 ## Scenarios
 
 - `product-stock-zero-after-cart`
@@ -74,6 +80,7 @@ npm run e2e:ui
 - `sale-not-active-after-cart`
 - `happy-path` — สินค้าพร้อมขายปกติ สต็อกเยอะ ไม่มี gift/promo/variant (ใช้กับ validation, cart, success)
 - `happy-path-variants` — สินค้าพร้อมขาย มีกลุ่มตัวเลือก "ขนาด" (S / M) สำหรับทดสอบ variant
+- `mega-promotion-gift` — 1 order, 6 product lines, 6 promotions และ 5 gift rules; ตรวจ UI ตั้งแต่ cart ถึง customer order-view
 
 ทุก test จะเรียก cleanup ใน `afterEach` เพื่อลบ order/product/gift/promotion/shipping ของ fixture run นั้น
 
@@ -84,6 +91,9 @@ npm run e2e:ui
 - `tests/cart.spec.js` — ตะกร้า: เพิ่มสินค้า · เพิ่มจำนวน · ลบสินค้า → ตะกร้าว่าง (area 3)
 - `tests/product-variants.spec.js` — ตัวเลือกสินค้า: ตัวเลือกเริ่มต้นถูกเลือก + เปลี่ยนตัวเลือกแล้วราคาปรับ (area 2/3)
 - `tests/order-success.spec.js` — สั่งซื้อสำเร็จ: การ์ดสำเร็จ + ลิงก์ชำระเงิน · ปุ่มถูก disable ระหว่างส่ง (area 9/10)
+- `tests/mega-promotion-gift.spec.js` — Mega workflow หนึ่ง order: best-price/outpriced promotions, gift quantities, checkout totals, success popup, token order-view และ stocks
+
+Mega spec ต้องรันบน dedicated QA deployment ที่ไม่มี promotion `target=all` หรือ min-subtotal gift จากข้อมูลภายนอกมารบกวนผลลัพธ์ ตัว test สร้าง fixture ผ่าน QA RPC และ cleanup order/promotion/gift/rule/product/shipping แม้ assertion หลัง submit ล้ม
 
 ## ยังไม่ครอบคลุม (แนะนำให้เพิ่มภายหลัง)
 

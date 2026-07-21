@@ -12,7 +12,8 @@ const {
   openCart,
   openStorefront,
   prepareFixture,
-  removeFirstCartItem
+  removeFirstCartItem,
+  waitForGoogleScriptRun
 } = require('../helpers/storefront');
 
 // Area 3 — cart behavior (happy + recovery paths that surface visible UI state).
@@ -67,6 +68,52 @@ test.describe('cart behavior in Chromium', () => {
     // qty display becomes 2 and the total recalculates away from the single-item value
     await expect(await appLocator(page, '#cartBody')).toContainText(/\b2\b/);
     await expect(totalEl).not.toHaveText(before);
+  });
+
+  test('direct discount remains after promotion preview returns no applied promotion', async ({ page }) => {
+    const fixture = await prepareFixture(page, 'active-promotion-stable');
+    currentRunId = fixture.runId;
+
+    await addProductToCart(page, fixture.product.title, 1);
+    await openCart(page);
+    const frame = await waitForGoogleScriptRun(page);
+    await frame.waitForFunction(() => _promoLineMapForCurrentCart() !== null);
+
+    await expect(frame.locator('#cartBody .clp-orig')).toContainText('฿150');
+    await expect(frame.locator('#cartBody .clp-now')).toContainText('฿135');
+    await expect(frame.locator('#cartTotal')).toContainText('฿135');
+
+    const pricing = await frame.evaluate(() => {
+      const payload = _buildGiftPreviewPayload();
+      const item = payload.items[0];
+      const variantKey = _buildVariantKey(item.selected_variants || {});
+      const key = JSON.stringify(payload);
+      _promoLineMap = Object.create(null);
+      _promoLineMap[_promoLineKey(item.product_id, variantKey)] = {
+        unit_final_price: 150,
+        unit_base_price: 150,
+        promotion: null
+      };
+      _promoLineMapKey = key;
+      updateCartUI();
+      const built = _buildCartItems();
+      const client = _buildClientPricingSnapshot(built.items);
+      return {
+        cartUnit: built.items[0].unit_price,
+        subtotal: built.subtotal,
+        clientUnit: client.items[0].unit_final_price,
+        promotionId: client.items[0].promotion_id
+      };
+    });
+
+    await expect(frame.locator('#cartBody .clp-now')).toContainText('฿135');
+    await expect(frame.locator('#cartTotal')).toContainText('฿135');
+    expect(pricing).toEqual({
+      cartUnit: 135,
+      subtotal: 135,
+      clientUnit: 135,
+      promotionId: fixture.promotion.id
+    });
   });
 
   test('removing the only item empties the cart', async ({ page }) => {
