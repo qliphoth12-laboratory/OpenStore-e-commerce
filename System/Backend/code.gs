@@ -9092,6 +9092,7 @@ function previewGiftEligibilityRpc(cartPayload) {
       if (matched) {
         eligible.push({
           rule_id: rule.rule_id, rule_name: rule.name,
+          starts_at: rule.starts_at || '', ends_at: rule.ends_at || '', no_end_date: !!rule.no_end_date,
           condition_type: rule.condition_type,
           match_mode: ruleMatchMode,
           condition_summary: formatGiftConditionSummary_(rule),
@@ -9148,6 +9149,7 @@ function previewGiftEligibilityRpc(cartPayload) {
         }
         near.push({
           rule_id: rule.rule_id, rule_name: rule.name,
+          starts_at: rule.starts_at || '', ends_at: rule.ends_at || '', no_end_date: !!rule.no_end_date,
           condition_type: rule.condition_type,
           match_mode: ruleMatchMode,
           gift: giftSummary,
@@ -9269,6 +9271,7 @@ function previewPromotionEligibilityRpc(cartPayload) {
       var mm = (cj.match_mode === 'any') ? 'any' : 'all';
       var base = {
         promotion_id: promo.promotion_id, name: promo.name,
+        starts_at: promo.starts_at || '', ends_at: promo.ends_at || '', no_end_date: !!promo.no_end_date,
         discount_type: promo.discount_type, discount_value: promo.discount_value,
         discount_scope: promo.discount_scope || 'item',
         condition_type: promo.condition_type, match_mode: mm,

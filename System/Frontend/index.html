@@ -764,7 +764,16 @@
       font-size: .72rem;
       font-weight: 600;
       min-height: 1.1em;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
     }
+    .product-card-footer { margin-top:auto; display:flex; flex-direction:column; gap:8px; }
+    .product-card-deadline-slot { min-height:27px; display:flex; align-items:center; }
+    .product-card-deadline-slot:empty { visibility:hidden; }
+    .product-card-deadline { width:100%; min-height:27px; padding:4px 9px; border-radius:8px; display:flex; align-items:center; justify-content:flex-end; gap:5px; text-align:right; }
+    .product-card-deadline i { color:var(--card-cd-icon, var(--card-cd-text, #c2410c)); flex:0 0 auto; }
+    .product-card-deadline > span { min-width:0; text-align:right; }
+    .product-card-deadline-value { font-weight:800; }
     .promo-block {
       background: var(--promo-container-bg, #fff7ed);
       border: 1px solid var(--promo-container-border, #fdba74);
@@ -811,6 +820,7 @@
     .promo-block-foot {
       display: flex;
       align-items: center;
+      justify-content: flex-end;
       gap: 6px;
       margin-top: 8px;
       padding-top: 8px;
@@ -820,7 +830,8 @@
       background: var(--box-cd-bg, transparent);
       font-variant-numeric: tabular-nums;
     }
-    .promo-block-foot i { color: var(--box-cd-icon, var(--box-cd-text, #9a3412)); }
+    .promo-block-foot i { color: var(--box-cd-icon, var(--box-cd-text, #9a3412)); flex:0 0 auto; }
+    .promo-block-foot > span { min-width:0; text-align:right; }
     .promo-block-foot .promo-card-end { color: var(--box-cd-text, #9a3412); background: transparent; }
     .product-media { position: relative; }
 
@@ -3006,7 +3017,7 @@
             <div class="gift-camp-heading-icon"><i class="bi bi-gift"></i></div>
             <div>
               <h5 class="modal-title gift-camp-heading-title">โปรโมชันของแถม</h5>
-              <div class="gift-camp-heading-sub">รายการสิทธิ์และเงื่อนไขของแถมที่กำลังเปิดใช้งาน</div>
+              <div class="gift-camp-heading-sub">รายการสิทธิ์และเงื่อนไขของแถมที่กำลังใช้งานหรือกำลังจะเริ่ม</div>
             </div>
           </div>
           <button class="btn-close" data-bs-dismiss="modal"></button>
@@ -3043,10 +3054,10 @@
     .gift-camp-kicker { font-size:.74rem; font-weight:800; letter-spacing:.02em; color:#6b7280; }
     .gift-camp-title { font-size:1rem; font-weight:800; line-height:1.3; color:#111827; overflow-wrap:anywhere; }
     .gift-camp-desc { font-size:.86rem; color:#6b7280; line-height:1.55; overflow-wrap:anywhere; }
-    .gift-camp-meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:2px; }
+    .gift-camp-meta { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:8px; margin-top:2px; }
     .gift-camp-pill { display:inline-flex; align-items:center; gap:5px; border:1px solid #e5e7eb; background:#f8fafc; color:#4b5563; border-radius:10px; padding:5px 9px; font-size:.78rem; line-height:1.35; }
     .gift-camp-pill.condition { color:#166534; background:#f0fdf4; border-color:#bbf7d0; }
-    .gift-camp-pill.time { color:#4b5563; background:#fff; border-color:#e5e7eb; }
+    .gift-camp-pill.time { width:176px; justify-content:center; color:#4b5563; background:#fff; border-color:#e5e7eb; font-variant-numeric:tabular-nums; white-space:nowrap; }
     .gift-condition-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:7px; margin-top:2px; }
     .gift-condition-item { display:flex; gap:8px; align-items:center; color:#374151; font-size:.8rem; line-height:1.45; overflow-wrap:anywhere; border:1px solid #e5e7eb; background:#fff; border-radius:10px; padding:7px 10px; min-width:0; }
     .gift-condition-thumb { position:relative; width:34px; height:34px; border-radius:8px; background:#f3f4f6; overflow:hidden; flex:0 0 auto; }
@@ -3120,6 +3131,13 @@
     .cart-promo-summary { display:flex; align-items:baseline; flex-wrap:wrap; gap:5px 8px; margin-bottom:10px; }
     .cart-promo-summary .cart-gift-inline-qty { color:#dc2626; }
     .cart-promo-summary .cart-gift-progress { margin-left:auto; flex:0 1 220px; align-self:center; }
+    .cart-rule-side { margin-left:auto; flex:0 1 320px; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:5px 10px; align-self:center; min-width:280px; }
+    .cart-promo-summary .cart-rule-side .cart-gift-progress { display:contents; }
+    .cart-rule-side .cart-gift-progress-track { grid-column:1 / -1; grid-row:1; }
+    .cart-rule-side .cart-gift-progress-text { grid-column:2; grid-row:2; margin-top:0; text-align:right; white-space:nowrap; }
+    .cart-rule-deadline { grid-column:1; grid-row:2; display:flex; align-items:center; justify-content:flex-start; gap:5px; color:#64748b; font-size:.7rem; line-height:1.35; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .cart-rule-deadline i { flex:0 0 auto; }
+    .cart-rule-deadline-value { color:#374151; font-weight:800; }
     .cart-promo-detail-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,.82fr); gap:10px; align-items:stretch; }
     .cart-promo-panel { min-width:0; border:1px solid #e5e7eb; background:#fff; border-radius:10px; padding:10px; }
     .cart-promo-panel-title { display:flex; align-items:center; gap:6px; margin-bottom:8px; color:#4b5563; font-size:.74rem; font-weight:800; line-height:1.4; }
@@ -3172,6 +3190,10 @@
       .cart-promo-products { grid-template-columns:1fr; }
       .cart-promo-products.is-target .cart-promo-product { max-width:none; }
       .cart-promo-summary .cart-gift-progress { flex-basis:100%; width:100%; margin-left:0; }
+      .cart-rule-side { flex-basis:100%; width:100%; min-width:0; margin-left:0; align-items:stretch; }
+      .cart-rule-deadline { justify-content:flex-start; }
+      .gift-camp-meta { grid-template-columns:1fr; }
+      .gift-camp-pill.time { min-width:0; width:max-content; max-width:100%; justify-content:flex-start; }
     }
 
     /* OCM gift section — narrow column safe (no progress, white/grey theme, green border only) */
@@ -4785,6 +4807,7 @@
         const cardBase  = (cardPromo && cardPromo.unit_base_price != null) ? cardPromo.unit_base_price : Math.round(Number(p.price)||0);
         const cardFinal = (cardPromo && cardPromo.unit_final_price != null) ? cardPromo.unit_final_price : cardBase;
         const showPromo = !!cardPromo && cardBase !== cardFinal;
+        const cardDeadline = _resolveCardDeadline(p, showPromo ? cardPromo : null);
         const promoBadge = cardPromo
           ? (cardPromo.promotion.discount_type === 'percent'
               ? ('ลด ' + Number(cardPromo.promotion.discount_value) + '%')
@@ -4806,10 +4829,12 @@
             ${money(cardFinal)}
             ${showPromo ? `<span class="old-price ms-2">${money(cardBase)}</span>` : ''}
           </div>
-          ${(p.sale_status === 'active' && p.sale_mode === 'scheduled' && p.sale_ends_at) ? `<div class="promo-card-end small" data-sale-end="${escHtml(p.sale_ends_at)}"></div>` : ''}
-          <button class="btn details-btn rounded-pill w-100 mt-auto" data-details="${idx}"${oos ? ' disabled' : ''}>
-            <i class="bi bi-clipboard-fill me-1"></i> ${oos ? 'สินค้าหมด' : 'ดูรายละเอียด'}
-          </button>
+          <div class="product-card-footer">
+            <div class="product-card-deadline-slot">${cardDeadline ? `<div class="promo-card-end product-card-deadline small" data-card-deadline="${escHtml(cardDeadline.ends_at)}" data-deadline-kind="${cardDeadline.kind}"><i class="bi bi-clock"></i><span>${cardDeadline.label} <span class="product-card-deadline-value"></span></span></div>` : ''}</div>
+            <button class="btn details-btn rounded-pill w-100" data-details="${idx}"${oos ? ' disabled' : ''}>
+              <i class="bi bi-clipboard-fill me-1"></i> ${oos ? 'สินค้าหมด' : 'ดูรายละเอียด'}
+            </button>
+          </div>
         </div>
       </div>`;
         productGrid.appendChild(col);
@@ -5433,27 +5458,93 @@
       return best;
     }
 
-    function formatPromotionRemaining(endsAt) {
+    function formatCountdownRemaining(endsAt, nowMs) {
       const endMs = Date.parse(endsAt || '');
-      if (Number.isNaN(endMs)) return 'ไม่มีวันหมดอายุ';
-      const ms = endMs - Date.now();
-      if (ms <= 0) return 'โปรโมชั่นสิ้นสุดแล้ว';
+      if (Number.isNaN(endMs)) return '';
+      const ms = endMs - (Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now());
+      if (ms <= 0) return '';
       const days = Math.floor(ms / 86400000);
       const hh = Math.floor(ms / 3600000) % 24;
       const mm = Math.floor(ms / 60000) % 60;
       const ss = Math.floor(ms / 1000) % 60;
       const pad = function(n){ return String(n).padStart(2,'0'); };
-      if (days >= 1) return 'เหลือ ' + days + ' วัน ' + pad(hh)+':'+pad(mm)+':'+pad(ss);
-      return 'เหลือ ' + pad(hh)+':'+pad(mm)+':'+pad(ss);
+      if (days >= 1) return days + ' วัน ' + pad(hh)+':'+pad(mm)+':'+pad(ss);
+      return pad(hh)+':'+pad(mm)+':'+pad(ss);
+    }
+
+    // Backward-compatible wrapper for older callers/tests. New UI code uses the
+    // context-free formatter above and supplies its own promotion/gift/sale label.
+    function formatPromotionRemaining(endsAt) {
+      const endMs = Date.parse(endsAt || '');
+      if (Number.isNaN(endMs)) return 'ไม่มีวันหมดอายุ';
+      const value = formatCountdownRemaining(endsAt);
+      return value ? ('เหลือ ' + value) : 'โปรโมชั่นสิ้นสุดแล้ว';
+    }
+
+    function _resolveCardDeadline(product, cardPromo, nowMs) {
+      const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
+      const candidates = [];
+      const promo = cardPromo && cardPromo.promotion;
+      if (promo && promo.no_end_date !== true) {
+        const promoEnd = Date.parse(promo.ends_at || '');
+        if (!Number.isNaN(promoEnd) && promoEnd > now) {
+          candidates.push({ kind:'promotion', label:'โปรสิ้นสุดใน', ends_at:String(promo.ends_at), end_ms:promoEnd });
+        }
+      }
+      if (product && product.sale_status === 'active' && product.sale_mode === 'scheduled') {
+        const saleEnd = Date.parse(product.sale_ends_at || '');
+        if (!Number.isNaN(saleEnd) && saleEnd > now) {
+          candidates.push({ kind:'sale', label:'ปิดขายใน', ends_at:String(product.sale_ends_at), end_ms:saleEnd });
+        }
+      }
+      if (!candidates.length) return null;
+      candidates.sort(function(a,b){ return a.end_ms - b.end_ms; });
+      return candidates[0];
+    }
+
+    let _deadlineProductRefreshPromise = null;
+    function _refreshProductsAfterDeadline() {
+      if (_deadlineProductRefreshPromise || !GAS.available) return _deadlineProductRefreshPromise;
+      const detailProduct = SHOP.products && SHOP.products[currentProductIndex];
+      const detailProductId = detailProduct ? String(detailProduct.id) : '';
+      _deadlineProductRefreshPromise = GAS.run('productListRpc', { sort:'new' }).then(function(r){
+        if (!r || !r.ok || !Array.isArray(r.items)) return false;
+        SHOP.products = r.items.map(function(p){ return Object.assign({}, p, { image:p.image || p.image_url || '' }); });
+        renderProducts();
+        const cartResult = reconcileCartWithProducts();
+        updateCartUI();
+        if (cartResult && cartResult.removed && cartResult.removed.length) _showRemovedCartItemsModal(cartResult.removed);
+
+        const modalEl = document.getElementById('productDetailsModal');
+        if (detailProductId && modalEl && modalEl.classList.contains('show')) {
+          const nextIndex = SHOP.products.findIndex(function(p){ return String(p.id) === detailProductId; });
+          if (nextIndex < 0) {
+            const instance = bootstrap.Modal.getInstance(modalEl);
+            if (instance) instance.hide();
+          } else {
+            currentProductIndex = nextIndex;
+            _updateModalPromotion(SHOP.products[nextIndex]);
+          }
+        }
+
+        if (typeof _giftPreviewLastKey !== 'undefined') { _giftPreviewLastKey = ''; _giftPreviewLastResult = null; }
+        if (typeof _promoPreviewLastKey !== 'undefined') {
+          _promoPreviewLastKey = ''; _promoPreviewLastResult = null;
+          _promoLineMapKey = ''; _promoLineMap = Object.create(null);
+        }
+        if (cart.size) { _scheduleGiftPreview(); _schedulePromoPreview(); }
+        return true;
+      }).catch(function(){ return false; }).finally(function(){ _deadlineProductRefreshPromise = null; });
+      return _deadlineProductRefreshPromise;
     }
 
     let _promoCountdownTimer = null;
     function _stopModalCountdown() {
       if (_promoCountdownTimer) { clearInterval(_promoCountdownTimer); _promoCountdownTimer = null; }
     }
-    function _startModalCountdown(endsAt) {
+    function _startModalCountdown(endsAt, noEndDate) {
       _stopModalCountdown();
-      if (Number.isNaN(Date.parse(endsAt || ''))) {
+      if (noEndDate === true || Number.isNaN(Date.parse(endsAt || ''))) {
         const el = document.getElementById('productPromoCountdown');
         if (el) el.textContent = 'ไม่มีวันหมดอายุ';
         return;
@@ -5461,17 +5552,17 @@
       const tick = function(){
         const el = document.getElementById('productPromoCountdown');
         if (!el) { _stopModalCountdown(); return; }
-        const txt = formatPromotionRemaining(endsAt);
-        el.textContent = txt;
-        if (txt === 'โปรโมชั่นสิ้นสุดแล้ว') {
+        const remaining = formatCountdownRemaining(endsAt);
+        el.textContent = remaining ? ('โปรสิ้นสุดใน ' + remaining) : 'โปรสิ้นสุดแล้ว';
+        if (!remaining) {
           _stopModalCountdown();
-          // Hide the block since promo expired during view
           const block = document.getElementById('productPromoBlock');
           if (block) block.style.display = 'none';
+          _refreshProductsAfterDeadline();
         }
       };
-      tick();
       _promoCountdownTimer = setInterval(tick, 1000);
+      tick();
     }
 
     function _updateModalPromotion(product) {
@@ -5504,40 +5595,46 @@
       document.getElementById('productDetailPrice').textContent = money(entry.unit_final_price);
       oldPriceEl.textContent = money(entry.unit_base_price);
       oldPriceEl.style.display = '';
-      _startModalCountdown(promo.ends_at);
+      _startModalCountdown(promo.ends_at, promo.no_end_date);
     }
 
-    /* Card-level countdown: refreshes [data-sale-end] elements every second
-       (Product Sale Window — separate concept from promotion countdown) */
+    /* Card-level countdown chooses the nearest real deadline: the active direct
+       promotion or the product sale window. */
     let _cardCountdownTimer = null;
     function _refreshCardCountdowns() {
       if (_cardCountdownTimer) { clearInterval(_cardCountdownTimer); _cardCountdownTimer = null; }
       const tick = function(){
-        const els = document.querySelectorAll('[data-sale-end]');
+        const els = document.querySelectorAll('[data-card-deadline]');
         if (!els.length) { clearInterval(_cardCountdownTimer); _cardCountdownTimer = null; return; }
         els.forEach(function(el){
-          const ends = el.dataset.saleEnd;
-          var msNow = Date.now();
-          var msEnd = Date.parse(ends || '');
-          if (isNaN(msEnd)) { el.textContent = ''; return; }
-          if (msNow > msEnd) {
-            el.textContent = 'สิ้นสุดการขายแล้ว';
-            // Sale window closed while the page was open — also disable the card's
-            // action button (the server rejects with SALE_NOT_ACTIVE anyway; this
-            // just stops the customer from building a doomed cart).
+          const ends = el.dataset.cardDeadline;
+          const remaining = formatCountdownRemaining(ends);
+          const valueEl = el.querySelector('.product-card-deadline-value');
+          if (remaining) { if (valueEl) valueEl.textContent = remaining; return; }
+
+          const isSale = el.dataset.deadlineKind === 'sale';
+          el.innerHTML = '<i class="bi bi-clock"></i><span>' + (isSale ? 'สิ้นสุดการขายแล้ว' : 'โปรสิ้นสุดแล้ว') + '</span>';
+          el.removeAttribute('data-card-deadline');
+          if (isSale) {
             var card = el.closest('.product-card');
             var btn = card && card.querySelector('.details-btn');
             if (btn && !btn.disabled) {
               btn.disabled = true;
               btn.innerHTML = '<i class="bi bi-clipboard-fill me-1"></i> สิ้นสุดการขายแล้ว';
             }
-            return;
           }
-          el.textContent = 'เหลือ ' + formatPromotionRemaining(ends).replace(/^เหลือ\s*/, '');
+          if (el.dataset.deadlineHandled !== '1') {
+            el.dataset.deadlineHandled = '1';
+            _refreshProductsAfterDeadline();
+          }
         });
+        if (!document.querySelector('[data-card-deadline]')) {
+          clearInterval(_cardCountdownTimer);
+          _cardCountdownTimer = null;
+        }
       };
-      tick();
       _cardCountdownTimer = setInterval(tick, 1000);
+      tick();
     }
     /* Gift campaign modal */
     var _giftCampaignsCache = null;
@@ -5600,18 +5697,40 @@
         document.getElementById('giftCampaignsBody').innerHTML = '<div class="text-center text-muted py-4">ต้องเปิดผ่าน GAS Web App</div>';
         return;
       }
-      google.script.run.withSuccessHandler(function(r){
+      _reloadGiftCampaigns();
+    }
+    var _giftCampaignsReloadPromise = null;
+    function _reloadGiftCampaigns(){
+      if (_giftCampaignsReloadPromise || !GAS.available) return _giftCampaignsReloadPromise;
+      _giftCampaignsReloadPromise = GAS.run('getActiveGiftCampaignsRpc').then(function(r){
         _giftCampaignsCache = (r && r.ok) ? r.campaigns : [];
         _renderGiftCampaigns();
-      }).withFailureHandler(function(){
+        return true;
+      }).catch(function(){
         _giftCampaignsCache = [];
         _renderGiftCampaigns();
-      }).getActiveGiftCampaignsRpc();
+        return false;
+      }).finally(function(){ _giftCampaignsReloadPromise = null; });
+      return _giftCampaignsReloadPromise;
+    }
+    function _giftCampaignTimeHtml(c){
+      var starts = Date.parse(c && c.starts_at || '');
+      var ends = Date.parse(c && c.ends_at || '');
+      if (c && c.status === 'scheduled' && !Number.isNaN(starts)) {
+        return '<span data-gift-clock data-gift-phase="scheduled" data-gift-start="' + escHtml(c.starts_at || '')
+          + '" data-gift-end="' + escHtml(c.ends_at || '') + '" data-gift-no-end="' + (c.no_end_date ? '1' : '0') + '"></span>';
+      }
+      if (c && c.no_end_date === true) return 'ไม่มีวันสิ้นสุด';
+      if (!Number.isNaN(ends)) {
+        return '<span data-gift-clock data-gift-phase="active" data-gift-end="' + escHtml(c.ends_at || '') + '" data-gift-no-end="0"></span>';
+      }
+      return 'ไม่มีวันสิ้นสุด';
     }
     function _renderGiftCampaigns(){
       var body = document.getElementById('giftCampaignsBody');
       if (!_giftCampaignsCache) return;
       if (!_giftCampaignsCache.length){
+        if (_giftTimer) { clearInterval(_giftTimer); _giftTimer = null; }
         body.innerHTML = '<div class="text-center text-muted py-4"><i class="bi bi-gift" style="font-size:2rem"></i><div class="mt-2">ยังไม่มีของแถมในขณะนี้</div></div>';
         return;
       }
@@ -5620,7 +5739,7 @@
         var gift = c.gift_item || {};
         var fid = gift.image_drive_file_id || '';
         var hasImg = !!(fid || gift.image_url);
-        var timer = c.no_end_date ? '&#x0E44;&#x0E21;&#x0E48;&#x0E21;&#x0E35;&#x0E27;&#x0E31;&#x0E19;&#x0E2A;&#x0E34;&#x0E49;&#x0E19;&#x0E2A;&#x0E38;&#x0E14;' : '<span data-gift-end="'+escHtml(c.ends_at||'')+'"></span>';
+        var timer = _giftCampaignTimeHtml(c);
         var imgTag = hasImg
           ? '<img data-gift-idx="'+i+'" style="display:none">'
           : '<i class="bi bi-gift img-fallback"></i>';
@@ -5684,19 +5803,40 @@
           applyUrl(c.gift_item.image_url || '');
         }
       });
-      // Tick countdown for time-bounded campaigns
+      // Tick scheduled/active campaign deadlines using context-specific labels.
       if (_giftTimer) { clearInterval(_giftTimer); _giftTimer = null; }
       var tick = function(){
-        var els = body.querySelectorAll('[data-gift-end]');
+        var els = body.querySelectorAll('[data-gift-clock]');
         if (!els.length) { clearInterval(_giftTimer); _giftTimer = null; return; }
         els.forEach(function(el){
-          var ends = el.dataset.giftEnd;
-          if (!ends) { el.textContent = ''; return; }
-          el.textContent = formatPromotionRemaining(ends).replace(/^เหลือ\s*/, 'เหลือ ');
+          var phase = el.dataset.giftPhase || 'active';
+          if (phase === 'scheduled') {
+            var untilStart = formatCountdownRemaining(el.dataset.giftStart || '');
+            if (untilStart) { el.textContent = 'เริ่มใน ' + untilStart; return; }
+            phase = 'active';
+            el.dataset.giftPhase = 'active';
+          }
+          if (el.dataset.giftNoEnd === '1') {
+            el.textContent = 'ไม่มีวันสิ้นสุด';
+            el.removeAttribute('data-gift-clock');
+            return;
+          }
+          var remaining = formatCountdownRemaining(el.dataset.giftEnd || '');
+          if (remaining) { el.textContent = 'สิทธิ์สิ้นสุดใน ' + remaining; return; }
+          el.textContent = 'สิทธิ์สิ้นสุดแล้ว';
+          el.removeAttribute('data-gift-clock');
+          if (el.dataset.deadlineHandled !== '1') {
+            el.dataset.deadlineHandled = '1';
+            _reloadGiftCampaigns();
+          }
         });
+        if (!body.querySelector('[data-gift-clock]')) {
+          clearInterval(_giftTimer);
+          _giftTimer = null;
+        }
       };
-      tick();
       _giftTimer = setInterval(tick, 1000);
+      tick();
     }
     function escHtml(s){ return String(s||'').replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
     function setProductImageUrl(imgEl, url) {
@@ -6483,6 +6623,62 @@
         + _giftStockHtml(gift, qty) + '</div>'
         + '<span class="cart-promo-qty">×' + escHtml(qty) + '</span></div></div></div>';
     }
+    function _ruleDeadlineHtml(rule, kind) {
+      var label = kind === 'promotion' ? 'โปรสิ้นสุดใน' : 'สิทธิ์สิ้นสุดใน';
+      if (rule && rule.no_end_date === true) {
+        return '<div class="cart-rule-deadline is-static"><i class="bi bi-clock"></i><span>ไม่มีวันสิ้นสุด</span></div>';
+      }
+      var endsAt = rule && rule.ends_at ? String(rule.ends_at) : '';
+      if (Number.isNaN(Date.parse(endsAt))) return '';
+      return '<div class="cart-rule-deadline" data-rule-end="' + escHtml(endsAt) + '" data-rule-kind="' + kind + '">'
+        + '<i class="bi bi-clock"></i><span>' + label + ' <span class="cart-rule-deadline-value"></span></span></div>';
+    }
+    function _cartRuleSideHtml(rule, kind, progressHtml) {
+      var deadline = _ruleDeadlineHtml(rule, kind);
+      if (!deadline && !progressHtml) return '';
+      return '<div class="cart-rule-side">' + deadline + (progressHtml || '') + '</div>';
+    }
+    var _cartRuleCountdownTimer = null;
+    function _stopCartRuleCountdowns() {
+      if (_cartRuleCountdownTimer) { clearInterval(_cartRuleCountdownTimer); _cartRuleCountdownTimer = null; }
+    }
+    function _startCartRuleCountdowns() {
+      _stopCartRuleCountdowns();
+      var modalEl = document.getElementById('cartModal');
+      if (!modalEl || !modalEl.classList.contains('show')) return;
+      var tick = function(){
+        var els = modalEl.querySelectorAll('[data-rule-end]');
+        if (!els.length) { _stopCartRuleCountdowns(); return; }
+        var refreshGift = false;
+        var refreshPromo = false;
+        els.forEach(function(el){
+          var remaining = formatCountdownRemaining(el.dataset.ruleEnd || '');
+          var valueEl = el.querySelector('.cart-rule-deadline-value');
+          if (remaining) { if (valueEl) valueEl.textContent = remaining; return; }
+          el.innerHTML = '<i class="bi bi-clock"></i><span>สิ้นสุดแล้ว</span>';
+          el.removeAttribute('data-rule-end');
+          if (el.dataset.deadlineHandled === '1') return;
+          el.dataset.deadlineHandled = '1';
+          if (el.dataset.ruleKind === 'promotion') refreshPromo = true;
+          else refreshGift = true;
+        });
+        if (refreshGift) {
+          _giftPreviewLastKey = '';
+          _giftPreviewLastResult = null;
+          _scheduleGiftPreview();
+        }
+        if (refreshPromo) {
+          _promoPreviewLastKey = '';
+          _promoPreviewLastResult = null;
+          _promoLineMapKey = '';
+          _promoLineMap = Object.create(null);
+          _schedulePromoPreview();
+        }
+        if (!modalEl.querySelector('[data-rule-end]')) _stopCartRuleCountdowns();
+      };
+      tick();
+      if (modalEl.querySelector('[data-rule-end]')) _cartRuleCountdownTimer = setInterval(tick, 1000);
+    }
     function _renderGiftPreview(r) {
       var box = document.getElementById('cartGiftPreview');
       if (!box) return;
@@ -6505,7 +6701,7 @@
           var qty = Number(gift.qty || 1);
           html += '<div class="cart-promo-row is-complete">'
             + '<div class="cart-promo-summary"><div class="cart-gift-name">' + esc(gift.name || 'ของแถม') + '</div>'
-            + '<span class="cart-gift-inline-qty">รับฟรี ×' + esc(qty) + '</span>' + _cartGiftProgressHtml(e, true) + '</div>'
+            + '<span class="cart-gift-inline-qty">รับฟรี ×' + esc(qty) + '</span>' + _cartRuleSideHtml(e, 'gift', _cartGiftProgressHtml(e, true)) + '</div>'
             + '<div class="cart-promo-detail-grid">' + _giftConditionPanel(e, false) + _giftRewardPanel('eligible', i, gift, false) + '</div>'
             + '</div>';
         });
@@ -6518,7 +6714,7 @@
           var qty = Number(gift.qty || 1);
           html += '<div class="cart-promo-row">'
             + '<div class="cart-promo-summary"><div class="cart-gift-name">' + esc(gift.name || 'ของแถม') + '</div>'
-            + '<span class="cart-gift-inline-qty">รับฟรี ×' + esc(qty) + '</span>' + _cartGiftProgressHtml(n, false) + '</div>'
+            + '<span class="cart-gift-inline-qty">รับฟรี ×' + esc(qty) + '</span>' + _cartRuleSideHtml(n, 'gift', _cartGiftProgressHtml(n, false)) + '</div>'
             + '<div class="cart-promo-detail-grid">' + _giftConditionPanel(n, true) + _giftRewardPanel('near', i, gift, true) + '</div>'
             + '</div>';
         });
@@ -6529,6 +6725,7 @@
       box.style.display = '';
       _loadCartGiftPreviewImages(box, { eligible: eligible, near: near });
       _loadPromoPreviewImages(box);
+      _startCartRuleCountdowns();
     }
 
     /* ===== Conditional-promotion eligibility preview ===== */
@@ -6543,6 +6740,24 @@
     // consult it so conditional discounts show in the cart and pass the PRICE_CHANGED guard.
     var _promoLineMap = Object.create(null);
     var _promoLineMapKey = '';
+    function _showPromoPreviewLoading() {
+      var box = document.getElementById('cartPromoPreview');
+      if (!box) return;
+      box.className = 'cart-gift-preview is-loading';
+      box.innerHTML = _giftLoadingHtml('กำลังตรวจสอบส่วนลด', 'ระบบกำลังคำนวณโปรโมชั่นจากสินค้าในตะกร้า', true);
+      box.style.display = '';
+    }
+    function _renderPromoPreviewError() {
+      var box = document.getElementById('cartPromoPreview');
+      if (!box) return;
+      box.className = 'cart-gift-preview';
+      box.innerHTML = '<div class="cart-gift-head mb-0">'
+        + '<div class="cart-gift-head-icon"><i class="bi bi-exclamation-circle"></i></div>'
+        + '<div><div class="cart-gift-title">ยังตรวจสอบส่วนลดไม่ได้</div>'
+        + '<div class="cart-gift-subtitle">ปิดแล้วเปิดตะกร้าอีกครั้งเพื่อให้ระบบลองใหม่</div></div>'
+        + '</div>';
+      box.style.display = '';
+    }
     function _schedulePromoPreview() {
       if (_promoPreviewDebounce) clearTimeout(_promoPreviewDebounce);
       if (cart.size > 0) {
@@ -6551,8 +6766,7 @@
           _promoPreviewLastResult = null;
           _promoLineMap = Object.create(null);
           _promoLineMapKey = '';
-          var box = document.getElementById('cartPromoPreview');
-          if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+          if (GAS.available) _showPromoPreviewLoading();
         }
       }
       _promoPreviewDebounce = setTimeout(_runPromoPreview, 350);
@@ -6607,12 +6821,13 @@
         _promoLineMap = (r && r.ok) ? _buildPromoLineMap(r.lines) : Object.create(null);
         _promoLineMapKey = (r && r.ok) ? key : '';
         _renderPromoPreview(r);
-        updateCartUI();   // re-render cart with conditional prices (key guard stops re-fire)
+        if (r && r.ok) updateCartUI();   // re-render cart with conditional prices (key guard stops re-fire)
+        else _promoPreviewLastKey = '';  // keep the error visible and allow retry on next open
       }).withFailureHandler(function(){
         if (key !== _promoPreviewLastKey || key !== JSON.stringify(_buildGiftPreviewPayload())) return;
         _promoPreviewLastKey = ''; _promoPreviewLastResult = null;
         _promoLineMap = Object.create(null); _promoLineMapKey = '';
-        box.style.display = 'none';
+        _renderPromoPreviewError();
       }).previewPromotionEligibilityRpc(payload);
     }
 
@@ -6766,7 +6981,7 @@
     function _renderPromoPreview(r) {
       var box = document.getElementById('cartPromoPreview');
       if (!box) return;
-      if (!r || !r.ok) { box.style.display = 'none'; return; }
+      if (!r || !r.ok) { _renderPromoPreviewError(); return; }
       var eligible = r.eligible || [];
       var near = r.near || [];
       if (!eligible.length && !near.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
@@ -6799,7 +7014,7 @@
             : ('<div class="cart-promo-detail-grid">' + _promoConditionBlock(e.condition) + _promoTargetBlock(e.target, false) + '</div>');
           html += '<div class="cart-promo-row is-complete' + (isApplied ? '' : ' is-outpriced') + '">'
             + '<div class="cart-promo-summary"><div class="cart-gift-name">' + esc(e.name || 'ส่วนลด') + '</div>'
-            + qtyBadge + _promoProgressHtml(e, true) + '</div>'
+            + qtyBadge + _cartRuleSideHtml(e, 'promotion', _promoProgressHtml(e, true)) + '</div>'
             + detailGrid
             + '</div>';
         });
@@ -6815,7 +7030,7 @@
             : ('<div class="cart-promo-detail-grid">' + _promoNearBlock(n) + _promoTargetBlock(n.target, true) + '</div>');
           html += '<div class="cart-promo-row">'
             + '<div class="cart-promo-summary"><div class="cart-gift-name">' + esc(n.name || 'ส่วนลด') + '</div>'
-            + '<span class="cart-gift-inline-qty">' + discTxtN + '</span>' + _promoProgressHtml(n, false) + '</div>'
+            + '<span class="cart-gift-inline-qty">' + discTxtN + '</span>' + _cartRuleSideHtml(n, 'promotion', _promoProgressHtml(n, false)) + '</div>'
             + detailGridN
             + '</div>';
         });
@@ -6825,6 +7040,30 @@
       box.innerHTML = html;
       box.style.display = '';
       _loadPromoPreviewImages(box);
+      _startCartRuleCountdowns();
+    }
+
+    function _refreshCartPreviewsOnOpen() {
+      if (cart.size === 0 || !GAS.available) return;
+      var key = JSON.stringify(_buildGiftPreviewPayload());
+
+      if (_giftPreviewLastResult && _giftPreviewLastResult.ok && _giftPreviewLastKey === key) {
+        _renderGiftPreview(_giftPreviewLastResult);
+      } else {
+        _showGiftPreviewLoading();
+        // Opening the cart is an explicit retry point. Invalidating the key also
+        // recovers a request whose Apps Script callback never arrived.
+        _giftPreviewLastKey = '';
+        _scheduleGiftPreview();
+      }
+
+      if (_promoPreviewLastResult && _promoPreviewLastResult.ok && _promoLineMapKey === key) {
+        _renderPromoPreview(_promoPreviewLastResult);
+      } else {
+        _showPromoPreviewLoading();
+        _promoPreviewLastKey = '';
+        _schedulePromoPreview();
+      }
     }
 
 
@@ -8538,6 +8777,14 @@
     _pdmCheckLayout('init');
     document.getElementById('productDetailsModal').addEventListener('shown.bs.modal', () => _pdmCheckLayout('shown.bs.modal'));
     document.getElementById('productDetailsModal').addEventListener('hidden.bs.modal', () => _stopModalCountdown());
+    document.getElementById('cartModal').addEventListener('shown.bs.modal', () => {
+      _refreshCartPreviewsOnOpen();
+      _startCartRuleCountdowns();
+    });
+    document.getElementById('cartModal').addEventListener('hidden.bs.modal', () => _stopCartRuleCountdowns());
+    document.getElementById('giftCampaignsModal').addEventListener('hidden.bs.modal', () => {
+      if (_giftTimer) { clearInterval(_giftTimer); _giftTimer = null; }
+    });
 
     /* ========== PREVIEW MODE BRIDGE (used by edit-store.html iframe) ========== */
     const PREVIEW_MODE = (function(){

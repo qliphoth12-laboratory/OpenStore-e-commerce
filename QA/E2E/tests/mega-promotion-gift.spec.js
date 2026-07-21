@@ -71,7 +71,7 @@ test.describe('mega promotion and gift customer workflow in Chromium', () => {
     const prepared = await prepareMegaPromotionGiftFixture(page);
     currentFixture = prepared.fixture;
 
-    const { products, promotions, gifts, expected } = prepared;
+    const { products, promotions, gifts, scheduled_campaign: scheduledCampaign, expected } = prepared;
     const expectedLines = [
       { title: products.a.title, variant: '', qty: 3, base: 1000, final: 980, subtotal: 2940, promo: promotions.subtotal_all },
       { title: products.b.title, variant: '', qty: 4, base: 600, final: 420, subtotal: 1680, promo: promotions.product_any },
@@ -80,6 +80,37 @@ test.describe('mega promotion and gift customer workflow in Chromium', () => {
       { title: products.d.title, variant: '', qty: 5, base: 250, final: 230, subtotal: 1150, promo: promotions.subtotal_all },
       { title: products.e.title, variant: '', qty: 2, base: 300, final: 270, subtotal: 540, promo: promotions.direct_be }
     ];
+    const promotionCases = [
+      { promo: promotions.subtotal_all, outpriced: false },
+      { promo: promotions.product_all, outpriced: true },
+      { promo: promotions.product_any, outpriced: false },
+      { promo: promotions.variant_all, outpriced: true },
+      { promo: promotions.variant_any, outpriced: false }
+    ];
+
+    // The card deadline must follow the active direct promotion, and the campaign
+    // modal must render the bounded gift rule with a context-specific countdown.
+    const storefrontFrame = await waitForGoogleScriptRun(page);
+    const saleCard = storefrontFrame.locator('.product-card').filter({ hasText: products.a.title }).first();
+    const promoCard = storefrontFrame.locator('.product-card').filter({ hasText: products.b.title }).first();
+    await expect(saleCard.locator('[data-deadline-kind="sale"]')).toContainText('ปิดขายใน');
+    await expect(promoCard.locator('[data-deadline-kind="promotion"]')).toContainText('โปรสิ้นสุดใน');
+    await expect(promoCard.locator('.product-card-deadline-value')).toHaveText(/\d{2}:\d{2}:\d{2}/);
+    await storefrontFrame.evaluate(() => window.openGiftCampaigns());
+    await expect(storefrontFrame.locator('#giftCampaignsModal')).toBeVisible();
+    const boundedCampaignCard = storefrontFrame.locator('#giftCampaignsModal .gift-camp-card')
+      .filter({ hasText: gifts[0].name });
+    const campaignCountdown = boundedCampaignCard.locator('[data-gift-clock]');
+    await expect(campaignCountdown).toContainText('สิทธิ์สิ้นสุดใน', { timeout: 120_000 });
+    await expect(campaignCountdown).toHaveText(/\d{2}:\d{2}:\d{2}/);
+    const scheduledCampaignCard = storefrontFrame.locator('#giftCampaignsModal .gift-camp-card')
+      .filter({ hasText: scheduledCampaign.name });
+    await expect(scheduledCampaignCard.locator('[data-gift-phase="scheduled"]')).toContainText('เริ่มใน');
+    const noEndCampaignCard = storefrontFrame.locator('#giftCampaignsModal .gift-camp-card')
+      .filter({ hasText: gifts[1].name });
+    await expect(noEndCampaignCard.locator('.gift-camp-pill.time')).toContainText('ไม่มีวันสิ้นสุด');
+    await storefrontFrame.locator('#giftCampaignsModal .btn-close').click();
+    await expect(storefrontFrame.locator('#giftCampaignsModal')).toBeHidden();
 
     // Build exactly six cart lines (five products, with M/S as separate variant lines).
     await addProductToCart(page, products.a.title, 3);
@@ -94,11 +125,82 @@ test.describe('mega promotion and gift customer workflow in Chromium', () => {
     const frame = await waitForGoogleScriptRun(page);
     await expect(frame.locator('#cartBody .cart-order-row')).toHaveCount(6);
     await expect(frame.locator('#cartPromoPreview')).toBeVisible({ timeout: 120_000 });
-    await expect(frame.locator('#cartPromoPreview .cart-gift-section.is-earned .cart-promo-row'))
-      .toHaveCount(5, { timeout: 120_000 });
     await expect(frame.locator('#cartGiftPreview')).toBeVisible({ timeout: 120_000 });
-    await expect(frame.locator('#cartGiftPreview .cart-gift-section.is-earned .cart-promo-row'))
-      .toHaveCount(5, { timeout: 120_000 });
+    const fixturePromoRows = frame.locator('#cartPromoPreview .cart-gift-section.is-earned .cart-promo-row');
+    const fixtureGiftRows = frame.locator('#cartGiftPreview .cart-gift-section.is-earned .cart-promo-row');
+    // Assert every fixture-owned rule exactly once. The storefront may legitimately contain
+    // unrelated active campaigns, so a global row count is not an invariant of this workflow.
+    for (const item of promotionCases) {
+      await expect(fixturePromoRows.filter({ hasText: item.promo.name }))
+        .toHaveCount(1, { timeout: 120_000 });
+    }
+    for (const gift of gifts) {
+      await expect(fixtureGiftRows.filter({ hasText: gift.name }))
+        .toHaveCount(1, { timeout: 120_000 });
+    }
+    // The scheduled fixture is visible in the campaign modal, but must never be granted yet.
+    await expect(fixtureGiftRows.filter({ hasText: scheduledCampaign.name })).toHaveCount(0);
+    const promoCountdown = fixturePromoRows.filter({ hasText: promotions.subtotal_all.name })
+      .locator('.cart-rule-deadline[data-rule-kind="promotion"]');
+    const giftCountdown = fixtureGiftRows.filter({ hasText: gifts[0].name })
+      .locator('.cart-rule-deadline[data-rule-kind="gift"]');
+    await expect(promoCountdown).toContainText('โปรสิ้นสุดใน');
+    await expect(giftCountdown).toContainText('สิทธิ์สิ้นสุดใน');
+    await expect(promoCountdown.locator('.cart-rule-deadline-value')).toHaveText(/\d{2}:\d{2}:\d{2}/);
+    await expect(giftCountdown.locator('.cart-rule-deadline-value')).toHaveText(/\d{2}:\d{2}:\d{2}/);
+    const noEndPromoRow = frame.locator('#cartPromoPreview .cart-promo-row')
+      .filter({ hasText: promotions.product_all.name });
+    const noEndGiftRow = frame.locator('#cartGiftPreview .cart-promo-row')
+      .filter({ hasText: gifts[1].name });
+    await expect(noEndPromoRow.locator('.cart-rule-deadline.is-static')).toContainText('ไม่มีวันสิ้นสุด');
+    await expect(noEndGiftRow.locator('.cart-rule-deadline.is-static')).toContainText('ไม่มีวันสิ้นสุด');
+    for (const deadline of [promoCountdown, giftCountdown]) {
+      const sharesProgressMetaRow = await deadline.evaluate((el) => {
+        const side = el.closest('.cart-rule-side');
+        const status = side && side.querySelector('.cart-gift-progress-text');
+        if (!status) return false;
+        const timeRect = el.getBoundingClientRect();
+        const statusRect = status.getBoundingClientRect();
+        return Math.abs(timeRect.top - statusRect.top) <= 2;
+      });
+      expect(sharesProgressMetaRow).toBe(true);
+    }
+
+    // At the mobile breakpoint the timing/progress column must stack inside its
+    // summary instead of overflowing or squeezing the promotion name.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(promoCountdown).toBeVisible();
+    await expect(giftCountdown).toBeVisible();
+    for (const deadline of [promoCountdown, giftCountdown]) {
+      const countdownFitsMobile = await deadline.evaluate((el) => {
+        const host = el.closest('.cart-promo-summary');
+        if (!host) return false;
+        const item = el.getBoundingClientRect();
+        const parent = host.getBoundingClientRect();
+        return item.left >= parent.left - 1 && item.right <= parent.right + 1;
+      });
+      expect(countdownFitsMobile).toBe(true);
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+
+    // Reopening the cart must recover a missing/failed promotion preview instead
+    // of keeping the section silently hidden behind a stale cache key.
+    await frame.locator('#cartModal .btn-close').click();
+    await expect(frame.locator('#cartModal')).toBeHidden();
+    await frame.evaluate(() => {
+      window._promoPreviewLastKey = '';
+      window._promoPreviewLastResult = null;
+      window._promoLineMapKey = '';
+      window._promoLineMap = Object.create(null);
+      const box = document.getElementById('cartPromoPreview');
+      if (box) { box.innerHTML = ''; box.style.display = 'none'; }
+    });
+    await openCart(page);
+    await expect(frame.locator('#cartPromoPreview')).toContainText('ส่วนลดในคำสั่งซื้อนี้', { timeout: 120_000 });
+    for (const item of promotionCases) {
+      await expect(frame.locator('#cartPromoPreview .cart-gift-section.is-earned .cart-promo-row')
+        .filter({ hasText: item.promo.name })).toHaveCount(1, { timeout: 120_000 });
+    }
 
     // Every visible cart line must show the best-price winner, not a stacked price.
     for (const line of expectedLines) {
@@ -115,13 +217,6 @@ test.describe('mega promotion and gift customer workflow in Chromium', () => {
     // Five conditional promotions qualify. Two are visibly marked as outpriced while
     // their stronger competitors remain the winners on B and Variant M.
     const promoRows = frame.locator('#cartPromoPreview .cart-gift-section.is-earned .cart-promo-row');
-    const promotionCases = [
-      { promo: promotions.subtotal_all, outpriced: false },
-      { promo: promotions.product_all, outpriced: true },
-      { promo: promotions.product_any, outpriced: false },
-      { promo: promotions.variant_all, outpriced: true },
-      { promo: promotions.variant_any, outpriced: false }
-    ];
     for (const item of promotionCases) {
       const row = promoRows.filter({ hasText: item.promo.name });
       await expect(row).toHaveCount(1);
@@ -189,12 +284,13 @@ test.describe('mega promotion and gift customer workflow in Chromium', () => {
       await expectMoney(row.locator('.ocm-item-sub'), line.subtotal);
     }
     await expect(frame.locator('#ocmGiftSection')).toBeVisible();
-    await expect(frame.locator('#ocmGiftList .ocm-gift-row')).toHaveCount(5);
     for (const gift of gifts) {
       const row = frame.locator('#ocmGiftList .ocm-gift-row').filter({ hasText: gift.name });
-      await expect(row).toBeVisible();
+      await expect(row).toHaveCount(1);
       await expect(row).toContainText(`×${gift.qty}`);
     }
+    await expect(frame.locator('#ocmGiftList .ocm-gift-row')
+      .filter({ hasText: scheduledCampaign.name })).toHaveCount(0);
     await expectMoney(frame.locator('#ocmSubtotal'), expected.subtotal);
     await expectMoney(frame.locator('#ocmShippingFeeDisplay'), expected.shipping_fee);
     await expectMoney(frame.locator('#ocmTotal'), expected.total);
@@ -215,6 +311,7 @@ test.describe('mega promotion and gift customer workflow in Chromium', () => {
       await expect(giftName).toBeVisible();
       await expect(giftName.locator('..').locator('..')).toContainText(new RegExp(`×\\s*${gift.qty}`));
     }
+    await expect(successPopup.getByText(scheduledCampaign.name, { exact: true })).toHaveCount(0);
 
     // Admin-side inspection is limited to the single-order/stock invariant; the price and
     // gift snapshots themselves are verified below through the customer token page.
@@ -246,11 +343,12 @@ test.describe('mega promotion and gift customer workflow in Chromium', () => {
     await expectMoney(orderFrame.locator('#shippingFeeVal'), expected.shipping_fee);
     await expectMoney(orderFrame.locator('#totalVal'), expected.total);
     await expect(orderFrame.locator('#customerGiftsSection')).toBeVisible();
-    await expect(orderFrame.locator('#customerGiftsList > div')).toHaveCount(5);
     for (const gift of gifts) {
       const row = orderFrame.locator('#customerGiftsList > div').filter({ hasText: gift.name });
       await expect(row).toHaveCount(1);
       await expect(row).toContainText(new RegExp(`×\\s*${gift.qty}`));
     }
+    await expect(orderFrame.locator('#customerGiftsList > div')
+      .filter({ hasText: scheduledCampaign.name })).toHaveCount(0);
   });
 });

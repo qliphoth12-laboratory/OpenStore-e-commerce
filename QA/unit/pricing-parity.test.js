@@ -27,6 +27,8 @@ const FN_NAMES = [
   '_resolveProductPromotion',
   '_resolveCartDisplayPricing',
   '_bestCardPromo',
+  '_resolveCardDeadline',
+  'formatCountdownRemaining',
   'formatPromotionRemaining',
   '_calcShippingFee',
   '_isProductOutOfStock',
@@ -148,6 +150,50 @@ test('multiple competing promotions: _bestCardPromo picks cheapest', () => {
   const eBest = editStore._bestCardPromo(p);
   assertValueEqual(iBest, eBest);
   assert.strictEqual(iBest.unit_final_price, 140);
+});
+
+test('countdown formatter: stable duration text and invalid-date safety', () => {
+  const { index, editStore } = loadBoth();
+  const now = Date.parse('2030-01-01T00:00:00.000Z');
+  const sameDay = new Date(now + (5 * 3600000) + (4 * 60000) + 3000).toISOString();
+  const nextDay = new Date(now + 86400000 + 2000).toISOString();
+  assert.strictEqual(index.formatCountdownRemaining(sameDay, now), '05:04:03');
+  assert.strictEqual(editStore.formatCountdownRemaining(sameDay, now), '05:04:03');
+  assert.strictEqual(index.formatCountdownRemaining(nextDay, now), '1 วัน 00:00:02');
+  assert.strictEqual(editStore.formatCountdownRemaining(nextDay, now), '1 วัน 00:00:02');
+  assert.strictEqual(index.formatCountdownRemaining('invalid', now), '');
+  assert.strictEqual(editStore.formatCountdownRemaining(new Date(now - 1).toISOString(), now), '');
+});
+
+test('card deadline: nearest promotion/sale event wins with explicit label', () => {
+  const { index, editStore } = loadBoth();
+  const now = Date.parse('2030-01-01T00:00:00.000Z');
+  const promoEnd = new Date(now + 3600000).toISOString();
+  const saleEnd = new Date(now + 7200000).toISOString();
+  const product = { sale_status:'active', sale_mode:'scheduled', sale_ends_at:saleEnd };
+  const cardPromo = { promotion:{ ends_at:promoEnd, no_end_date:false } };
+  const expectedPromo = index._resolveCardDeadline(product, cardPromo, now);
+  assertValueEqual(expectedPromo, editStore._resolveCardDeadline(product, cardPromo, now));
+  assert.strictEqual(expectedPromo.kind, 'promotion');
+  assert.strictEqual(expectedPromo.label, 'โปรสิ้นสุดใน');
+
+  product.sale_ends_at = new Date(now + 1800000).toISOString();
+  const expectedSale = index._resolveCardDeadline(product, cardPromo, now);
+  assertValueEqual(expectedSale, editStore._resolveCardDeadline(product, cardPromo, now));
+  assert.strictEqual(expectedSale.kind, 'sale');
+  assert.strictEqual(expectedSale.label, 'ปิดขายใน');
+});
+
+test('card deadline: no-end/invalid promotion falls back to sale or nothing', () => {
+  const { index, editStore } = loadBoth();
+  const now = Date.parse('2030-01-01T00:00:00.000Z');
+  const product = { sale_status:'active', sale_mode:'scheduled', sale_ends_at:new Date(now + 60000).toISOString() };
+  const noEndPromo = { promotion:{ ends_at:'', no_end_date:true } };
+  const fallback = index._resolveCardDeadline(product, noEndPromo, now);
+  assertValueEqual(fallback, editStore._resolveCardDeadline(product, noEndPromo, now));
+  assert.strictEqual(fallback.kind, 'sale');
+  assert.strictEqual(index._resolveCardDeadline({ sale_status:'active', sale_mode:'always' }, noEndPromo, now), null);
+  assert.strictEqual(editStore._resolveCardDeadline({ sale_status:'active', sale_mode:'always' }, { promotion:{ ends_at:'bad', no_end_date:false } }, now), null);
 });
 
 // 6. Order-total discount, end-to-end across all three real call sites — the

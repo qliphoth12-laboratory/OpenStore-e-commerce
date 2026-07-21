@@ -542,8 +542,14 @@ function e2ePrepareMegaPromotionGiftFixtureRpc(adminToken) {
     function trackRule(rule) { fx.rule_ids.push(rule.rule_id); return rule; }
     function giftName(label) { return 'QA Gift ' + label + ' ' + fx.stamp; }
 
+    var countdownEndsAt = new Date(Date.now() + 7200000).toISOString();
+    var saleEndsAt = new Date(Date.now() + 10800000).toISOString();
+    var scheduledStartsAt = new Date(Date.now() + 3600000).toISOString();
+    var scheduledEndsAt = new Date(Date.now() + 10800000).toISOString();
+
     var productA = trackProduct(qaCreateOrderQaProduct_(adminToken, fx.shipping, fx.stamp, 'E2EMegaA' + labelSuffix, 20, {
-      price:1000
+      price:1000,
+      sale_mode:'scheduled', sale_starts_at:new Date(Date.now() - 3600000).toISOString(), sale_ends_at:saleEndsAt
     }));
     var productB = trackProduct(qaCreateOrderQaProduct_(adminToken, fx.shipping, fx.stamp, 'E2EMegaB' + labelSuffix, 20, {
       price:600
@@ -563,14 +569,15 @@ function e2ePrepareMegaPromotionGiftFixtureRpc(adminToken) {
     }));
     var variantMKey = 'Size=M';
     var variantSKey = 'Size=S';
-
     var directBE = trackPromotion(qaCreatePromotion_(adminToken, productB.id, fx.stamp, 'E2EMegaDirectBE' + labelSuffix, {
       discount_type:'percent', discount_value:10, target_type:'product',
-      target:[{ product_id:productB.id }, { product_id:productE.id }]
+      target:[{ product_id:productB.id }, { product_id:productE.id }],
+      ends_at:countdownEndsAt, no_end_date:false
     }));
     var conditionalSubtotalAll = trackPromotion(qaCreatePromotion_(adminToken, '', fx.stamp, 'E2EMegaSubtotalAll' + labelSuffix, {
       discount_type:'fixed', discount_value:20, target_type:'all', target:[],
-      application_mode:'conditional', condition_type:'min_subtotal', condition_json:{ min_subtotal:9500 }
+      application_mode:'conditional', condition_type:'min_subtotal', condition_json:{ min_subtotal:9500 },
+      ends_at:countdownEndsAt, no_end_date:false
     }));
     var conditionalProductAll = trackPromotion(qaCreatePromotion_(adminToken, productB.id, fx.stamp, 'E2EMegaProductAll' + labelSuffix, {
       discount_type:'fixed', discount_value:100, target_type:'product', target:[{ product_id:productB.id }],
@@ -612,15 +619,18 @@ function e2ePrepareMegaPromotionGiftFixtureRpc(adminToken) {
     var giftProductAnyLabel = 'E2EMegaProductAny' + labelSuffix;
     var giftVariantAllLabel = 'E2EMegaVariantAll' + labelSuffix;
     var giftVariantAnyLabel = 'E2EMegaVariantAny' + labelSuffix;
+    var giftScheduledLabel = 'E2EMegaScheduled' + labelSuffix;
     var giftSubtotal = trackGift(qaCreateGiftItem_(adminToken, fx.stamp, giftSubtotalLabel, { stock:50 }));
     var giftProductAll = trackGift(qaCreateGiftItem_(adminToken, fx.stamp, giftProductAllLabel, { stock:50 }));
     var giftProductAny = trackGift(qaCreateGiftItem_(adminToken, fx.stamp, giftProductAnyLabel, { stock:50 }));
     var giftVariantAll = trackGift(qaCreateGiftItem_(adminToken, fx.stamp, giftVariantAllLabel, { stock:50 }));
     var giftVariantAny = trackGift(qaCreateGiftItem_(adminToken, fx.stamp, giftVariantAnyLabel, { stock:50 }));
+    var giftScheduled = trackGift(qaCreateGiftItem_(adminToken, fx.stamp, giftScheduledLabel, { stock:50 }));
 
     var ruleSubtotal = trackRule(qaCreateGiftRule_(adminToken, fx.stamp, giftSubtotalLabel, giftSubtotal.gift_id, {
       condition_type:'min_subtotal', condition_json:{ min_subtotal:3000 },
-      gift_qty:1, repeat_mode:'per_threshold', priority:9500
+      gift_qty:1, repeat_mode:'per_threshold', priority:9500,
+      ends_at:countdownEndsAt, no_end_date:false
     }));
     var ruleProductAll = trackRule(qaCreateGiftRule_(adminToken, fx.stamp, giftProductAllLabel, giftProductAll.gift_id, {
       condition_type:'required_products',
@@ -654,6 +664,11 @@ function e2ePrepareMegaPromotionGiftFixtureRpc(adminToken) {
         { product_id:variantProduct.id, variant_key:variantSKey, min_qty:1 }
       ]},
       gift_qty:1, repeat_mode:'per_threshold', priority:9100
+    }));
+    var ruleScheduled = trackRule(qaCreateGiftRule_(adminToken, fx.stamp, giftScheduledLabel, giftScheduled.gift_id, {
+      condition_type:'min_subtotal', condition_json:{ min_subtotal:1 },
+      gift_qty:1, repeat_mode:'once_per_order', priority:9000,
+      starts_at:scheduledStartsAt, ends_at:scheduledEndsAt, no_end_date:false
     }));
 
     e2eCheckoutFlush_();
@@ -690,6 +705,9 @@ function e2ePrepareMegaPromotionGiftFixtureRpc(adminToken) {
         { id:giftVariantAll.gift_id, rule_id:ruleVariantAll.rule_id, name:giftName(giftVariantAllLabel), qty:3 },
         { id:giftVariantAny.gift_id, rule_id:ruleVariantAny.rule_id, name:giftName(giftVariantAnyLabel), qty:5 }
       ],
+      scheduled_campaign:{
+        id:giftScheduled.gift_id, rule_id:ruleScheduled.rule_id, name:giftName(giftScheduledLabel)
+      },
       expected:{
         raw_subtotal:10050,
         direct_subtotal:9750,
@@ -697,7 +715,7 @@ function e2ePrepareMegaPromotionGiftFixtureRpc(adminToken) {
         shipping_fee:125,
         total:8535,
         product_stock:{ a:17, b:16, d:15, e:18, variant_m:8, variant_s:7 },
-        gift_stock:[47, 48, 46, 47, 45]
+        gift_stock:[47, 48, 46, 47, 45, 50]
       }
     };
   } catch(err) {
@@ -7228,10 +7246,13 @@ function qaRunGiftRequiredProductsMinQtyFlow_(ctx) {
 }
 
 function qaRunGiftMinSubtotalFlow_(ctx) {
+  var endsAt = new Date(Date.now() + 86400000).toISOString();
   var fx = qaCreateGiftEligibilityFixture_(ctx, 'MinSubtotal', {
     condition_type: 'min_subtotal',
     min_subtotal: 1000,
-    product_price: 600
+    product_price: 600,
+    ends_at: endsAt,
+    no_end_date: false
   });
   var caught = null, output = null;
   try {
@@ -7240,6 +7261,12 @@ function qaRunGiftMinSubtotalFlow_(ctx) {
     qaAssertOk_(low); qaAssertOk_(high);
     qaAssert_(!qaHasEligibleRule_(low, fx.rule_id), 'ยอด 600 ต้องยังไม่ eligible', low);
     qaAssert_(qaHasEligibleRule_(high, fx.rule_id), 'ยอด 1200 ต้อง eligible', high);
+    var nearEntry = (low.near || []).filter(function(e){ return String(e.rule_id) === String(fx.rule_id); })[0];
+    var eligibleEntry = (high.eligible || []).filter(function(e){ return String(e.rule_id) === String(fx.rule_id); })[0];
+    qaAssert_(nearEntry && nearEntry.starts_at && nearEntry.ends_at === endsAt && nearEntry.no_end_date === false,
+      'Gift near preview must expose its active schedule', nearEntry);
+    qaAssert_(eligibleEntry && eligibleEntry.starts_at && eligibleEntry.ends_at === endsAt && eligibleEntry.no_end_date === false,
+      'Gift eligible preview must expose its active schedule', eligibleEntry);
     output = { low_subtotal: low.subtotal_after_promo, high_subtotal: high.subtotal_after_promo };
   } catch (err) { caught = err; }
   var cleanup = qaCleanupGiftFixture_(fx);
@@ -12495,12 +12522,17 @@ function qaRunPromotionConditionalSubtotalAfterDirectFlow_(ctx) {
     var direct = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'SubtotalDirect', { discount_value:200 });
     fx.promotion_ids.push(direct.promotion_id);
     Utilities.sleep(5);
+    var conditionalEndsAt = new Date(Date.now() + 86400000).toISOString();
     var conditional = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'SubtotalConditional', {
-      discount_value:100, application_mode:'conditional', condition_type:'min_subtotal', condition_json:{ min_subtotal:900 }
+      discount_value:100, application_mode:'conditional', condition_type:'min_subtotal', condition_json:{ min_subtotal:900 },
+      ends_at:conditionalEndsAt, no_end_date:false
     });
     fx.promotion_ids.push(conditional.promotion_id);
     var below = qaPreviewPromo_([qaCartItem_(product.id, 1, {})]);
     qaAssert_(!qaPromoEligibleHas_(below, conditional.promotion_id) && qaPromoNearHas_(below, conditional.promotion_id), 'Threshold 900 must use direct-discount subtotal 800', below);
+    var belowEntry = (below.near || []).filter(function(e){ return String(e.promotion_id) === String(conditional.promotion_id); })[0];
+    qaAssert_(belowEntry && belowEntry.starts_at && belowEntry.ends_at === conditionalEndsAt && belowEntry.no_end_date === false,
+      'Promotion near preview must expose its active schedule', belowEntry);
     var belowLine = qaPromoPreviewLine_(below, product.id, '');
     qaAssert_(Number(belowLine.unit_final_price) === 800 && String(belowLine.promotion.promotion_id) === String(direct.promotion_id), 'Unqualified conditional must fall back to direct price 800', belowLine);
 
@@ -12515,6 +12547,8 @@ function qaRunPromotionConditionalSubtotalAfterDirectFlow_(ctx) {
     qaAssert_(exactEntry && exactEntry.applied === false
       && Array.isArray(exactEntry.outpriced_lines) && exactEntry.outpriced_lines.length === 1,
       'Outpriced qualified conditional must report applied:false + outpriced_lines', exactEntry);
+    qaAssert_(exactEntry.starts_at && exactEntry.ends_at === conditionalEndsAt && exactEntry.no_end_date === false,
+      'Promotion eligible preview must expose its active schedule', exactEntry);
     qaSubmitAndAssertMatchesPreview_(fx, 'SubtotalAfterDirect', [qaCartItem_(product.id, 1, {})], exact);
     output = { direct:direct.promotion_id, conditional:conditional.promotion_id, below:below, exact:exact };
   } catch (err) { caught = err; }
