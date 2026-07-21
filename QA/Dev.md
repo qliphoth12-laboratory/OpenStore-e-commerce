@@ -193,7 +193,11 @@ Write tests จะสร้างข้อมูลชั่วคราว (ส
 | **Gifts** | gift campaigns, eligibility preview, stock behavior |
 | **Auth** | session validation, RPC auth guards |
 | **Routes** | HTTP route smoke (ตรวจว่า page render ไม่พัง) |
-| **Orders** | สร้าง order, idempotency, stock race, variant race, gift race, full commerce flow |
+| **Orders** | สร้าง order, promotion/gift rule updates, schedule ระหว่าง preview/submit, multiplied gifts, idempotency, stock lifecycle/race, production summary และ full commerce flow |
+
+ชุด `orders.rules-*` ตรวจ contract ของ Promotion/Gift รุ่นใหม่ในระดับออร์เดอร์จริง ได้แก่ conditional pricing, `discount_scope=order_total`, `match_mode` แบบ ALL/ANY, `repeat_mode=per_threshold`, rule activation/expiry, stale pricing หลังแก้ promotion, snapshot หลังแก้หรือลบ rule, การกระจายส่วนลดท้ายบิลใน split shipping, หลาย promotion/gift ใน cart เดียว, client pricing, stock, cancel/un-cancel, idempotency, production summary และการไม่คิด gift เข้า subtotal/ค่าขนส่ง
+
+Mega coverage มีทั้ง flow 6 product lines ที่ให้ promotion ระดับ item และ order-total รวม 8 ตัวแข่งขันพร้อม gift rules 5 ตัว และ flow recovery ที่แก้ promotion ระหว่าง preview/submit เพื่อตรวจ `PRICE_CHANGED`, refresh/resubmit, immutable snapshot และ stock lifecycle แบบครบวงจร
 
 ### Concurrent / Race Tests (Orders)
 
@@ -215,9 +219,9 @@ test เหล่านี้ต้องการ:
 - **ระยะเวลา** (ms)
 - **รายละเอียด** (กดเปิด accordion)
 - **Run log** — log แต่ละขั้น พร้อม request/response ที่ sanitize แล้ว
-- **PDF** — download รายงาน testcase นั้นเป็น PDF
+- **JSON** — download ผลของ testcase นั้นพร้อมรายละเอียดและ run log เป็น JSON
 
-Raw JSON ของผลทั้งหมดดูได้ที่ "Raw JSON" ด้านล่าง
+ปุ่ม **Export JSON** ด้านบนใช้ download ผลทั้งรอบ โดยมี report, test manifest, results และ logs ส่วน Raw JSON ของผลล่าสุดยังดูได้ที่ "Raw JSON" ด้านล่าง
 
 ### Trace Events (Server-side streaming)
 
