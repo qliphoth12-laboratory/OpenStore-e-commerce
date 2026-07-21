@@ -431,6 +431,12 @@ function getDeliveredCache_(trackingJson) {
 // Persist the delivered tracking result inside the order's tracking_json (encrypted)
 // Also updates order status to 'delivered' and appends status_history entry
 function saveDeliveredCache_(sh, rowNo, row, trackingJson, unifiedResult, currentStatus) {
+  // Same script lock as the admin order-write paths — this runs on a customer-triggered
+  // RPC and must not clobber a concurrent admin edit of the same order row.
+  var lock = LockService.getScriptLock();
+  var locked = false;
+  try { locked = lock.tryLock(5000); } catch(_) {}
+  if (!locked) return; // skip caching this round; next tracking call will retry
   try {
     var now = nowISO_();
     var lastEventTime = (unifiedResult.events && unifiedResult.events.length)
@@ -463,9 +469,12 @@ function saveDeliveredCache_(sh, rowNo, row, trackingJson, unifiedResult, curren
       sh.getRange(rowNo, histColIdx).setValue(JSON.stringify(history));
     }
 
-    try { rebuildSnap_(); } catch(_) {}
+    // NOTE: no rebuildSnap_() here — the product snapshot doesn't depend on order
+    // rows, and this is a public code path that shouldn't pay for a rebuild.
   } catch(_) {
     // Never let cache write failures break the tracking response
+  } finally {
+    try { lock.releaseLock(); } catch(_) {}
   }
 }
 
