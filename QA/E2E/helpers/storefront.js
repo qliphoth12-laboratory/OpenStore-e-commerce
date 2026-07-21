@@ -15,6 +15,21 @@ function adminToken() {
   return requiredConfig('adminToken', loadE2eConfig().adminToken);
 }
 
+function fixtureRpcError(action, result) {
+  const code = result && result.error ? String(result.error) : 'UNKNOWN_ERROR';
+  if (code === 'AUTH_REQUIRED' || code === 'SESSION_INVALID') {
+    const cfg = loadE2eConfig();
+    const source = process.env.E2E_ADMIN_TOKEN ? 'E2E_ADMIN_TOKEN' : 'e2e.config.local.json';
+    const loginUrl = `${String(cfg.baseUrl || '').replace(/\/+$/, '')}?page=login`;
+    return new Error(
+      `${action} failed: ${code}. The admin session from ${source} is invalid or expired. `
+      + `Log in to the same Apps Script deployment (${loginUrl}), copy localStorage `
+      + 'ADMIN_SESSION_V1, then replace the E2E token. Admin sessions expire after 6 hours.'
+    );
+  }
+  return new Error(`${action} failed: ${code}`);
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -43,11 +58,14 @@ async function openStorefront(page) {
   await frame.locator('body').waitFor({ state: 'visible' });
 }
 
-async function waitForGoogleScriptRun(page) {
-  const timeoutMs = loadE2eConfig().googleScriptTimeoutMs;
+async function waitForGoogleScriptRun(page, timeoutOverrideMs) {
+  const timeoutMs = Number.isFinite(Number(timeoutOverrideMs))
+    ? Math.max(0, Number(timeoutOverrideMs))
+    : loadE2eConfig().googleScriptTimeoutMs;
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
+    if (page.isClosed()) throw new Error('Page was closed while waiting for google.script.run');
     for (const frame of page.frames()) {
       const ready = await frame.evaluate(
         () => !!(window.google && window.google.script && window.google.script.run)
@@ -110,7 +128,7 @@ async function prepareFixture(page, scenario) {
 async function prepareMegaPromotionGiftFixture(page) {
   const result = await gasRun(page, 'e2ePrepareMegaPromotionGiftFixtureRpc', [adminToken()]);
   if (!result || !result.ok) {
-    throw new Error(`prepare mega promotion/gift fixture failed: ${result && result.error}`);
+    throw fixtureRpcError('prepare mega promotion/gift fixture', result);
   }
   const productTitles = Object.values(result.products || {}).map((product) => product.title);
   try {
@@ -149,7 +167,7 @@ async function inspectMegaPromotionGiftFixture(page, fixture) {
 async function prepareOrderTotalPromoFixture(page) {
   const result = await gasRun(page, 'e2ePrepareOrderTotalPromoFixtureRpc', [adminToken()]);
   if (!result || !result.ok) {
-    throw new Error(`prepare order-total promo fixture failed: ${result && result.error}`);
+    throw fixtureRpcError('prepare order-total promo fixture', result);
   }
   try {
     await waitForPreparedProducts(page, [result.product.title], result.runId);
@@ -408,7 +426,11 @@ async function expectSwal(page, titlePattern, bodyPattern) {
 }
 
 async function closeSwal(page) {
-  const frame = await waitForGoogleScriptRun(page).catch(() => null);
+  // Teardown must stay quick when Playwright is already stopping/closing the page.
+  // The normal helper can wait up to 3 minutes for a cold Apps Script frame, which
+  // otherwise prevents a failed worker from exiting promptly.
+  if (page.isClosed()) return;
+  const frame = await waitForGoogleScriptRun(page, 3000).catch(() => null);
   if (!frame) return;
   const popup = frame.locator('.swal2-popup');
   if (await popup.isVisible().catch(() => false)) {

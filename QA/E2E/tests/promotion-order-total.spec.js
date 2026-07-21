@@ -59,13 +59,37 @@ test.describe('order-total (whole-order) discount customer workflow in Chromium'
     await openCart(page);
     const frame = await waitForGoogleScriptRun(page);
 
-    // Cart shows the eligibility panel, the order-total discount row, and the net total.
-    // The eligibility preview is async (debounced) → poll for the discount row.
-    await expect(frame.locator('#cartPromoPreview')).toBeVisible();
-    await expect(frame.locator('#cartPromoPreview')).toContainText(promotion.name);
-    await expect(frame.locator('#cartOrderDiscountRow')).toBeVisible({ timeout: 30_000 });
-    await expectMoney(frame.locator('#cartOrderDiscount'), -expected.order_discount);
-    // Per-unit price is unchanged (order-total never edits the line price): 2 × 1000 − 300 = 1700.
+    // The async preview must expose this exact fixture promotion as the winning cart-wide
+    // discount. Verify the RPC-backed state as well as what the customer can actually see.
+    const promoRow = frame.locator('#cartPromoPreview .cart-gift-section.is-earned .cart-promo-row')
+      .filter({ hasText: promotion.name });
+    await expect(promoRow).toHaveCount(1, { timeout: 120_000 });
+    await expect(promoRow).not.toHaveClass(/\bis-outpriced\b/);
+    await expect(promoRow.locator('.cart-gift-inline-qty')).toContainText('จากยอดรวมสินค้า');
+    await expectMoney(promoRow.locator('.cart-gift-inline-qty'), expected.order_discount);
+
+    await expect.poll(async () => frame.evaluate((promotionId) => {
+      const preview = window._promoPreviewLastResult || {};
+      const discount = preview.order_discount || {};
+      const winner = discount.promotion || {};
+      return {
+        ok: preview.ok === true,
+        promotionId: String(winner.promotion_id || ''),
+        amount: Number(discount.amount || 0),
+        netSubtotal: Number(preview.subtotal_after_order_discount || 0)
+      };
+    }, String(promotion.id))).toEqual({
+      ok: true,
+      promotionId: String(promotion.id),
+      amount: expected.order_discount,
+      netSubtotal: expected.subtotal_after_order_discount
+    });
+
+    // Per-unit price remains unchanged: 2 × 1000, then the order-level discount is applied once.
+    const cartLine = frame.locator('#cartBody .cart-order-row').filter({ hasText: product.title });
+    await expect(cartLine).toHaveCount(1);
+    await expectMoney(cartLine.locator('.cart-unit-price strong'), product.price);
+    await expectMoney(cartLine.locator('.cart-price-sub strong'), expected.subtotal);
     await expectMoney(frame.locator('#cartTotal'), expected.subtotal_after_order_discount);
 
     // Checkout confirm modal: subtotal, order-total discount line, and net-of-discount total.
