@@ -1,30 +1,60 @@
 # QA Developer Guide
 
-คู่มือนี้อธิบายเครื่องมือทดสอบทั้งหมดใน folder `QA/` ครอบคลุม Performance, Integration, และ E2E — รวมถึงวิธีติดตั้ง, ตั้งค่า, รัน, และอ่านผล
+คู่มือนี้อ้างอิง **Open Storefront `v1.1.0`** และอธิบายเครื่องมือทดสอบทั้งหมดใน folder `QA/`
+ครอบคลุม Unit, Performance, Integration และ E2E รวมถึงวิธีติดตั้ง ตั้งค่า รัน และอ่านผล
 
 ---
 
-## ภาพรวม: มีเครื่องมือ 3 ชุด
+## ภาพรวม: มีเครื่องมือ 4 ชุด
 
 | ชุด | Folder | รันที่ไหน | ทดสอบอะไร |
 |---|---|---|---|
+| **Unit** | `QA/unit/` | เครื่อง local (Node.js) | pricing parity และ zero-trust cart/variant/quantity contract |
 | **Performance** | `QA/performance/` | เครื่อง local (Node.js) | วัดความเร็วและรับโหลดของหน้า storefront (GET เท่านั้น) |
 | **Integration** | `QA/Integration/` | Google Apps Script (GAS) | ทดสอบ backend RPC ทุก flow แบบ real data |
 | **E2E** | `QA/E2E/` | เครื่อง local (Playwright + Chromium) | ทดสอบ UI browser-level บน deployed GAS จริง |
 
-ทั้งสามชุดทำงานร่วมกันแต่ใช้คนละ layer:
+ทั้งสี่ชุดทำงานร่วมกันแต่ใช้คนละ layer:
 
 ```
 E2E (Playwright)        ← ทดสอบ UI ที่ผู้ใช้เห็น
      ↓
 Integration (GAS)       ← ทดสอบ backend logic + data flow
      ↓
-Performance (Node.js)   ← ทดสอบว่ารับโหลดได้แค่ไหน
+Unit (Node.js)          ← ทดสอบฟังก์ชันสำคัญแบบเร็วและไม่แตะข้อมูลจริง
+
+Performance (Node.js)   ← ทดสอบกำลังรับโหลดของหน้า GET แยกจาก functional flow
 ```
 
 ---
 
-## 1. Performance Test
+## 1. Unit Test
+
+Unit tests ไม่ต้อง deploy, ไม่เรียก network, ไม่ใช้ Google Sheets และไม่มี dependency ภายนอก ต้องมีเพียง Node.js 18 ขึ้นไป
+
+รันจาก root ของ repository:
+
+```powershell
+npm --prefix QA/unit test
+```
+
+หรือรันแยก:
+
+```powershell
+node QA/unit/pricing-parity.test.js
+node QA/unit/order-cart-validation.test.js
+```
+
+| Test file | ตรวจอะไร |
+|---|---|
+| `pricing-parity.test.js` | ราคา variant, promotion, order-total discount และยอดรวมของ `index.html` กับ `edit-store.html` ต้องตรงกัน |
+| `order-cart-validation.test.js` | variant ต้องครบ, ห้าม group/option ปลอม, quantity/resource limits และค่าราคา/น้ำหนัก/stock ต้องมาจาก server |
+
+ให้รัน Unit ก่อน Integration/E2E เสมอ เพราะเร็วและไม่สร้าง fixture จริง
+
+---
+
+## 2. Performance Test
 
 ### สิ่งที่ต้องมี
 
@@ -122,11 +152,11 @@ node run-performance-test.js --config config.json --preset smoke --users 10 --du
 
 ---
 
-## 2. Integration Test
+## 3. Integration Test
 
 ### สิ่งที่ต้องมี
 
-- Google Apps Script project ที่ deploy แล้ว (GAS project เดียวกับ backend.gs)
+- Google Apps Script project ที่ deploy แล้ว (GAS project เดียวกับ `code.gs`)
 - บัญชี Admin ของระบบ
 
 ### ติดตั้ง (ครั้งแรก)
@@ -138,19 +168,20 @@ Integration tests รันใน **GAS environment** ไม่ใช่ local �
 3. วาง content จาก `QA/Integration/integration-tests.gs` ลงไป
 4. สร้างไฟล์ใหม่ชื่อ **`integration-dashboard`** (ประเภท HTML)
 5. วาง content จาก `QA/Integration/integration-dashboard.html` ลงไป
-6. บันทึก
+6. บันทึกและ update QA/test Web App deployment ให้รวมสองไฟล์นี้
 
-> ไม่ต้อง deploy ใหม่ — ทั้งสองไฟล์ใช้ `google.script.run` ภายใน GAS environment เดิมได้เลย
+> ห้ามติดตั้ง integration helpers ใน production deployment เพราะ write/E2E fixtures สามารถสร้างและลบข้อมูลจริงได้
 
 ### เปิด Dashboard
 
-ใน GAS editor เลือกฟังก์ชัน `qaOpenIntegrationDashboard` แล้วกด **Run**:
+เปิด dashboard ผ่าน QA Web App URL:
 
-```
-qaOpenIntegrationDashboard()
+```text
+https://script.google.com/macros/s/DEPLOYMENT_ID/exec?page=qa-integration
 ```
 
-Dashboard จะเปิดเป็น sidebar ใน GAS editor (ไม่ใช่ browser tab แยก)
+หรือใช้ test deployment URL (`/dev?page=qa-integration`) จากบัญชีที่มีสิทธิ์แก้ Apps Script project
+ฟังก์ชัน `qaOpenIntegrationDashboard()` คืน `HtmlOutput` สำหรับเรียกจากโค้ด/เครื่องมือ แต่การกด Run ใน editor ไม่ได้เปิด sidebar อัตโนมัติ
 
 ### ล็อกอิน Admin ใน Dashboard
 
@@ -178,7 +209,8 @@ Test ส่วนใหญ่เป็น **read-only** (อ่านข้อ�
 
 Test ที่ **เขียนข้อมูลจริง** ต้องเปิด toggle **"Enable real write tests"** ก่อน — และต้องล็อกอิน admin ก่อนเสมอ
 
-Write tests จะสร้างข้อมูลชั่วคราว (สินค้า QA, โปรโมชั่น QA, ของแถม QA, order จริง) แล้วลบ master data ให้หลังรัน แต่ **order ที่เกิดขึ้นจะยังอยู่ใน orders sheet**
+Write tests จะสร้างข้อมูลชั่วคราว เช่น สินค้า โปรโมชั่น ของแถม shipping และ order จริง แล้วเรียก cleanup หลังรัน
+ให้ตรวจ `details.cleanup` ทุกครั้ง เพราะบาง failure/partial-write อาจจงใจเก็บ order ไว้เป็นหลักฐานหรือ cleanup ไม่สำเร็จ
 
 ### หมวด Test ที่มี
 
@@ -193,7 +225,11 @@ Write tests จะสร้างข้อมูลชั่วคราว (ส
 | **Gifts** | gift campaigns, eligibility preview, stock behavior |
 | **Auth** | session validation, RPC auth guards |
 | **Routes** | HTTP route smoke (ตรวจว่า page render ไม่พัง) |
-| **Orders** | สร้าง order, idempotency, stock race, variant race, gift race, full commerce flow |
+| **Orders** | สร้าง order, promotion/gift rule updates, schedule ระหว่าง preview/submit, multiplied gifts, idempotency, stock lifecycle/race, production summary และ full commerce flow |
+
+ชุด `orders.rules-*` ตรวจ contract ของ Promotion/Gift รุ่นใหม่ในระดับออร์เดอร์จริง ได้แก่ conditional pricing, `discount_scope=order_total`, `match_mode` แบบ ALL/ANY, `repeat_mode=per_threshold`, rule activation/expiry, stale pricing หลังแก้ promotion, snapshot หลังแก้หรือลบ rule, การกระจายส่วนลดท้ายบิลใน split shipping, หลาย promotion/gift ใน cart เดียว, client pricing, stock, cancel/un-cancel, idempotency, production summary และการไม่คิด gift เข้า subtotal/ค่าขนส่ง
+
+Mega coverage มีทั้ง flow 6 product lines ที่ให้ promotion ระดับ item และ order-total รวม 8 ตัวแข่งขันพร้อม gift rules 5 ตัว และ flow recovery ที่แก้ promotion ระหว่าง preview/submit เพื่อตรวจ `PRICE_CHANGED`, refresh/resubmit, immutable snapshot และ stock lifecycle แบบครบวงจร
 
 ### Concurrent / Race Tests (Orders)
 
@@ -215,9 +251,9 @@ test เหล่านี้ต้องการ:
 - **ระยะเวลา** (ms)
 - **รายละเอียด** (กดเปิด accordion)
 - **Run log** — log แต่ละขั้น พร้อม request/response ที่ sanitize แล้ว
-- **PDF** — download รายงาน testcase นั้นเป็น PDF
+- **JSON** — download ผลของ testcase นั้นพร้อมรายละเอียดและ run log เป็น JSON
 
-Raw JSON ของผลทั้งหมดดูได้ที่ "Raw JSON" ด้านล่าง
+ปุ่ม **Export JSON** ด้านบนใช้ download ผลทั้งรอบ โดยมี report, test manifest, results และ logs ส่วน Raw JSON ของผลล่าสุดยังดูได้ที่ "Raw JSON" ด้านล่าง
 
 ### Trace Events (Server-side streaming)
 
@@ -225,7 +261,7 @@ Raw JSON ของผลทั้งหมดดูได้ที่ "Raw JSON"
 
 ---
 
-## 3. E2E Test (Playwright)
+## 4. E2E Test (Playwright)
 
 ### สิ่งที่ต้องมี
 
@@ -281,6 +317,8 @@ $env:E2E_ADMIN_TOKEN = "your-token-here"
 | คำสั่ง | ผล |
 |---|---|
 | `npm run e2e` | รันทุก spec ใน headless mode |
+| `npm run e2e:mega` | รันเฉพาะ mega promotion/gift workflow |
+| `npm run e2e:order-total` | รันเฉพาะ order-total promotion workflow |
 | `npm run e2e:headed` | รันพร้อม browser เปิดให้เห็น |
 | `npm run e2e:ui` | เปิด Playwright UI Mode (interactive, เลือก spec และดู trace) |
 | `npm run e2e:report` | เปิด HTML report จากรอบที่รันล่าสุด |
@@ -337,11 +375,22 @@ $env:E2E_ADMIN_TOKEN = "your-token-here"
 | success card + pay link | กด checkout สำเร็จ → แสดง success card มีลิงก์ชำระเงิน |
 | double-click guard | ปุ่ม submit disable ขณะ request in-flight |
 
+#### `tests/mega-promotion-gift.spec.js`
+
+- checkout หก product lines ที่มี item/order-total promotions แข่งขันกันแปดรายการและ gift rules ห้ารายการ
+- ตรวจ best-price/outpriced UI, gift multiplier, totals, success popup, token order view และ stock หลัง submit
+
+#### `tests/promotion-order-total.spec.js`
+
+- ตรวจ conditional fixed order-total discount ตั้งแต่ cart preview ถึง persisted order
+- ยืนยันว่า unit price ไม่ถูกลดซ้ำ ส่วนลดหักครั้งเดียว และ total รวม shipping ถูกต้อง
+
 ### วิธีทำงานของ E2E Fixtures
 
 ก่อน suite รัน → `e2eCleanupAllCheckoutWarningFixturesRpc()` ล้าง fixture เก่า `E2E-…` ที่ค้างไว้
 
-แต่ละ test → `e2ePrepareCheckoutWarningFixtureRpc(scenario)` สร้างสินค้า/โปรโมชั่น/ของแถม/ราคาแบบเฉพาะสำหรับ scenario นั้น แล้วรอ polling จนสินค้าขึ้นบนหน้าร้านจริงก่อนเริ่มกด UI
+spec ทั่วไปใช้ `e2ePrepareCheckoutWarningFixtureRpc(scenario)` ส่วน mega และ order-total ใช้ prepare/inspect/cleanup RPC เฉพาะของตน
+ทุก flow สร้างข้อมูลเฉพาะ run แล้วรอ polling จนสินค้าขึ้นบนหน้าร้านจริงก่อนเริ่มกด UI
 
 หลัง test → `afterEach` เรียก cleanup ลบ fixture ของรอบนั้น
 
@@ -363,11 +412,12 @@ GAS อาจโหลดช้าหลัง deploy ใหม่ — timeout �
 
 | สถานการณ์ | เครื่องมือ |
 |---|---|
+| แก้สูตรราคา/variant/quantity แล้วต้องการ feedback เร็ว | Unit (`npm --prefix QA/unit test`) |
 | ต้องการรู้ว่าหน้าร้านรับ user กี่คนพร้อมกัน | Performance (`npm run step`) |
 | แก้ backend แล้วอยากตรวจว่า logic ยังถูกต้อง | Integration (ผ่าน GAS Dashboard) |
 | อยากตรวจว่า UI popup เตือน / form / cart ทำงานถูก | E2E (`npm run e2e`) |
-| ก่อน deploy ทุกครั้ง (CI gate) | Integration read-only + E2E |
-| หลัง deploy ใหม่ | Performance smoke + Integration smoke |
+| ก่อน deploy ทุกครั้ง (release gate) | Unit + Integration บน QA deployment + E2E |
+| หลัง deploy ใหม่ | Integration smoke + E2E critical flow + Performance smoke |
 
 ---
 
@@ -380,10 +430,10 @@ GAS อาจโหลดช้าหลัง deploy ใหม่ — timeout �
 → แก้ `targetUrl` ใน `config.json` ให้เป็น URL จริง
 
 ### Integration: `ต้องเปิด dashboard ผ่าน Apps Script HtmlService`
-→ ต้องรัน `qaOpenIntegrationDashboard()` จาก GAS editor ไม่ใช่เปิด HTML file โดยตรง
+→ เปิด QA Web App ด้วย `?page=qa-integration` ไม่ใช่เปิด HTML file จาก disk โดยตรง
 
 ### Integration: testcase fail ทั้งหมดหลัง copy ไฟล์
-→ ตรวจว่า `integration-tests.gs` อยู่ใน GAS project **เดียวกัน** กับ `backend.gs` และ deploy ล่าสุด
+→ ตรวจว่า `integration-tests.gs` อยู่ใน GAS project **เดียวกัน** กับ `code.gs` และ QA deployment ใช้ version ล่าสุด
 
 ### E2E: `e2e.config.local.json` ไม่มี
 → รัน `Copy-Item e2e.config.example.json e2e.config.local.json` แล้วใส่ค่าจริง

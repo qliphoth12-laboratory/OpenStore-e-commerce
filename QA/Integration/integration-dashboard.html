@@ -759,6 +759,10 @@
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 9-14 9V3z"/></svg>
           Run all
         </button>
+        <button class="btn" id="btnExportJson" type="button" title="ดาวน์โหลดผล integration test ทั้งรอบเป็น JSON" disabled>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+          Export JSON
+        </button>
       </div>
     </section>
 
@@ -886,6 +890,7 @@
       btnManifest: document.getElementById('btnManifest'),
       btnRun: document.getElementById('btnRun'),
       btnRunAll: document.getElementById('btnRunAll'),
+      btnExportJson: document.getElementById('btnExportJson'),
       btnSelectVisible: document.getElementById('btnSelectVisible'),
       btnClearSelection: document.getElementById('btnClearSelection'),
       btnClearLog: document.getElementById('btnClearLog'),
@@ -953,6 +958,25 @@
         return out;
       }
       return String(value);
+    }
+
+    function sanitizeForExport(value, key, seen) {
+      if (shouldRedactLogKey(key)) return maskLogValue(value);
+      if (value === null || value === undefined) return value;
+      if (typeof value === 'string') {
+        if (state.adminToken && value === state.adminToken) return maskLogValue(value);
+        if (/^data:/i.test(value)) return '[DATA_URL ' + value.length + ' chars REDACTED]';
+        return value;
+      }
+      if (typeof value === 'number' || typeof value === 'boolean') return value;
+      if (typeof value !== 'object') return String(value);
+      seen = seen || new WeakSet();
+      if (seen.has(value)) return '[Circular reference]';
+      seen.add(value);
+      if (Array.isArray(value)) return value.map(item => sanitizeForExport(item, key, seen));
+      const out = {};
+      Object.keys(value).forEach(k => { out[k] = sanitizeForExport(value[k], k, seen); });
+      return out;
     }
 
     function sanitizeRpcArgsForLog(method, args) {
@@ -1067,6 +1091,7 @@
       els.btnRun.disabled = isBusy;
       els.btnRunAll.disabled = isBusy;
       els.btnManifest.disabled = isBusy;
+      els.btnExportJson.disabled = isBusy || !canDownloadFullJson();
       els.btnSelectVisible.disabled = isBusy;
       els.btnClearSelection.disabled = isBusy;
       els.btnLogin.disabled = isBusy;
@@ -1076,8 +1101,8 @@
       document.querySelectorAll('.case-run, .section-run, .section-select').forEach(control => {
         control.disabled = isBusy;
       });
-      document.querySelectorAll('.case-pdf').forEach(button => {
-        button.disabled = !canDownloadPdf(findCaseResult(button.dataset.id));
+      document.querySelectorAll('.case-json').forEach(button => {
+        button.disabled = !canDownloadJson(findCaseResult(button.dataset.id));
       });
       if (!isBusy) {
         window.setTimeout(() => { els.progressBar.style.width = '0'; }, 500);
@@ -1253,7 +1278,7 @@
               </div>
               <div class="case-actions">
                 <span class="case-time">${Number(item.durationMs || 0)} ms</span>
-                <button class="btn small case-pdf" type="button" data-id="${escapeHtml(item.id)}" ${canDownloadPdf(item) ? '' : 'disabled'} title="Download detailed PDF result">PDF</button>
+                <button class="btn small case-json" type="button" data-id="${escapeHtml(item.id)}" ${canDownloadJson(item) ? '' : 'disabled'} title="Download detailed JSON result">JSON</button>
                 <button class="btn small case-run" type="button" data-id="${escapeHtml(item.id)}" ${state.running ? 'disabled' : ''}>Run</button>
               </div>
             </div>
@@ -1380,10 +1405,10 @@
           runSelected([event.currentTarget.dataset.id], event.currentTarget.dataset.id);
         });
       });
-      Array.from(document.querySelectorAll('.case-pdf')).forEach(button => {
+      Array.from(document.querySelectorAll('.case-json')).forEach(button => {
         button.addEventListener('click', event => {
           event.stopPropagation();
-          downloadCasePdf(event.currentTarget.dataset.id);
+          downloadCaseJson(event.currentTarget.dataset.id);
         });
       });
       Array.from(document.querySelectorAll('.section-run')).forEach(button => {
@@ -1416,9 +1441,16 @@
       return state.logs.filter(entry => entry.testId === testId);
     }
 
-    function canDownloadPdf(item) {
+    function canDownloadJson(item) {
       const status = item && (item.status || 'pending');
       return !state.running && status !== 'pending' && status !== 'running';
+    }
+
+    function canDownloadFullJson() {
+      return !state.running && state.results.some(item => {
+        const status = item && (item.status || 'pending');
+        return status !== 'pending' && status !== 'running';
+      });
     }
 
     function findCaseResult(testId) {
@@ -1435,269 +1467,69 @@
         .slice(0, 120);
     }
 
-    function addPdfLines(lines, text, style) {
-      String(text == null ? '' : text).split(/\r?\n/).forEach(line => {
-        lines.push({ style: style || 'body', text: line });
-      });
+    function jsonExportTimestamp() {
+      return new Date().toISOString().replace(/[:.]/g, '-');
     }
 
-    function buildCasePdfLines(item) {
-      const logs = logsForCase(item.id);
-      const lines = [];
-      const status = item.status || 'pending';
-
-      lines.push({ style: 'title', text: 'รายงานผล Integration Test' });
-      lines.push({ style: 'subtitle', text: item.title || item.id });
-      lines.push({ style: 'muted', text: 'สร้างรายงาน: ' + new Date().toISOString() });
-      lines.push({ style: 'gap', text: '' });
-
-      [
-        ['Testcase ID', item.id],
-        ['Section', caseSectionArea(item)],
-        ['Type', item.type],
-        ['Risk', item.risk],
-        ['Status', status],
-        ['Duration', Number(item.durationMs || 0) + ' ms'],
-        ['Started at', item.startedAt || '-'],
-        ['Ended at', item.endedAt || '-']
-      ].forEach(row => lines.push({ style: 'body', text: row[0] + ': ' + (row[1] == null || row[1] === '' ? '-' : row[1]) }));
-
-      lines.push({ style: 'heading', text: 'รายละเอียด' });
-      addPdfLines(lines, item.description || '-');
-      lines.push({ style: 'heading', text: 'ผลลัพธ์ที่คาดหวัง' });
-      addPdfLines(lines, item.expected || '-');
-
-      if (item.error || item.reason) {
-        lines.push({ style: 'heading', text: status === 'failed' ? 'ข้อผิดพลาด' : 'เหตุผล' });
-        addPdfLines(lines, item.error || item.reason);
-      }
-
-      lines.push({ style: 'heading', text: 'Run log' });
-      if (!logs.length) {
-        lines.push({ style: 'muted', text: 'ยังไม่มี run log สำหรับ testcase นี้' });
-      } else {
-        logs.forEach((entry, index) => {
-          lines.push({ style: 'bodyStrong', text: (index + 1) + '. [' + (entry.status || '-') + '] ' + (entry.at || '') });
-          addPdfLines(lines, entry.message || '');
-          const dataText = compactJson(entry.data || {});
-          if (dataText && dataText !== '{}') {
-            lines.push({ style: 'monoLabel', text: 'log data' });
-            addPdfLines(lines, dataText, 'mono');
-          }
-          lines.push({ style: 'gapSmall', text: '' });
-        });
-      }
-
-      lines.push({ style: 'heading', text: 'ข้อมูลผลลัพธ์ทั้งหมด (JSON)' });
-      addPdfLines(lines, compactJson(item), 'mono');
-      return lines;
+    function buildCaseJsonReport(item) {
+      return {
+        schema_version: 'openstore.qa.integration.testcase.v1',
+        exported_at: new Date().toISOString(),
+        testcase: sanitizeForExport(item, 'testcase'),
+        logs: sanitizeForExport(logsForCase(item.id), 'logs')
+      };
     }
 
-    function setPdfFont(ctx, style) {
-      const family = '"Noto Sans Thai", Tahoma, Arial, sans-serif';
-      if (style === 'title') {
-        ctx.font = '700 36px ' + family;
-        ctx.fillStyle = '#111827';
-        return 48;
-      }
-      if (style === 'subtitle') {
-        ctx.font = '700 25px ' + family;
-        ctx.fillStyle = '#1f2937';
-        return 36;
-      }
-      if (style === 'heading') {
-        ctx.font = '700 24px ' + family;
-        ctx.fillStyle = '#111827';
-        return 38;
-      }
-      if (style === 'bodyStrong') {
-        ctx.font = '700 21px ' + family;
-        ctx.fillStyle = '#111827';
-        return 30;
-      }
-      if (style === 'monoLabel') {
-        ctx.font = '700 18px Consolas, "Courier New", monospace';
-        ctx.fillStyle = '#475569';
-        return 25;
-      }
-      if (style === 'muted') {
-        ctx.font = '20px ' + family;
-        ctx.fillStyle = '#64748b';
-        return 30;
-      }
-      ctx.font = style === 'mono'
-        ? '18px Consolas, "Courier New", monospace'
-        : '21px ' + family;
-      ctx.fillStyle = style === 'mono' ? '#334155' : '#334155';
-      return style === 'mono' ? 25 : 31;
+    function buildFullJsonReport() {
+      return {
+        schema_version: 'openstore.qa.integration.run.v1',
+        exported_at: new Date().toISOString(),
+        report: sanitizeForExport(state.lastReport || null, 'report'),
+        tests: sanitizeForExport(state.tests, 'tests'),
+        results: sanitizeForExport(state.results, 'results'),
+        logs: sanitizeForExport(state.logs, 'logs')
+      };
     }
 
-    function wrapCanvasText(ctx, text, maxWidth) {
-      const out = [];
-      String(text == null ? '' : text).split(/\r?\n/).forEach(line => {
-        if (!line) {
-          out.push('');
-          return;
-        }
-        let current = '';
-        Array.from(line).forEach(ch => {
-          const next = current + ch;
-          if (!current || ctx.measureText(next).width <= maxWidth) {
-            current = next;
-          } else {
-            out.push(current);
-            current = ch;
-          }
-        });
-        out.push(current);
-      });
-      return out;
+    function downloadJsonReport(report, filename) {
+      const json = JSON.stringify(report, null, 2);
+      const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+      downloadBlob(blob, filename);
     }
 
-    function renderCasePdfCanvases(item) {
-      const pageWidth = 1240;
-      const pageHeight = 1754;
-      const margin = 74;
-      const bottomMargin = 90;
-      const canvases = [];
-      let canvas = null;
-      let ctx = null;
-      let y = margin;
-
-      function newPage() {
-        canvas = document.createElement('canvas');
-        canvas.width = pageWidth;
-        canvas.height = pageHeight;
-        ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, pageWidth, pageHeight);
-        canvases.push(canvas);
-        y = margin;
+    function downloadCaseJson(testId) {
+      const item = findCaseResult(testId);
+      if (!canDownloadJson(item)) {
+        els.statusText.textContent = 'Run this testcase before downloading JSON.';
+        return;
       }
-
-      function ensureSpace(height) {
-        if (!canvas) newPage();
-        if (y + height > pageHeight - bottomMargin) newPage();
+      try {
+        const filename = safeFileName('qa-' + item.id + '-' + (item.status || 'result')) + '.json';
+        downloadJsonReport(buildCaseJsonReport(item), filename);
+        els.statusText.textContent = 'Downloaded JSON: ' + filename;
+        addLog('passed', 'Downloaded testcase JSON', { testcase:item.id, filename:filename });
+      } catch (err) {
+        const message = err && err.message ? err.message : String(err);
+        els.statusText.textContent = 'JSON download failed: ' + message;
+        addLog('failed', 'JSON download failed', { testcase:testId, error:message });
       }
-
-      function drawDivider() {
-        ensureSpace(22);
-        ctx.strokeStyle = '#e2e8f0';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(margin, y + 8);
-        ctx.lineTo(pageWidth - margin, y + 8);
-        ctx.stroke();
-        y += 28;
-      }
-
-      buildCasePdfLines(item).forEach(row => {
-        const style = row.style || 'body';
-        if (style === 'gap') {
-          y += 18;
-          return;
-        }
-        if (style === 'gapSmall') {
-          y += 8;
-          return;
-        }
-        if (style === 'heading') {
-          drawDivider();
-        }
-        if (!ctx) newPage();
-        const textStyle = String(row.text || '').trim().match(/^[\[{]/) || String(row.text || '').indexOf('  ') === 0 ? 'mono' : style;
-        const drawStyle = textStyle === 'mono' && style !== 'heading' ? 'mono' : style;
-        const lineHeight = setPdfFont(ctx, drawStyle);
-        const lines = wrapCanvasText(ctx, row.text, pageWidth - margin * 2);
-        lines.forEach(line => {
-          ensureSpace(lineHeight);
-          setPdfFont(ctx, drawStyle);
-          ctx.fillText(line, margin, y);
-          y += lineHeight;
-        });
-      });
-
-      canvases.forEach((page, index) => {
-        const pctx = page.getContext('2d');
-        pctx.font = '18px Arial, sans-serif';
-        pctx.fillStyle = '#94a3b8';
-        pctx.textAlign = 'center';
-        pctx.fillText('Page ' + (index + 1) + ' / ' + canvases.length, pageWidth / 2, pageHeight - 36);
-      });
-      return canvases;
     }
 
-    function dataUrlToBytes(dataUrl) {
-      const base64 = String(dataUrl).split(',')[1] || '';
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-      return bytes;
-    }
-
-    function buildPdfFromJpegs(images, pageWidthPt, pageHeightPt) {
-      const encoder = new TextEncoder();
-      const parts = [];
-      const offsets = [];
-      let length = 0;
-      function pushString(text) {
-        const bytes = encoder.encode(text);
-        parts.push(bytes);
-        length += bytes.length;
+    function downloadFullJson() {
+      if (!canDownloadFullJson()) {
+        els.statusText.textContent = 'Run at least one testcase before exporting JSON.';
+        return;
       }
-      function pushBytes(bytes) {
-        parts.push(bytes);
-        length += bytes.length;
+      try {
+        const filename = safeFileName('qa-integration-report-' + jsonExportTimestamp()) + '.json';
+        downloadJsonReport(buildFullJsonReport(), filename);
+        els.statusText.textContent = 'Downloaded JSON: ' + filename;
+        addLog('passed', 'Downloaded integration JSON report', { filename:filename, testcase_count:state.results.length });
+      } catch (err) {
+        const message = err && err.message ? err.message : String(err);
+        els.statusText.textContent = 'JSON download failed: ' + message;
+        addLog('failed', 'Integration JSON export failed', { error:message });
       }
-      function beginObject(num) {
-        offsets[num] = length;
-        pushString(num + ' 0 obj\n');
-      }
-      function endObject() {
-        pushString('\nendobj\n');
-      }
-
-      const pageObjs = images.map((_, index) => 3 + index * 3);
-      const objectCount = 2 + images.length * 3;
-      pushString('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
-      beginObject(1);
-      pushString('<< /Type /Catalog /Pages 2 0 R >>');
-      endObject();
-      beginObject(2);
-      pushString('<< /Type /Pages /Kids [' + pageObjs.map(num => num + ' 0 R').join(' ') + '] /Count ' + images.length + ' >>');
-      endObject();
-
-      images.forEach((image, index) => {
-        const pageObj = 3 + index * 3;
-        const imageObj = pageObj + 1;
-        const contentObj = pageObj + 2;
-        const imageName = 'Im' + index;
-        const bytes = dataUrlToBytes(image.dataUrl);
-        const content = 'q\n' + pageWidthPt + ' 0 0 ' + pageHeightPt + ' 0 0 cm\n/' + imageName + ' Do\nQ\n';
-
-        beginObject(pageObj);
-        pushString('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + pageWidthPt + ' ' + pageHeightPt + '] /Resources << /XObject << /' + imageName + ' ' + imageObj + ' 0 R >> >> /Contents ' + contentObj + ' 0 R >>');
-        endObject();
-
-        beginObject(imageObj);
-        pushString('<< /Type /XObject /Subtype /Image /Width ' + image.width + ' /Height ' + image.height + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + bytes.length + ' >>\nstream\n');
-        pushBytes(bytes);
-        pushString('\nendstream');
-        endObject();
-
-        beginObject(contentObj);
-        pushString('<< /Length ' + encoder.encode(content).length + ' >>\nstream\n' + content + 'endstream');
-        endObject();
-      });
-
-      const xrefStart = length;
-      pushString('xref\n0 ' + (objectCount + 1) + '\n');
-      pushString('0000000000 65535 f \n');
-      for (let i = 1; i <= objectCount; i += 1) {
-        pushString(String(offsets[i] || 0).padStart(10, '0') + ' 00000 n \n');
-      }
-      pushString('trailer\n<< /Size ' + (objectCount + 1) + ' /Root 1 0 R >>\nstartxref\n' + xrefStart + '\n%%EOF');
-      return new Blob(parts, { type: 'application/pdf' });
     }
 
     function downloadBlob(blob, filename) {
@@ -1709,31 +1541,6 @@
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }
-
-    function downloadCasePdf(testId) {
-      const item = findCaseResult(testId);
-      if (!canDownloadPdf(item)) {
-        els.statusText.textContent = 'Run this testcase before downloading PDF.';
-        return;
-      }
-      try {
-        const canvases = renderCasePdfCanvases(item);
-        const images = canvases.map(canvas => ({
-          dataUrl: canvas.toDataURL('image/jpeg', 0.92),
-          width: canvas.width,
-          height: canvas.height
-        }));
-        const pdf = buildPdfFromJpegs(images, 595, 842);
-        const filename = safeFileName('qa-' + item.id + '-' + (item.status || 'result')) + '.pdf';
-        downloadBlob(pdf, filename);
-        els.statusText.textContent = 'Downloaded PDF: ' + filename;
-        addLog('passed', 'Downloaded testcase PDF', { testcase: item.id, filename: filename, pages: images.length });
-      } catch (err) {
-        const message = err && err.message ? err.message : String(err);
-        els.statusText.textContent = 'PDF download failed: ' + message;
-        addLog('failed', 'PDF download failed', { testcase: testId, error: message });
-      }
     }
 
     function renderCaseLogEntries(testId) {
@@ -2286,6 +2093,12 @@
     }
 
     async function runSelected(testIds, label) {
+      if (state.running) {
+        addLog('skipped', 'Ignored duplicate run request while another run is active.', {
+          requested: Array.isArray(testIds) ? testIds.slice() : []
+        });
+        return;
+      }
       if (els.allowWriteTests.checked && !state.adminToken) {
         els.statusText.textContent = 'Login as admin before enabling real write tests.';
         return;
@@ -2344,6 +2157,13 @@
               verifyRpc: 'qaVerifyConcurrentHeavyPromoGiftStockRaceRpc',
               cleanupRpc: 'qaCleanupConcurrentHeavyPromoGiftStockRaceRpc',
               failureMessage: 'Expected 3 successful orders, 5 stock failures, 2 attached gifts, and zero remaining product/gift stock.'
+            });
+          } else if (state.results[i].id === 'orders.concurrent-repeat-gift-multiplied-stock-race') {
+            result = await runPreparedSubmitRace(state.results[i], options, {
+              prepareRpc: 'qaPrepareConcurrentRepeatGiftMultipliedStockRaceRpc',
+              verifyRpc: 'qaVerifyConcurrentRepeatGiftMultipliedStockRaceRpc',
+              cleanupRpc: 'qaCleanupConcurrentRepeatGiftMultipliedStockRaceRpc',
+              failureMessage: 'Expected 3 successful two-unit orders, 5 stock failures, 4 attached gift units across 2 orders, one atomic gift skip, and zero remaining product/gift stock.'
             });
           } else if (state.results[i].id === 'orders.concurrent-heavy-split-idempotency-race') {
             result = await runPreparedSubmitRace(state.results[i], options, {
@@ -2436,6 +2256,7 @@
     els.btnManifest.addEventListener('click', loadManifest);
     els.btnRun.addEventListener('click', runChosen);
     els.btnRunAll.addEventListener('click', runAll);
+    els.btnExportJson.addEventListener('click', downloadFullJson);
     els.btnSelectVisible.addEventListener('click', selectVisibleCases);
     els.btnClearSelection.addEventListener('click', clearSelection);
     els.btnClearLog.addEventListener('click', () => {

@@ -144,6 +144,11 @@
       background: #f8fafc;
     }
 
+    .items-table .discounted-unit-price {
+      color: #dc2626;
+      font-weight: 600;
+    }
+
     .total-box {
       background: #f8fafc;
       border: 1px solid var(--border);
@@ -497,6 +502,9 @@
 
           <div id="shippingMethodsList" class="mb-3" style="display:flex;flex-direction:column;gap:5px"></div>
 
+          <!-- Pre-shipment notice when the seller ships via a different (actual) carrier -->
+          <div id="fulfillmentNotice" class="mb-3" style="display:none;padding:.6rem .8rem;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;font-size:.85rem;color:#9a3412"></div>
+
           <div class="total-box">
             <div class="total-line" id="subtotalBaseRow" style="display:none">
               <span>ยอดสินค้าก่อนลด</span>
@@ -509,6 +517,10 @@
             <div class="total-line">
               <span>ค่าสินค้า</span>
               <span id="subtotalVal">฿0</span>
+            </div>
+            <div class="total-line" id="orderDiscountRow" style="display:none;color:#c2410c">
+              <span>ส่วนลดท้ายบิล</span>
+              <span id="orderDiscountVal">-฿0</span>
             </div>
             <div class="total-line">
               <span>ค่าจัดส่ง</span>
@@ -671,7 +683,8 @@
     approved: 'อนุมัติแล้ว',
     shipped: 'จัดส่งแล้ว',
     delivered: 'จัดส่งสำเร็จ',
-    rejected: 'ปฏิเสธ'
+    rejected: 'ปฏิเสธ',
+    shipping_carrier_changed: 'อัปเดตการจัดส่ง'
   };
 
   var BUILTIN_CARRIERS_OV = [
@@ -924,7 +937,7 @@
         ? '<div style="font-size:.7rem;color:#c2410c;margin-top:2px"><i class="bi bi-tag-fill"></i> ' + escapeHtml(item.promotion.name || 'โปรโมชั่น') + '</div>'
         : '';
       var priceCell = hasPromo
-        ? ('<div>' + money(finalPrice) + '</div>'
+        ? ('<div class="discounted-unit-price">' + money(finalPrice) + '</div>'
            + '<div style="color:#94a3b8;font-size:.78rem;text-decoration:line-through">' + money(basePrice) + '</div>')
         : money(finalPrice);
 
@@ -950,26 +963,35 @@
     return html;
   }
 
-  function _applyThumb(el, skelEl, driveId, imgUrl, _retries) {
+  // Generation token: bumped by every loadItemThumbs() run so retry timers from a
+  // superseded render can't paint stale thumbnails onto reused element ids
+  // (same pattern as _slipLoadToken for the slip image).
+  var _thumbLoadGen = 0;
+
+  function _applyThumb(el, skelEl, driveId, imgUrl, _retries, _gen) {
     if (_retries === undefined) _retries = 3; // up to 3 retries (4 total attempts)
+    if (_gen === undefined) _gen = _thumbLoadGen;
+    if (_gen !== _thumbLoadGen) return; // superseded by a newer render
     el.onload = function() { el.style.opacity = '1'; if (skelEl) skelEl.style.display = 'none'; };
     el.onerror = function() { el.style.opacity = '0'; if (skelEl) skelEl.style.display = 'none'; };
     if (driveId) {
       driveFileToDataUrl(driveId).then(function(dataUrl) {
+        if (_gen !== _thumbLoadGen) return;
         if (dataUrl) {
           el.src = dataUrl;
         } else if (imgUrl) {
           el.src = imgUrl; // direct URL fallback — no retry needed
         } else if (_retries > 0) {
-          setTimeout(function() { _applyThumb(el, skelEl, driveId, imgUrl, _retries - 1); }, 3000);
+          setTimeout(function() { _applyThumb(el, skelEl, driveId, imgUrl, _retries - 1, _gen); }, 3000);
         } else if (el.onerror) {
           el.onerror();
         }
       }).catch(function() {
+        if (_gen !== _thumbLoadGen) return;
         if (imgUrl) {
           el.src = imgUrl;
         } else if (_retries > 0) {
-          setTimeout(function() { _applyThumb(el, skelEl, driveId, imgUrl, _retries - 1); }, 3000);
+          setTimeout(function() { _applyThumb(el, skelEl, driveId, imgUrl, _retries - 1, _gen); }, 3000);
         } else if (el.onerror) {
           el.onerror();
         }
@@ -983,6 +1005,7 @@
 
   function loadItemThumbs(items) {
     if (!items || !items.length) return;
+    var gen = ++_thumbLoadGen;
 
     var needLookup = [];
 
@@ -994,7 +1017,7 @@
       var skelEl = document.getElementById('ov-item-skel-' + i);
 
       if (driveId || imgUrl) {
-        if (tableImg) _applyThumb(tableImg, skelEl, driveId, imgUrl);
+        if (tableImg) _applyThumb(tableImg, skelEl, driveId, imgUrl, undefined, gen);
       } else {
         if (item.product_id) needLookup.push({ idx: i, item: item });
         else if (skelEl) skelEl.style.display = 'none';
@@ -1005,6 +1028,7 @@
     if (needLookup.length && GAS_ENV) {
       var ids = needLookup.map(function(x) { return x.item.product_id; });
       callRpc('getProductImagesByIdsRpc', ids).then(function(res) {
+        if (gen !== _thumbLoadGen) return; // superseded by a newer render
         if (!res || !res.ok || !res.images) return;
         needLookup.forEach(function(x) {
           var info = res.images[String(x.item.product_id)];
@@ -1014,7 +1038,7 @@
             return;
           }
           var tImg = document.getElementById('ov-item-thumb-' + x.idx);
-          if (tImg) _applyThumb(tImg, skel, info.image_drive_file_id || '', info.image_url || '');
+          if (tImg) _applyThumb(tImg, skel, info.image_drive_file_id || '', info.image_url || '', undefined, gen);
         });
       }).catch(function() {
         needLookup.forEach(function(x) {
@@ -1046,6 +1070,24 @@
     }
 
     return html;
+  }
+
+  // Pre-shipment notice: shown when the seller will ship via a different (actual) carrier
+  // than the customer picked. The customer's paid total is unchanged. Backend already
+  // strips internal fields (reason / who changed it) — only company_name is exposed here.
+  function renderFulfillmentNotice(order) {
+    var el = document.getElementById('fulfillmentNotice');
+    if (!el) return;
+    var ff = order.fulfillment_shipping || null;
+    var beforeShipment = (order.status !== 'shipped' && order.status !== 'delivered');
+    if (ff && ff.company_name && beforeShipment) {
+      el.innerHTML = '<i class="bi bi-truck me-1"></i>คำสั่งซื้อของคุณจะถูกจัดส่งโดย <strong>'
+        + escapeHtml(ff.company_name) + '</strong> — ยอดชำระของคุณไม่มีการเปลี่ยนแปลง';
+      el.style.display = '';
+    } else {
+      el.style.display = 'none';
+      el.innerHTML = '';
+    }
   }
 
   function renderHistory(history) {
@@ -1936,6 +1978,7 @@
     document.getElementById('itemsBody').innerHTML = renderItems(_productItems);
     loadItemThumbs(_productItems);
     document.getElementById('shippingMethodsList').innerHTML = renderShippingMethods(_order.shipping_info || []);
+    renderFulfillmentNotice(_order);
     _loadCustomerGifts();
 
     // Compute pre-discount subtotal & total promotion savings from snapshot fields
@@ -1955,6 +1998,13 @@
       document.getElementById('discountVal').textContent = '-' + money(_discount);
     }
     document.getElementById('subtotalVal').textContent = money(_order.subtotal);
+    // Whole-order (order-total) promotion discount — deducted once after ค่าสินค้า, before shipping.
+    var _od = _order.order_discount;
+    var _odAmt = _od ? Number(_od.amount || 0) : 0;
+    if (_odAmt > 0) {
+      document.getElementById('orderDiscountRow').style.display = '';
+      document.getElementById('orderDiscountVal').textContent = '-' + money(_odAmt);
+    }
     document.getElementById('shippingFeeVal').textContent = money(_order.shipping_fee);
     document.getElementById('totalVal').textContent = money(_order.total);
 
@@ -1978,6 +2028,19 @@
     var reader;
 
     if (!file) return;
+
+    // Reject non-images up front — accept="image/*" is only a hint and the
+    // drag-and-drop path bypasses it entirely.
+    if (!file.type || file.type.indexOf('image/') !== 0) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'ไฟล์ไม่ถูกต้อง',
+        text: 'กรุณาเลือกไฟล์รูปภาพเท่านั้น (JPG, PNG ฯลฯ)',
+        confirmButtonColor: '#111827'
+      });
+      input.value = '';
+      return;
+    }
 
     if (file.size > 5 * 1024 * 1024) {
       Swal.fire({
@@ -2013,7 +2076,7 @@
   }
 
   function _compressSlipImage(base64, maxPx, quality) {
-    return new Promise(function(resolve) {
+    return new Promise(function(resolve, reject) {
       var img = new Image();
       img.onload = function() {
         var w = img.width, h = img.height;
@@ -2025,7 +2088,9 @@
         canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
         resolve(canvas.toDataURL('image/jpeg', quality));
       };
-      img.onerror = function() { resolve(base64); };
+      // Undecodable input = not a real image — fail the upload instead of
+      // passing the raw (possibly non-image) bytes through as a "slip".
+      img.onerror = function() { reject(new Error('ไฟล์ไม่ใช่รูปภาพที่ถูกต้อง กรุณาเลือกไฟล์ใหม่')); };
       img.src = base64;
     });
   }
@@ -2538,6 +2603,7 @@
     var items    = opts.items    || [];
     var gifts   = opts.gifts   || [];
     var subtotal = opts.subtotal || 0;
+    var orderDiscount = opts.orderDiscount || 0;
     var shippingFee = opts.shippingFee || 0;
     var total    = opts.total    || 0;
     var shippingInfo = opts.shippingInfo || [];
@@ -2615,6 +2681,7 @@
       ? '<hr class="rdiv">'
         + '<div class="rtots">'
         + '<div class="rtr"><span>\u0e23\u0e32\u0e04\u0e32\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32</span><span>' + fmtMoney(subtotal) + '</span></div>'
+        + (orderDiscount > 0 ? '<div class="rtr"><span style="color:#c2410c">\u0e2a\u0e48\u0e27\u0e19\u0e25\u0e14\u0e17\u0e49\u0e32\u0e22\u0e1a\u0e34\u0e25</span><span style="color:#c2410c">-' + fmtMoney(orderDiscount) + '</span></div>' : '')
         + shippingRows
         + '<div class="rgrand"><span>\u0e23\u0e27\u0e21\u0e17\u0e31\u0e49\u0e07\u0e2a\u0e34\u0e49\u0e19</span><span>' + fmtMoney(total) + '</span></div>'
         + '</div>'
@@ -2811,6 +2878,7 @@
         orderId:          _order.order_id,
         createdAt:        _order.created_at,
         subtotal:         _order.subtotal || 0,
+        orderDiscount:    (_order.order_discount && Number(_order.order_discount.amount)) || 0,
         shippingFee:      _order.shipping_fee || 0,
         total:            _order.total || 0,
         shippingInfo:     _order.shipping_info || [],

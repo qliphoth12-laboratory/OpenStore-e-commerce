@@ -1,6 +1,6 @@
 /** Minimal Product Store (single-sheet + Drive images) */
 
-var SYSTEM_VERSION = 'v1.0.0';
+var SYSTEM_VERSION = 'v1.1.0';
 
 const SP = PropertiesService.getScriptProperties();
 const SHEET_ID        = SP.getProperty('SHEET_ID');
@@ -23,6 +23,8 @@ const DRIVE_TS_CHECK_TTL   = 30;                       // seconds — max stalen
 const CACHE_SHIPPING_LIST  = 'SHIPPING_LIST_CACHE';    // cached shipping companies list
 const CACHE_PROD_SNAP_META = 'PROD_SNAP_META';         // present only when chunked snapshot is used
 const CACHE_PROD_SNAP_PART = 'PROD_SNAP_PART_';        // prefix for chunk keys: PROD_SNAP_PART_0, _1, ...
+const CACHE_PROD_SNAP_VALID_UNTIL = 'PROD_SNAP_VALID_UNTIL'; // exact schedule-aware validity boundary
+const PROD_SNAP_MAX_TTL     = 600;                     // seconds
 const SNAP_CHUNK_SIZE       = 90000;                   // 90 KB per chunk — safe margin below 100 KB CacheService limit
 const STORE_KEY_SITE_CFG = 'site_config';
 const CACHE_PAYMENT_CFG  = 'PAYMENT_CONFIG_CACHE';
@@ -193,7 +195,8 @@ function sheetPromotions_(){
   const sh = ss.getSheetByName(SHEET_NAME_PROMOTIONS) || ss.insertSheet(SHEET_NAME_PROMOTIONS);
   const head = ['promotion_id','name','description','discount_type','discount_value',
                 'target_type','target_json','starts_at','ends_at','enabled',
-                'created_at','updated_at','created_by','updated_by','deleted_at','no_end_date'];
+                'created_at','updated_at','created_by','updated_by','deleted_at','no_end_date',
+                'application_mode','condition_type','condition_json','discount_scope'];
   const firstCell = sh.getLastColumn() > 0 ? sh.getRange(1,1).getValue() : '';
   const curCols = sh.getLastColumn();
   if (firstCell !== 'promotion_id') {
@@ -220,6 +223,10 @@ function sheetRowOfId_(id){
 // Returns the array on a cache hit, or null on miss/corruption.
 function readSnapCache_() {
   const cache = CacheService.getScriptCache();
+  // Snapshots created before schedule-aware caching have no marker. Rebuild
+  // them once instead of trusting a price that may have crossed a boundary.
+  const validUntil = Number(cache.get(CACHE_PROD_SNAP_VALID_UNTIL) || 0);
+  if (!validUntil || Date.now() >= validUntil) return null;
   // Try chunked storage first.
   const metaRaw = cache.get(CACHE_PROD_SNAP_META);
   if (metaRaw) {
@@ -256,12 +263,48 @@ function getSnap_() {
   return rebuildSnap_();
 }
 
+// Direct promotions are baked into the product snapshot, so that snapshot must
+// become unreadable when the next direct promotion starts or ends.
+function _nextDirectPromotionBoundaryMs_(now, promotions) {
+  const nowMs = now instanceof Date ? now.getTime() : Number(now || Date.now());
+  const promos = Array.isArray(promotions) ? promotions : listPromotionsFromSheet_(false);
+  let next = Infinity;
+  for (let i = 0; i < promos.length; i++) {
+    const promo = promos[i];
+    if (!promo || promo.deleted_at || !promo.enabled || !_promoIsDirect_(promo)) continue;
+    const startsMs = Date.parse(String(promo.starts_at || ''));
+    if (!isNaN(startsMs) && startsMs > nowMs && startsMs < next) next = startsMs;
+    if (!promo.no_end_date) {
+      const endsMs = Date.parse(String(promo.ends_at || ''));
+      // Schedule status remains active at ends_at and becomes ended just after it.
+      const endedBoundary = isNaN(endsMs) ? NaN : endsMs + 1;
+      if (!isNaN(endedBoundary) && endedBoundary > nowMs && endedBoundary < next) next = endedBoundary;
+    }
+  }
+  return isFinite(next) ? next : null;
+}
+
+function _productSnapshotCachePolicy_(now) {
+  const nowMs = now instanceof Date ? now.getTime() : Number(now || Date.now());
+  const maxValidUntil = nowMs + PROD_SNAP_MAX_TTL * 1000;
+  const nextBoundary = _nextDirectPromotionBoundaryMs_(nowMs);
+  const validUntil = nextBoundary == null ? maxValidUntil : Math.min(maxValidUntil, nextBoundary);
+  // CacheService uses whole seconds. The timestamp marker still enforces the
+  // exact millisecond boundary if the physical entry survives slightly longer.
+  const ttlSeconds = Math.max(1, Math.min(PROD_SNAP_MAX_TTL, Math.ceil((validUntil - nowMs) / 1000)));
+  return { validUntil: validUntil, ttlSeconds: ttlSeconds };
+}
+
 function setSnap_(arr) {
   const cache = CacheService.getScriptCache();
   const json  = JSON.stringify(arr);
+  const policy = _productSnapshotCachePolicy_(new Date());
+  // Publish this marker last so a partially-written snapshot is never accepted.
+  try { cache.remove(CACHE_PROD_SNAP_VALID_UNTIL); } catch(_) {}
   if (json.length <= SNAP_CHUNK_SIZE) {
     try { cache.remove(CACHE_PROD_SNAP_META); } catch(_) {}  // clear stale meta if switching back
-    try { cache.put(CACHE_PROD_SNAP, json, 600); } catch(_) {}
+    try { cache.put(CACHE_PROD_SNAP, json, policy.ttlSeconds); } catch(_) {}
+    try { cache.put(CACHE_PROD_SNAP_VALID_UNTIL, String(policy.validUntil), policy.ttlSeconds); } catch(_) {}
     return;
   }
   // Chunked path: write under a fresh version, then atomically swap META, then
@@ -273,9 +316,10 @@ function setSnap_(arr) {
   const n = Math.ceil(json.length / SNAP_CHUNK_SIZE);
   const version = String(Date.now()) + Math.random().toString(36).slice(2, 6);
   for (let i = 0; i < n; i++) {
-    try { cache.put(CACHE_PROD_SNAP_PART + version + '_' + i, json.slice(i * SNAP_CHUNK_SIZE, (i + 1) * SNAP_CHUNK_SIZE), 600); } catch(_) {}
+    try { cache.put(CACHE_PROD_SNAP_PART + version + '_' + i, json.slice(i * SNAP_CHUNK_SIZE, (i + 1) * SNAP_CHUNK_SIZE), policy.ttlSeconds); } catch(_) {}
   }
-  try { cache.put(CACHE_PROD_SNAP_META, JSON.stringify({ chunked: true, count: n, version: version }), 600); } catch(_) {}
+  try { cache.put(CACHE_PROD_SNAP_META, JSON.stringify({ chunked: true, count: n, version: version }), policy.ttlSeconds); } catch(_) {}
+  try { cache.put(CACHE_PROD_SNAP_VALID_UNTIL, String(policy.validUntil), policy.ttlSeconds); } catch(_) {}
   // Reclaim the previous version's chunks. Safe to do only after META is in
   // place — readers that already loaded the old META still see their chunks
   // because we never overwrite a versioned key.
@@ -414,6 +458,7 @@ function _patchSnapshotStock_(updates) {
       var cache = CacheService.getScriptCache();
       cache.remove(CACHE_PROD_SNAP);
       cache.remove(CACHE_PROD_SNAP_META);
+      cache.remove(CACHE_PROD_SNAP_VALID_UNTIL);
       for (var ci = 0; ci < 32; ci++) cache.remove(CACHE_PROD_SNAP_PART + ci);
     } catch(_) {}
     Logger.log('_patchSnapshotStock_ fallback to invalidate: ' + err);
@@ -422,11 +467,13 @@ function _patchSnapshotStock_(updates) {
 
 function syncSnapIfStale_() {
   const cache = CacheService.getScriptCache();
-  // Batch all four cache reads into one round-trip (was up to 4 sequential .get()
+  // Batch the cache reads into one round-trip (was up to 4 sequential .get()
   // calls per storefront doGet on the slow path). getAll omits missing keys, so
   // `=== undefined` distinguishes absence from a stored empty-string value.
-  const got = cache.getAll([CACHE_PROD_SNAP_META, CACHE_PROD_SNAP, CACHE_DRIVE_TS_CHECK, CACHE_PROD_TS]) || {};
-  const snapExists = got[CACHE_PROD_SNAP_META] !== undefined || got[CACHE_PROD_SNAP] !== undefined;
+  const got = cache.getAll([CACHE_PROD_SNAP_META, CACHE_PROD_SNAP, CACHE_PROD_SNAP_VALID_UNTIL, CACHE_DRIVE_TS_CHECK, CACHE_PROD_TS]) || {};
+  const validUntil = Number(got[CACHE_PROD_SNAP_VALID_UNTIL] || 0);
+  const snapExists = validUntil > Date.now()
+    && (got[CACHE_PROD_SNAP_META] !== undefined || got[CACHE_PROD_SNAP] !== undefined);
   // Fast path: snap present AND recent Drive-check sentinel valid -> skip DriveApp call.
   // Sentinel TTL = 30 s; staleness window applies only to direct Sheet edits — app-mediated
   // writes call rebuildSnap_() directly and invalidate this sentinel.
@@ -1519,10 +1566,16 @@ function productListRpc(tokenOrOpts, optsArg){
   };
 }
 
-function productGetRpc(id){
+function productGetRpc(id, token){
   syncSnapIfStale_();
   const r=getSnap_().find(x=>String(x.id)===String(id));
-  return r? {ok:true, record:r} : {ok:false, error:'not found'};
+  if (!r) return {ok:false, error:'not found'};
+  // Public callers only see purchasable products (mirrors productListRpc's filter);
+  // an admin token unlocks disabled/scheduled/draft records for the admin panel.
+  if (r.sale_status !== 'active' && !(token && requireAdmin_(token))) {
+    return {ok:false, error:'not found'};
+  }
+  return {ok:true, record:r};
 }
 function productCreateRpc(token, payload){
   var _sess = requireAdmin_(token);
@@ -1566,6 +1619,8 @@ function productCreateRpc(token, payload){
       }
     }
   }
+  var _createStock = p.stock !== undefined ? _normStockValue_(p.stock) : -1;
+  if (_createStock === null) return { ok:false, error:'จำนวนสต็อกไม่ถูกต้อง (ต้องเป็นจำนวนเต็ม ≥ 0 หรือเว้นว่าง)' };
   // --- END VALIDATION ---
   if (_normalizeSaleMode_(p.sale_mode) !== 'disabled' && !(p.allowed_shipping_ids||[]).length) {
     return { ok:false, error:'สินค้าที่เปิดขายต้องกำหนดวิธีการจัดส่งอย่างน้อย 1 วิธี' };
@@ -1601,7 +1656,7 @@ function productCreateRpc(token, payload){
     badge:p.badge, image_drive_file_id:driveId, image_url:url,
     variants:varResult.variants, extra_images:extraResult.images,
     weight_grams:p.weight_grams, allowed_shipping_ids:p.allowed_shipping_ids,
-    stock: p.stock !== undefined ? Number(p.stock) : -1,
+    stock: _createStock,
     sale_mode: saleMode,
     sale_starts_at: swStarts,
     sale_ends_at: swEnds
@@ -1942,10 +1997,36 @@ function getStockSummaryRpc(token) {
   })};
 }
 
+// Normalize a stock input: ''/null = unlimited (-1); otherwise a whole number ≥ -1.
+// Returns null for anything invalid (NaN, fractions, < -1).
+function _normStockValue_(v) {
+  if (v === '' || v == null) return -1;
+  var n = Number(v);
+  if (!isFinite(n) || Math.floor(n) !== n || n < -1) return null;
+  return n;
+}
+
 function updateStockRpc(token, updates) {
   var _sess = requireAdmin_(token);
   if (!_sess) return { ok:false, error:'AUTH_REQUIRED' };
   if (!Array.isArray(updates) || !updates.length) return { ok:false, error:'updates required' };
+  // Validate every value before touching the sheet — reject the whole batch on bad input.
+  for (var vi = 0; vi < updates.length; vi++) {
+    var uu = updates[vi] || {};
+    if (uu.stock !== undefined && _normStockValue_(uu.stock) === null)
+      return { ok:false, error:'จำนวนสต็อกไม่ถูกต้อง (ต้องเป็นจำนวนเต็ม ≥ 0 หรือเว้นว่าง)' };
+    if (uu.variantStocks && typeof uu.variantStocks === 'object') {
+      for (var vk in uu.variantStocks) {
+        if (uu.variantStocks.hasOwnProperty(vk) && _normStockValue_(uu.variantStocks[vk]) === null)
+          return { ok:false, error:'จำนวนสต็อกตัวเลือกไม่ถูกต้อง (ต้องเป็นจำนวนเต็ม ≥ 0 หรือเว้นว่าง)' };
+      }
+    }
+  }
+  // Same lock as submitOrderRpc's commit phase — without it an admin stock save
+  // racing an order commit is last-write-wins (oversell / phantom restock).
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) return { ok:false, error:'SERVER_BUSY' };
+  try {
   var sh = sheetProd_();
   var lastRow = sh.getLastRow();
   if (lastRow < 2) return { ok:false, error:'no products' };
@@ -1957,8 +2038,7 @@ function updateStockRpc(token, updates) {
     var row = sh.getRange(rowNo,1,1,15).getValues()[0];
     // Update product-level stock
     if (u.stock !== undefined) {
-      var newStock = (u.stock === '' || u.stock == null) ? -1 : Number(u.stock);
-      sh.getRange(rowNo, 15).setValue(newStock);
+      sh.getRange(rowNo, 15).setValue(_normStockValue_(u.stock));
     }
     // Update variant option stocks
     if (u.variantStocks && typeof u.variantStocks === 'object') {
@@ -1967,8 +2047,7 @@ function updateStockRpc(token, updates) {
       variants.forEach(function(g) {
         (g.options||[]).forEach(function(o) {
           if (u.variantStocks.hasOwnProperty(o.label)) {
-            var vs = u.variantStocks[o.label];
-            o.stock = (vs === '' || vs == null) ? -1 : Number(vs);
+            o.stock = _normStockValue_(u.variantStocks[o.label]);
             changed = true;
           }
         });
@@ -1976,6 +2055,9 @@ function updateStockRpc(token, updates) {
       if (changed) sh.getRange(rowNo, 11).setValue(JSON.stringify(variants));
     }
   });
+  } finally {
+    try { lock.releaseLock(); } catch(_) {}
+  }
   rebuildSnap_();
   auditLog_('stock.update', { category:['database'], type:['change'],
     outcome:'success', route:'product', rpc:'updateStockRpc',
@@ -2821,11 +2903,15 @@ function sanitizeVariantGroup_(g) {
     if (!isFinite(optionPrice) || optionPrice <= 0) {
       return { ok:false, error: 'variant "' + nameR.value + '" ตัวเลือกที่ ' + (i + 1) + ': ราคาต้องมากกว่า 0' };
     }
+    var optionStock = opt.stock !== undefined ? _normStockValue_(opt.stock) : -1;
+    if (optionStock === null) {
+      return { ok:false, error: 'variant "' + nameR.value + '" ตัวเลือกที่ ' + (i + 1) + ': สต็อกต้องเป็นจำนวนเต็ม ≥ 0 หรือเว้นว่าง' };
+    }
     var cleanOpt = {
       label:        labelR.value,
       price:        optionPrice,
       weight_grams: Number(opt.weight_grams || 0),
-      stock:        opt.stock !== undefined ? Number(opt.stock) : -1
+      stock:        optionStock
     };
     // Image fields validated downstream by uploadValidatedImage_ — pass through
     if (opt.image_file_id)     cleanOpt.image_file_id     = opt.image_file_id;
@@ -3838,7 +3924,7 @@ const ORDER_COLS = [
   'customer_notes','shipping_fee','subtotal','total','shipping_method_id',
   'items_json','status_history_json','shipping_info_json',
   'customer_contact','token','slip_drive_file_id','token_expires_at',
-  'tracking_json'
+  'tracking_json','fulfillment_shipping_json','order_discount_json'
 ];
 
 function sheetOrders_() {
@@ -3888,6 +3974,12 @@ function calcBackendShippingFee_(method, totalWeightGrams) {
     if (w >= Number(b.from_g) && w <= Number(b.to_g)) {
       return Number(b.price || 0);
     }
+  }
+  // Weight fell in a gap between brackets (misconfigured tiers, e.g. 0-500 / 600-1000
+  // with w=550): snap to the next bracket ABOVE the weight instead of silently
+  // charging the top tier. Mirrored in index.html `_calcShippingFee` — keep in sync.
+  for (var gi = 0; gi < sorted.length; gi++) {
+    if (w <= Number(sorted[gi].to_g)) return Number(sorted[gi].price || 0);
   }
   return Number(sorted[sorted.length - 1].price || 0);
 }
@@ -3951,16 +4043,36 @@ function promoMatchesTarget_(promo, productId, variantKey) {
 function rowToPromotion_(r) {
   var target = [];
   try { target = JSON.parse(String(r[6] || '[]')) || []; } catch(_) { target = []; }
+  // Blank schedule values must stay blank. Older code could stringify a
+  // normalized null as the literal text "null" when no start date was set.
+  var startsAt = String(r[7] || '').trim();
+  var endsAt = String(r[8] || '').trim();
+  if (startsAt === 'null' || startsAt === 'undefined') startsAt = '';
+  if (endsAt === 'null' || endsAt === 'undefined') endsAt = '';
   // r[15] = no_end_date (added column). Legacy rows may not have it.
   var nedRaw = (r.length > 15) ? r[15] : '';
   var noEndDate;
   if (nedRaw === '' || nedRaw === undefined || nedRaw === null) {
     // Migration default: legacy promos with both dates -> false (preserve old expiration)
-    var hasEnd = String(r[8] || '').trim() !== '';
+    var hasEnd = endsAt !== '';
     noEndDate = !hasEnd;
   } else {
     noEndDate = (nedRaw === true || String(nedRaw).toUpperCase() === 'TRUE');
   }
+  // r[16]=application_mode, r[17]=condition_type, r[18]=condition_json (added columns).
+  // Legacy rows lack these → default to unconditional ('direct') so existing behavior is preserved.
+  var appMode = (r.length > 16) ? String(r[16] || '').trim().toLowerCase() : '';
+  if (appMode !== 'conditional') appMode = 'direct';
+  var condType = (r.length > 17) ? String(r[17] || '').trim() : '';
+  var condJson = {};
+  try { condJson = JSON.parse(String((r.length > 18 ? r[18] : '') || '{}')) || {}; } catch(_) { condJson = {}; }
+  if (appMode !== 'conditional') { condType = ''; condJson = {}; }
+  // r[19]=discount_scope (added column). Legacy rows lack it → 'item' (per-item discount,
+  // the original behavior). Order-total scope is only meaningful for conditional promos;
+  // force 'item' otherwise so a direct promo can never carry an order-total scope.
+  var discScope = (r.length > 19) ? String(r[19] || '').trim().toLowerCase() : '';
+  if (discScope !== 'order_total') discScope = 'item';
+  if (appMode !== 'conditional') discScope = 'item';
   return {
     promotion_id:   String(r[0] || ''),
     name:           String(r[1] || ''),
@@ -3969,8 +4081,8 @@ function rowToPromotion_(r) {
     discount_value: Number(r[4] || 0),
     target_type:    String(r[5] || 'all'),
     target:         target,
-    starts_at:      String(r[7] || ''),
-    ends_at:        String(r[8] || ''),
+    starts_at:      startsAt,
+    ends_at:        endsAt,
     // Sheets auto-converts the string 'FALSE'/'TRUE' to a native boolean on write,
     // so r[9] comes back as boolean false/true. Treat booleans explicitly — the old
     // `String(r[9] || 'TRUE')` path mis-read native `false` as 'TRUE' (falsy fallback).
@@ -3982,7 +4094,11 @@ function rowToPromotion_(r) {
     created_by:     String(r[12] || ''),
     updated_by:     String(r[13] || ''),
     deleted_at:     String(r[14] || ''),
-    no_end_date:    noEndDate
+    no_end_date:    noEndDate,
+    application_mode: appMode,
+    condition_type:   condType,
+    condition_json:   condJson,
+    discount_scope:   discScope
   };
 }
 
@@ -3998,7 +4114,7 @@ function listPromotionsFromSheet_(includeDeleted) {
     if (!includeDeleted) { try { cache.put(CACHE_PROMO_LIST, JSON.stringify([]), 60); } catch(_) {} }
     return [];
   }
-  var rows = sh.getRange(2, 1, n - 1, 16).getValues();
+  var rows = sh.getRange(2, 1, n - 1, 20).getValues();
   var out = [];
   for (var i = 0; i < rows.length; i++) {
     var p = rowToPromotion_(rows[i]);
@@ -4014,25 +4130,87 @@ function invalidatePromoCache_() {
   try { CacheService.getScriptCache().remove(CACHE_PROMO_LIST); } catch(_) {}
 }
 
-function getActivePromotionForProduct_(productId, variantKey, now) {
-  var promos = listPromotionsFromSheet_(false);
-  var matched = [];
+// True if a promotion is enabled and within its active schedule window.
+function _promoIsActive_(p, now) {
+  var promoForStatus = { enabled: p.enabled ? 'TRUE' : 'FALSE', starts_at: p.starts_at, ends_at: p.ends_at, no_end_date: p.no_end_date, deleted_at: p.deleted_at };
+  return getPromotionStatus_(promoForStatus, now) === 'active';
+}
+
+// Direct (unconditional) promos always apply when active; conditional promos only
+// apply when their condition is satisfied by the cart. This predicate is the
+// direct-only filter used for snapshot pricing and the Pass-A base subtotal.
+function _promoIsDirect_(p) {
+  return !!p && p.application_mode !== 'conditional';
+}
+
+// Order-total scope: a conditional promo whose discount is deducted once from the whole-order
+// subtotal (never multiplied by qty, never resolved per line). Only conditional promos can
+// carry this scope (enforced in validation + rowToPromotion_).
+function _promoIsOrderTotal_(p) {
+  return !!p && p.application_mode === 'conditional' && p.discount_scope === 'order_total';
+}
+
+// Order-total discount amount, applied ONCE to `subtotal` (never per unit).
+// fixed  → flat baht; percent → subtotal * value/100. Rounded to whole baht and clamped to
+// [0, subtotal] so the discount can never exceed the item subtotal or go negative.
+function calcOrderTotalDiscount_(subtotal, promo) {
+  var sub = Math.max(0, Math.round(Number(subtotal) || 0));
+  if (!promo) return 0;
+  var amt;
+  if (promo.discount_type === 'percent') {
+    amt = Math.round(sub * Number(promo.discount_value) / 100);
+  } else {
+    amt = Math.round(Number(promo.discount_value));
+  }
+  if (!isFinite(amt) || amt < 0) amt = 0;
+  return Math.min(sub, amt);
+}
+
+// Among qualified conditional order-total promos, pick the single one giving the LARGEST
+// discount on `subtotal` (no stacking — one order-total discount per order). Tiebreak: newest
+// created_at. Returns { promo, amount } or null. `qualifiedIds` is the qualified-conditional set.
+function resolveBestOrderTotalPromo_(promos, qualifiedIds, subtotal, now) {
+  var best = null, bestAmt = 0;
   for (var i = 0; i < promos.length; i++) {
     var p = promos[i];
-    var promoForStatus = { enabled: p.enabled ? 'TRUE' : 'FALSE', starts_at: p.starts_at, ends_at: p.ends_at, no_end_date: p.no_end_date, deleted_at: p.deleted_at };
-    if (getPromotionStatus_(promoForStatus, now) !== 'active') continue;
-    if (!promoMatchesTarget_(p, productId, variantKey)) continue;
-    matched.push(p);
+    if (!_promoIsOrderTotal_(p)) continue;
+    if (!_promoIsActive_(p, now)) continue;
+    if (!qualifiedIds[String(p.promotion_id)]) continue;
+    var amt = calcOrderTotalDiscount_(subtotal, p);
+    if (!best || amt > bestAmt ||
+        (amt === bestAmt && String(p.created_at).localeCompare(String(best.created_at)) > 0)) {
+      best = p; bestAmt = amt;
+    }
   }
-  if (!matched.length) return null;
-  // Specificity: variant > product > all; tiebreak by created_at desc
+  return best ? { promo: best, amount: bestAmt } : null;
+}
+
+// Central winner resolver: BEST PRICE WINS per line. Among promos that are active,
+// pass the optional `filterFn`, and match the (productId, variantKey) target, pick the
+// one yielding the lowest unit_final_price for `basePrice`. Tiebreak: specificity
+// (variant > product > all), then newest created_at. No stacking — one promo per line.
+// Returns { promo, pricing } or null; `pricing` is the calcPromotionPrice_ result for
+// the winner so callers never recompute (single source of price truth). A promo whose
+// rounding yields zero discount can still win over "no promo" (final == base) — harmless.
+function resolveBestPromotionForLine_(promos, productId, variantKey, basePrice, now, filterFn) {
   var rank = { variant: 3, product: 2, all: 1 };
-  matched.sort(function(a, b){
-    var ra = rank[a.target_type] || 0, rb = rank[b.target_type] || 0;
-    if (rb !== ra) return rb - ra;
-    return String(b.created_at).localeCompare(String(a.created_at));
-  });
-  return matched[0];
+  var best = null, bestPricing = null;
+  for (var i = 0; i < promos.length; i++) {
+    var p = promos[i];
+    if (filterFn && !filterFn(p)) continue;
+    if (!_promoIsActive_(p, now)) continue;
+    if (!promoMatchesTarget_(p, productId, variantKey)) continue;
+    var pricing = calcPromotionPrice_(basePrice, p);
+    if (!best) { best = p; bestPricing = pricing; continue; }
+    var d = pricing.unit_final_price - bestPricing.unit_final_price;
+    if (d > 0) continue;
+    if (d < 0) { best = p; bestPricing = pricing; continue; }
+    var ra = rank[p.target_type] || 0, rb = rank[best.target_type] || 0;
+    if (ra > rb || (ra === rb && String(p.created_at).localeCompare(String(best.created_at)) > 0)) {
+      best = p; bestPricing = pricing;
+    }
+  }
+  return best ? { promo: best, pricing: bestPricing } : null;
 }
 
 function validatePromotionPayload_(payload, isUpdate) {
@@ -4060,11 +4238,33 @@ function validatePromotionPayload_(payload, isUpdate) {
     if (['all','product','variant'].indexOf(String(p.target_type)) < 0)
       return { ok: false, error: 'target_type ต้องเป็น all/product/variant' };
   }
+  // Discount scope: 'item' (per-unit discount on targeted products — default/legacy) or
+  // 'order_total' (a single deduction from the whole-order subtotal). Order-total is only
+  // valid for conditional promos and ignores product/variant targeting entirely.
+  var effModeForScope = (p.application_mode !== undefined)
+    ? String(p.application_mode || 'direct').trim().toLowerCase()
+    : (isUpdate ? undefined : 'direct');
+  if (!isUpdate || p.discount_scope !== undefined) {
+    var scope = String(p.discount_scope || 'item').trim().toLowerCase();
+    if (['item','order_total'].indexOf(scope) < 0)
+      return { ok: false, error: 'discount_scope ต้องเป็น item หรือ order_total' };
+    p.discount_scope = scope;
+  }
+  var effScope = (p.discount_scope !== undefined) ? p.discount_scope : 'item';
+  if (effScope === 'order_total') {
+    // Guard: order-total discounts require a qualifying condition. Reject any attempt to
+    // attach order-total behavior to a direct (unconditional) promotion.
+    if (effModeForScope !== undefined && effModeForScope !== 'conditional')
+      return { ok: false, error: 'ส่วนลดท้ายบิลใช้ได้เฉพาะโปรโมชั่นแบบมีเงื่อนไข' };
+    // Order-total applies to the whole cart — product/variant targeting is meaningless.
+    p.target_type = 'all';
+    p.target = [];
+  }
   var targetArr = Array.isArray(p.target) ? p.target : [];
-  if (p.target_type !== 'all' && targetArr.length === 0)
+  if (effScope !== 'order_total' && p.target_type !== 'all' && targetArr.length === 0)
     return { ok: false, error: 'ต้องเลือก target อย่างน้อย 1 รายการ' };
-  // Validate target entries against snapshot
-  if (p.target_type === 'product' || p.target_type === 'variant') {
+  // Validate target entries against snapshot (skipped for order-total, which forced 'all')
+  if (effScope !== 'order_total' && (p.target_type === 'product' || p.target_type === 'variant')) {
     var snap = getSnap_();
     var prodMap = {};
     snap.forEach(function(prod){ prodMap[String(prod.id)] = prod; });
@@ -4082,12 +4282,92 @@ function validatePromotionPayload_(payload, isUpdate) {
       }
     }
   }
+  // Application mode + qualifying condition (mirrors gift-rule condition validation).
+  // Direct (unconditional) mode is the default and forces an empty condition so legacy
+  // rows and direct promos never carry stray condition data.
+  if (!isUpdate || p.application_mode !== undefined) {
+    var mode = String(p.application_mode || 'direct').trim().toLowerCase();
+    if (['direct','conditional'].indexOf(mode) < 0)
+      return { ok: false, error: 'application_mode ต้องเป็น direct หรือ conditional' };
+    p.application_mode = mode;
+  }
+  // Resolve the effective mode for condition validation (merged payloads may omit it).
+  var effMode = (p.application_mode !== undefined) ? p.application_mode : 'direct';
+  if (effMode === 'conditional') {
+    if (['min_subtotal','required_products','required_variants'].indexOf(String(p.condition_type)) < 0)
+      return { ok: false, error: 'ประเภทเงื่อนไขไม่ถูกต้อง' };
+    var cj = p.condition_json || {};
+    if (typeof cj === 'string') { try { cj = JSON.parse(cj); } catch(_) { cj = {}; } }
+    if (!cj || typeof cj !== 'object') cj = {};
+    if (p.condition_type === 'min_subtotal') {
+      var minSub = Number(cj.min_subtotal);
+      if (!isFinite(minSub) || minSub <= 0) return { ok: false, error: 'ต้องระบุยอดซื้อขั้นต่ำมากกว่า 0' };
+      cj = { min_subtotal: minSub, calculation_base: 'after_discount_before_shipping' };
+    } else if (p.condition_type === 'required_products') {
+      if (!Array.isArray(cj.required_products) || !cj.required_products.length)
+        return { ok: false, error: 'ต้องเลือกสินค้าเงื่อนไขอย่างน้อย 1 รายการ' };
+      cj.match_mode = (cj.match_mode === 'any') ? 'any' : 'all';
+    } else if (p.condition_type === 'required_variants') {
+      if (!Array.isArray(cj.required_variants) || !cj.required_variants.length)
+        return { ok: false, error: 'ต้องเลือกตัวเลือกเงื่อนไขอย่างน้อย 1 รายการ' };
+      cj.match_mode = (cj.match_mode === 'any') ? 'any' : 'all';
+    }
+    // Validate condition entries against the product snapshot + reject duplicates.
+    if (p.condition_type === 'required_products' || p.condition_type === 'required_variants') {
+      var csnap = getSnap_();
+      var cProdMap = {};
+      csnap.forEach(function(prod){ cProdMap[String(prod.id)] = prod; });
+      if (p.condition_type === 'required_products') {
+        var seenCP = {};
+        var normReqP = [];
+        for (var cpi = 0; cpi < cj.required_products.length; cpi++) {
+          var rqp = cj.required_products[cpi] || {};
+          var cpid = String(rqp.product_id || '');
+          if (!cProdMap[cpid]) return { ok: false, error: 'สินค้าเงื่อนไขไม่พบ: ' + cpid };
+          if (seenCP[cpid]) return { ok: false, error: 'มีสินค้าเงื่อนไขซ้ำกัน' };
+          seenCP[cpid] = true;
+          var mq = Number(rqp.min_qty);
+          if (!isFinite(mq) || Math.floor(mq) !== mq || mq < 1)
+            return { ok: false, error: 'จำนวนขั้นต่ำของสินค้าเงื่อนไขต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป' };
+          normReqP.push({ product_id: cpid, min_qty: mq });
+        }
+        cj.required_products = normReqP;
+      } else {
+        var seenCV = {};
+        var normReqV = [];
+        for (var cvi = 0; cvi < cj.required_variants.length; cvi++) {
+          var rqv = cj.required_variants[cvi] || {};
+          var cvpid = String(rqv.product_id || '');
+          var cvk = String(rqv.variant_key || '');
+          var cvProd = cProdMap[cvpid];
+          if (!cvProd) return { ok: false, error: 'สินค้าเงื่อนไขไม่พบ: ' + cvpid };
+          if (!cvk) return { ok: false, error: 'เงื่อนไขตัวเลือกต้องระบุ variant_key' };
+          if (enumerateVariantKeys_(cvProd).indexOf(cvk) < 0)
+            return { ok: false, error: 'variant_key เงื่อนไขไม่ตรงกับสินค้า ' + cvProd.title + ': ' + cvk };
+          var cvKey = cvpid + '|' + cvk;
+          if (seenCV[cvKey]) return { ok: false, error: 'มีตัวเลือกเงื่อนไขซ้ำกัน' };
+          seenCV[cvKey] = true;
+          var mqv = Number(rqv.min_qty);
+          if (!isFinite(mqv) || Math.floor(mqv) !== mqv || mqv < 1)
+            return { ok: false, error: 'จำนวนขั้นต่ำของตัวเลือกเงื่อนไขต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป' };
+          normReqV.push({ product_id: cvpid, variant_key: cvk, min_qty: mqv });
+        }
+        cj.required_variants = normReqV;
+      }
+    }
+    p.condition_json = cj;
+  } else if (effMode === 'direct') {
+    // Direct mode: strip any condition so it can never accidentally gate the discount,
+    // and force per-item scope (order-total is conditional-only).
+    p.condition_type = '';
+    p.condition_json = {};
+    p.discount_scope = 'item';
+  }
+
   if (!isUpdate || p.starts_at !== undefined || p.ends_at !== undefined || p.no_end_date !== undefined) {
     var sw = _normalizeSchedule_({ starts_at: p.starts_at, ends_at: p.ends_at, no_end_date: p.no_end_date });
     var swCheck = _validateScheduleWindow_(sw.starts_at, sw.ends_at, sw.no_end_date);
     if (!swCheck.ok) return swCheck;
-    // starts_at is required for promotions (existing behavior)
-    if (!sw.starts_at) return { ok: false, error: 'ต้องระบุวันที่เริ่มโปรโมชั่น' };
     p.starts_at = sw.starts_at;
     p.ends_at = sw.ends_at || '';
     p.no_end_date = sw.no_end_date;
@@ -4146,16 +4426,38 @@ function targetsOverlap_(p1, p2) {
   return false;
 }
 
-function assertNoOverlappingPromotion_(payload, excludePromoId) {
-  var others = listPromotionsFromSheet_(false);
+// Overlap protection only guards two DIRECT (unconditional) promos from both being
+// enabled on the same target at once — under best-price resolution one of them could
+// never win, so it would be permanently dead weight and confuse admins. Conditional
+// promos are exempt: they only apply when their condition is met, and when several
+// promos match a line the best-price resolver deterministically picks one (no
+// stacking). This is what makes "buy A, discount B" possible even when B already has
+// a direct promo. Returns the conflicting promotion object, or null if none.
+function findOverlappingPromotion_(payload, excludePromoId) {
+  if (payload && payload.application_mode === 'conditional') return null;
+  // includeDeleted=true forces a fresh sheet read — the cached list can be up to
+  // 60 s stale, which would let two near-simultaneous creates both pass this check.
+  var others = listPromotionsFromSheet_(true);
   for (var i = 0; i < others.length; i++) {
     var o = others[i];
+    if (o.deleted_at) continue; // legacy soft-deleted rows
     if (excludePromoId && String(o.promotion_id) === String(excludePromoId)) continue;
     if (!o.enabled) continue;
+    if (o.application_mode === 'conditional') continue;
     if (!intervalsOverlap_(payload.starts_at, payload.ends_at, o.starts_at, o.ends_at)) continue;
     if (!targetsOverlap_(payload, o)) continue;
-    throw new Error('โปรโมชั่นทับซ้อนกับ "' + o.name + '" ในช่วงเวลาเดียวกัน');
+    return o;
   }
+  return null;
+}
+
+// Structured error payload for an overlap rejection — promotion.html renders a
+// message naming the conflicting promotion from `conflict`.
+function promoOverlapError_(conflict) {
+  return { ok: false, error: 'PROMO_OVERLAP',
+    conflict: { promotion_id: conflict.promotion_id, name: conflict.name,
+                starts_at: conflict.starts_at, ends_at: conflict.ends_at,
+                no_end_date: !!conflict.no_end_date, target_type: conflict.target_type } };
 }
 
 // Inject `promotion` and effective `final_price` into product (and each variant option) in-place
@@ -4163,8 +4465,9 @@ function applyPromotionsToProducts_(products, now) {
   if (!Array.isArray(products) || !products.length) return products;
   // Read promotions ONCE per call (already cached for 60s by listPromotionsFromSheet_).
   // Then build per-call indices so we don't re-evaluate status / re-scan targets for
-  // every product × every variant combo (was O(P×C×N); now O(P×C) lookup).
-  // Promotion list is pre-sorted by created_at desc, so bucket[0] is the tiebreak winner.
+  // every product × every variant combo (was O(P×C×N); now O(P×C) small-candidate scan).
+  // The winner per product/variant is chosen by resolveBestPromotionForLine_ (best price
+  // wins) over the bucketed candidates — same rule as cart/order/preview.
   var promos = listPromotionsFromSheet_(false);
   var allPromos = [];
   var byProduct = {}; // pid -> [promo,...]   (created_at desc)
@@ -4177,6 +4480,9 @@ function applyPromotionsToProducts_(products, now) {
       no_end_date: ap.no_end_date, deleted_at: ap.deleted_at
     }, now);
     if (apStat !== 'active') continue;
+    // Conditional promos depend on the whole cart, so they cannot be baked into the
+    // per-product snapshot. They surface via the cart eligibility preview instead.
+    if (ap.application_mode === 'conditional') continue;
     if (ap.target_type === 'all') {
       allPromos.push(ap);
     } else if (ap.target_type === 'product') {
@@ -4197,24 +4503,22 @@ function applyPromotionsToProducts_(products, now) {
       }
     }
   }
-  function pickPromo(productId, variantKey) {
+  function pickBest(productId, variantKey, basePrice) {
     var pidStr = String(productId);
-    var vList = byVariant[pidStr + '|' + String(variantKey || '')];
-    if (vList && vList.length) return vList[0];
-    var pList = byProduct[pidStr];
-    if (pList && pList.length) return pList[0];
-    return allPromos.length ? allPromos[0] : null;
+    var candidates = (byVariant[pidStr + '|' + String(variantKey || '')] || [])
+      .concat(byProduct[pidStr] || [], allPromos);
+    if (!candidates.length) return null;
+    return resolveBestPromotionForLine_(candidates, productId, variantKey, basePrice, now, null);
   }
 
   for (var pi = 0; pi < products.length; pi++) {
     var prod = products[pi];
     // root (no variants selected) — variantKey = ''
-    var rootPromo = pickPromo(prod.id, '');
-    if (rootPromo) {
-      var rootPrices = calcPromotionPrice_(prod.price, rootPromo);
-      prod.promotion = publicPromoSummary_(rootPromo);
-      prod.final_price = rootPrices.unit_final_price;
-      prod.discount_amount = rootPrices.unit_discount_amount;
+    var rootBest = pickBest(prod.id, '', prod.price);
+    if (rootBest) {
+      prod.promotion = publicPromoSummary_(rootBest.promo);
+      prod.final_price = rootBest.pricing.unit_final_price;
+      prod.discount_amount = rootBest.pricing.unit_discount_amount;
     } else {
       prod.promotion = null;
       prod.final_price = Math.round(Number(prod.price) || 0);
@@ -4228,10 +4532,10 @@ function applyPromotionsToProducts_(products, now) {
       for (var ci = 0; ci < combos.length; ci++) {
         var c = combos[ci];
         var vk = buildVariantKey_(c.sel);
-        var pr = pickPromo(prod.id, vk);
-        var pricing = calcPromotionPrice_(c.basePrice, pr);
+        var vBest = pickBest(prod.id, vk, c.basePrice);
+        var pricing = vBest ? vBest.pricing : calcPromotionPrice_(c.basePrice, null);
         prod.variant_promotions[vk] = {
-          promotion: pr ? publicPromoSummary_(pr) : null,
+          promotion: vBest ? publicPromoSummary_(vBest.promo) : null,
           unit_base_price: pricing.unit_base_price,
           unit_final_price: pricing.unit_final_price,
           unit_discount_amount: pricing.unit_discount_amount
@@ -4274,23 +4578,156 @@ function enumerateVariantCombos_(product) {
   });
 }
 
-function findActivePromo_(promos, productId, variantKey, now) {
-  var matched = [];
-  for (var i = 0; i < promos.length; i++) {
-    var p = promos[i];
-    var stat = getPromotionStatus_({ enabled: p.enabled ? 'TRUE' : 'FALSE', starts_at: p.starts_at, ends_at: p.ends_at, no_end_date: p.no_end_date, deleted_at: p.deleted_at }, now);
-    if (stat !== 'active') continue;
-    if (!promoMatchesTarget_(p, productId, variantKey)) continue;
-    matched.push(p);
+/* ---------- Conditional promotion evaluation ---------- */
+// A conditional promotion applies only when its `condition_json` is satisfied by the
+// whole cart. The qualifying condition (what the customer must BUY) is independent of
+// the discount target (what RECEIVES the discount). This single evaluator is used by
+// both the cart preview RPC and order submission so they can never diverge.
+//
+// `ctx` shares the gift engine's shape:
+//   { items:[{product_id, variant_key, qty}], subtotal_after_promo }
+// where subtotal_after_promo = subtotal after DIRECT discounts, before shipping.
+function evaluatePromotionQualified_(promo, ctx) {
+  if (!promo) return false;
+  if (promo.application_mode !== 'conditional') return true; // direct: always qualifies
+  var ct = promo.condition_type;
+  var cj = promo.condition_json || {};
+  if (ct === 'min_subtotal') {
+    var minSub = Number(cj.min_subtotal || 0);
+    if (minSub <= 0) return false;
+    return Number(ctx.subtotal_after_promo || 0) >= minSub;
   }
-  if (!matched.length) return null;
-  var rank = { variant: 3, product: 2, all: 1 };
-  matched.sort(function(a, b){
-    var ra = rank[a.target_type] || 0, rb = rank[b.target_type] || 0;
-    if (rb !== ra) return rb - ra;
-    return String(b.created_at).localeCompare(String(a.created_at));
-  });
-  return matched[0];
+  if (ct === 'required_products') return _promoRequiredMet_(cj.required_products, cj.match_mode, ctx, false);
+  if (ct === 'required_variants') return _promoRequiredMet_(cj.required_variants, cj.match_mode, ctx, true);
+  return false;
+}
+
+// Shared all/any matcher for required_products & required_variants conditions.
+// match_mode 'all' (default): every entry's min_qty must be met.
+// match_mode 'any': at least one entry's min_qty must be met.
+// Missing/legacy match_mode defaults to 'all'.
+function _promoRequiredMet_(req, matchMode, ctx, isVariant) {
+  req = Array.isArray(req) ? req : [];
+  if (!req.length) return false;
+  var anyMode = String(matchMode) === 'any';
+  for (var i = 0; i < req.length; i++) {
+    var rq = req[i] || {};
+    var minQ = Number(rq.min_qty || 1); if (minQ <= 0) minQ = 1;
+    var totalQ = 0;
+    for (var j = 0; j < ctx.items.length; j++) {
+      var item = ctx.items[j];
+      var same = String(item.product_id) === String(rq.product_id)
+              && (!isVariant || String(item.variant_key || '') === String(rq.variant_key || ''));
+      if (same) totalQ += Number(item.qty || 0);
+    }
+    var met = totalQ >= minQ;
+    if (anyMode) { if (met) return true; }   // any: first satisfied entry qualifies
+    else { if (!met) return false; }         // all: any unmet entry disqualifies
+  }
+  return anyMode ? false : true;
+}
+
+// Centralized cart pricing pipeline shared by submitOrderRpc and the eligibility preview.
+// `ctxItems`: [{ product_id, variant_key, qty, raw_unit_price, title }].
+// Two passes so conditional discounts never depend on themselves (no circularity):
+//   Pass A — price each line with DIRECT promos only -> subtotal_after_direct.
+//   (evaluate conditional promos against that subtotal -> qualified set)
+//   Pass B — re-resolve each line among {direct} ∪ {qualified conditional} by
+//            BEST PRICE WINS (lowest final price; tiebreak variant > product > all,
+//            then newest created_at; no stacking) -> final line prices & subtotal.
+function resolveCartPromotions_(ctxItems, now) {
+  now = now || new Date();
+  ctxItems = Array.isArray(ctxItems) ? ctxItems : [];
+  var promos = listPromotionsFromSheet_(false);
+
+  // Pass A — direct-only base pricing
+  var subtotalAfterDirect = 0;
+  var passA = [];
+  for (var i = 0; i < ctxItems.length; i++) {
+    var it = ctxItems[i] || {};
+    var qty = it.qty;
+    if (!Number.isSafeInteger(qty) || qty < 1) throw new Error('INVALID_NORMALIZED_CART_QTY');
+    var directBest = resolveBestPromotionForLine_(promos, it.product_id, it.variant_key, it.raw_unit_price, now, _promoIsDirect_);
+    var dPricing = directBest ? directBest.pricing : calcPromotionPrice_(it.raw_unit_price, null);
+    subtotalAfterDirect += dPricing.unit_final_price * qty;
+    passA.push({ it: it, qty: qty });
+  }
+
+  var ctx = {
+    items: ctxItems.map(function(x){
+      var normalizedQty = (x || {}).qty;
+      if (!Number.isSafeInteger(normalizedQty) || normalizedQty < 1) throw new Error('INVALID_NORMALIZED_CART_QTY');
+      return {
+        product_id: String((x || {}).product_id),
+        variant_key: String((x || {}).variant_key || ''),
+        qty: normalizedQty,
+        title: (x || {}).title
+      };
+    }),
+    subtotal_after_promo: subtotalAfterDirect,
+    subtotal_before_shipping: subtotalAfterDirect
+  };
+
+  // Qualified conditional promos for this cart
+  var qualifiedIds = {};
+  for (var q = 0; q < promos.length; q++) {
+    var cp = promos[q];
+    if (cp.application_mode !== 'conditional') continue;
+    if (!_promoIsActive_(cp, now)) continue;
+    if (evaluatePromotionQualified_(cp, ctx)) qualifiedIds[String(cp.promotion_id)] = true;
+  }
+  var combinedFilter = function(p){
+    if (!p) return false;
+    if (_promoIsOrderTotal_(p)) return false;                     // order-total never applies per line
+    if (p.application_mode !== 'conditional') return true;         // direct always eligible
+    return !!qualifiedIds[String(p.promotion_id)];                 // conditional only if qualified
+  };
+
+  // Pass B — final per-line resolution among direct + qualified conditional
+  var lines = [];
+  var subtotal = 0;
+  var appliedIds = {};
+  for (var b = 0; b < passA.length; b++) {
+    var row = passA[b];
+    var bestB = resolveBestPromotionForLine_(promos, row.it.product_id, row.it.variant_key, row.it.raw_unit_price, now, combinedFilter);
+    var promo = bestB ? bestB.promo : null;
+    var pricing = bestB ? bestB.pricing : calcPromotionPrice_(row.it.raw_unit_price, null);
+    var lineSub = pricing.unit_final_price * row.qty;
+    subtotal += lineSub;
+    if (promo) appliedIds[String(promo.promotion_id)] = true;
+    lines.push({
+      product_id: String(row.it.product_id),
+      variant_key: String(row.it.variant_key || ''),
+      qty: row.qty,
+      unit_base_price: pricing.unit_base_price,
+      unit_discount_amount: pricing.unit_discount_amount,
+      unit_final_price: pricing.unit_final_price,
+      subtotal: lineSub,
+      promotion: promo || null
+    });
+  }
+
+  // Order-total layer — applied ONCE to the post-line item subtotal, after per-line pricing.
+  // Among qualified order-total conditional promos the single largest discount wins (no stacking).
+  var orderTotalBest = resolveBestOrderTotalPromo_(promos, qualifiedIds, subtotal, now);
+  var orderDiscount = null;
+  if (orderTotalBest) {
+    appliedIds[String(orderTotalBest.promo.promotion_id)] = true;
+    orderDiscount = { promotion: orderTotalBest.promo, amount: orderTotalBest.amount };
+  }
+  var subtotalAfterOrderDiscount = subtotal - (orderDiscount ? orderDiscount.amount : 0);
+
+  return {
+    lines: lines,
+    subtotal: subtotal,
+    subtotal_after_direct: subtotalAfterDirect,
+    order_discount: orderDiscount,
+    subtotal_after_order_discount: subtotalAfterOrderDiscount,
+    applied_promotion_ids: Object.keys(appliedIds),
+    qualified_conditional_ids: Object.keys(qualifiedIds),
+    promos: promos,
+    ctx: ctx
+  };
 }
 
 function publicPromoSummary_(p) {
@@ -4301,7 +4738,10 @@ function publicPromoSummary_(p) {
     discount_value: p.discount_value,
     starts_at: p.starts_at,
     ends_at: p.ends_at,
-    no_end_date: !!p.no_end_date
+    no_end_date: !!p.no_end_date,
+    application_mode: p.application_mode || 'direct',
+    condition_type: p.condition_type || '',
+    discount_scope: p.discount_scope || 'item'
   };
 }
 
@@ -4347,7 +4787,15 @@ function createPromotionRpc(token, payload) {
     var v = validatePromotionPayload_(payload || {}, false);
     if (!v.ok) return v;
     var p = v.value;
-    if (p.enabled !== false) assertNoOverlappingPromotion_(p, null);
+    // Serialize the overlap check + append: without the lock two concurrent creates
+    // can both pass the check and persist overlapping direct promotions.
+    var _createLock = LockService.getScriptLock();
+    if (!_createLock.tryLock(15000)) return { ok:false, error:'SERVER_BUSY' };
+    try {
+    if (p.enabled !== false) {
+      var _createConflict = findOverlappingPromotion_(p, null);
+      if (_createConflict) return promoOverlapError_(_createConflict);
+    }
     var sh = sheetPromotions_();
     var promoId = 'promo_' + uuid_().replace(/-/g, '').slice(0, 16);
     var now = nowISO_();
@@ -4359,15 +4807,22 @@ function createPromotionRpc(token, payload) {
       Number(p.discount_value),
       String(p.target_type),
       JSON.stringify(p.target || []),
-      String(p.starts_at),
+      String(p.starts_at || ''),
       String(p.ends_at || ''),
       (p.enabled === false) ? 'FALSE' : 'TRUE',
       now, now,
       '', // created_by — no longer maintained
       '', // updated_by — no longer maintained
       '', // deleted_at — no longer used (hard delete)
-      p.no_end_date ? 'TRUE' : 'FALSE'
+      p.no_end_date ? 'TRUE' : 'FALSE',
+      String(p.application_mode || 'direct'),
+      String(p.condition_type || ''),
+      JSON.stringify(p.condition_json || {}),
+      String(p.discount_scope || 'item')
     ]);
+    } finally {
+      try { _createLock.releaseLock(); } catch(_) {}
+    }
     invalidatePromoCache_();
     rebuildSnap_();
     enqueueLog_('promotion.create', { category:['database'], type:['creation'],
@@ -4389,24 +4844,31 @@ function updatePromotionRpc(token, promotionId, payload) {
     var idx = ids.indexOf(String(promotionId));
     if (idx < 0) return { ok: false, error: 'ไม่พบโปรโมชั่น' };
     var rowNo = idx + 2;
-    var row = sh.getRange(rowNo, 1, 1, 16).getValues()[0];
+    var row = sh.getRange(rowNo, 1, 1, 20).getValues()[0];
     var existing = rowToPromotion_(row);
 
     var merged = Object.assign({}, existing, payload || {});
     var v = validatePromotionPayload_(merged, true);
     if (!v.ok) return v;
     var p = v.value;
-    if (p.enabled !== false) assertNoOverlappingPromotion_(p, promotionId);
+    // Same serialization as createPromotionRpc — overlap check + write must be atomic.
+    var _updateLock = LockService.getScriptLock();
+    if (!_updateLock.tryLock(15000)) return { ok:false, error:'SERVER_BUSY' };
+    try {
+    if (p.enabled !== false) {
+      var _updateConflict = findOverlappingPromotion_(p, promotionId);
+      if (_updateConflict) return promoOverlapError_(_updateConflict);
+    }
 
     var now = nowISO_();
-    sh.getRange(rowNo, 2, 1, 15).setValues([[
+    sh.getRange(rowNo, 2, 1, 19).setValues([[
       sanitizeSheetCell_(p.name),
       sanitizeSheetCell_(p.description || ''),
       String(p.discount_type),
       Number(p.discount_value),
       String(p.target_type),
       JSON.stringify(p.target || []),
-      String(p.starts_at),
+      String(p.starts_at || ''),
       String(p.ends_at || ''),
       (p.enabled === false) ? 'FALSE' : 'TRUE',
       existing.created_at || now,
@@ -4414,8 +4876,15 @@ function updatePromotionRpc(token, promotionId, payload) {
       '', // created_by — no longer maintained
       '', // updated_by — no longer maintained
       '', // deleted_at — no longer used (hard delete)
-      p.no_end_date ? 'TRUE' : 'FALSE'
+      p.no_end_date ? 'TRUE' : 'FALSE',
+      String(p.application_mode || 'direct'),
+      String(p.condition_type || ''),
+      JSON.stringify(p.condition_json || {}),
+      String(p.discount_scope || 'item')
     ]]);
+    } finally {
+      try { _updateLock.releaseLock(); } catch(_) {}
+    }
     invalidatePromoCache_();
     rebuildSnap_();
     enqueueLog_('promotion.update', { category:['database'], type:['change'],
@@ -4437,13 +4906,21 @@ function togglePromotionRpc(token, promotionId, enabled) {
     var idx = ids.indexOf(String(promotionId));
     if (idx < 0) return { ok: false, error: 'ไม่พบโปรโมชั่น' };
     var rowNo = idx + 2;
-    var row = sh.getRange(rowNo, 1, 1, 15).getValues()[0];
+    var row = sh.getRange(rowNo, 1, 1, 20).getValues()[0];
     var existing = rowToPromotion_(row);
+    // Same serialization as createPromotionRpc — overlap check + write must be atomic.
+    var _toggleLock = LockService.getScriptLock();
+    if (!_toggleLock.tryLock(15000)) return { ok:false, error:'SERVER_BUSY' };
+    try {
     if (enabled) {
-      assertNoOverlappingPromotion_(existing, promotionId);
+      var _toggleConflict = findOverlappingPromotion_(existing, promotionId);
+      if (_toggleConflict) return promoOverlapError_(_toggleConflict);
     }
     sh.getRange(rowNo, 10).setValue(enabled ? 'TRUE' : 'FALSE');
     sh.getRange(rowNo, 12).setValue(nowISO_());
+    } finally {
+      try { _toggleLock.releaseLock(); } catch(_) {}
+    }
     invalidatePromoCache_();
     rebuildSnap_();
     auditLog_('promotion.toggle', { category:['database'], type:['change'],
@@ -4567,7 +5044,12 @@ function rowToOrder_(r) {
     token:                     decryptOrderTokenCell_(r[22]),
     slip_drive_file_id:        String(r[23]||''),
     token_expires_at:          String(r[24]||''),
-    tracking:       (function(){ try{ var v = r[25] ? decryptField_(String(r[25])) : ''; return v ? JSON.parse(v) : null; }catch(_){ return null; } })()
+    tracking:       (function(){ try{ var v = r[25] ? decryptField_(String(r[25])) : ''; return v ? JSON.parse(v) : null; }catch(_){ return null; } })(),
+    // Actual fulfillment carrier override (plaintext JSON, no PII). null for legacy orders → callers fall back to shipping_info.
+    fulfillment_shipping: (function(){ try{ var v = String(r[26]||''); return v ? JSON.parse(v) : null; }catch(_){ return null; } })(),
+    // Order-total (whole-order) promotion discount snapshot (plaintext JSON, no PII).
+    // null for legacy orders / orders with no order-total promo. Shape: { promotion, amount }.
+    order_discount: (function(){ try{ var v = String(r[27]||''); return v ? JSON.parse(v) : null; }catch(_){ return null; } })()
   };
 }
 
@@ -4579,6 +5061,188 @@ function rowToOrder_(r) {
 // with error:'DUPLICATE_ORDER' so the frontend can treat it as success.
 var IDEMPOTENCY_PREFIX = 'IDEMPOTENCY_ORD_';
 var IDEMPOTENCY_TTL    = 600;
+
+// Public checkout resource limits. These are enforced before pricing, promotions,
+// gifts, shipping, or sheet writes so hostile payloads cannot amplify GAS work.
+var MAX_ORDER_LINES               = 100;
+var MAX_QTY_PER_LINE              = 9999;
+var MAX_QTY_PER_PRODUCT_VARIANT   = 9999;
+var MAX_QTY_PER_PRODUCT           = 9999;
+var MAX_TOTAL_ORDER_QTY           = 50000;
+var MAX_SAFE_INTEGER_TEXT_        = '9007199254740991';
+
+function parseBoundedPositiveInteger_(value, maxValue) {
+  var n;
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value) || value < 1) {
+      return { ok:false, error:'INVALID_QTY' };
+    }
+    n = value;
+  } else if (typeof value === 'string') {
+    var s = value.trim();
+    if (!/^[1-9]\d*$/.test(s)) return { ok:false, error:'INVALID_QTY' };
+    // Reject unsafe decimal strings before Number() can round them.
+    if (s.length > MAX_SAFE_INTEGER_TEXT_.length
+        || (s.length === MAX_SAFE_INTEGER_TEXT_.length && s > MAX_SAFE_INTEGER_TEXT_)) {
+      return { ok:false, error:'INVALID_QTY' };
+    }
+    n = Number(s);
+    if (!Number.isSafeInteger(n) || n < 1) return { ok:false, error:'INVALID_QTY' };
+  } else {
+    return { ok:false, error:'INVALID_QTY' };
+  }
+  if (maxValue !== undefined && n > maxValue) {
+    return { ok:false, error:'QTY_LIMIT_EXCEEDED', limit:maxValue };
+  }
+  return { ok:true, value:n };
+}
+
+function _isPlainObject_(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Object.prototype.toString.call(value) === '[object Object]';
+}
+
+// Resolve a customer selection exclusively against the authoritative product schema.
+// Every current variant group is required; unknown groups/options fail closed.
+function resolveServerVariantSelection_(product, rawSelection) {
+  var groups = product && Array.isArray(product.variants) ? product.variants : [];
+  var selection = (rawSelection === undefined || rawSelection === null) ? {} : rawSelection;
+  if (!_isPlainObject_(selection)) return { ok:false, error:'INVALID_VARIANT_OPTION' };
+
+  var byName = {};
+  for (var gi = 0; gi < groups.length; gi++) {
+    var groupName = String((groups[gi] || {}).name || '');
+    byName[groupName] = groups[gi];
+  }
+  var clientKeys = Object.keys(selection);
+  for (var ck = 0; ck < clientKeys.length; ck++) {
+    if (!Object.prototype.hasOwnProperty.call(byName, clientKeys[ck])) {
+      return { ok:false, error:'INVALID_VARIANT_GROUP', variant_group:clientKeys[ck] };
+    }
+  }
+
+  var basePrice = Number((product || {}).price || 0);
+  var variantPrice = null;
+  var variantWeight = null;
+  var variantImgFileId = '';
+  var variantImgUrl = '';
+  var selected = {};
+  var infoParts = [];
+  for (var i = 0; i < groups.length; i++) {
+    var group = groups[i] || {};
+    var name = String(group.name || '');
+    if (!Object.prototype.hasOwnProperty.call(selection, name)
+        || selection[name] === undefined || selection[name] === null || selection[name] === '') {
+      return { ok:false, error:'VARIANT_SELECTION_REQUIRED', variant_group:name };
+    }
+    var chosen = selection[name];
+    var options = Array.isArray(group.options) ? group.options : [];
+    var option = null;
+    for (var oi = 0; oi < options.length; oi++) {
+      if (options[oi] && options[oi].label === chosen) { option = options[oi]; break; }
+    }
+    if (!option) return { ok:false, error:'INVALID_VARIANT_OPTION', variant_group:name };
+
+    selected[name] = option.label;
+    infoParts.push(name + ': ' + option.label);
+    // Preserve the established checkout semantics for valid multi-group products.
+    if (option.price !== undefined) variantPrice = Number(option.price);
+    else if (option.delta !== undefined) variantPrice = basePrice + Number(option.delta || 0);
+    if (Number(option.weight_grams) > 0) variantWeight = Number(option.weight_grams);
+    if (!variantImgFileId && option.image_file_id) variantImgFileId = option.image_file_id;
+    if (!variantImgUrl && option.image) variantImgUrl = option.image;
+  }
+
+  var rawUnitPrice = variantPrice !== null ? variantPrice : basePrice;
+  var itemWeight = variantWeight !== null ? variantWeight : Number((product || {}).weight_grams || 0);
+  var itemImgFileId = variantImgFileId || (product || {}).image_drive_file_id || '';
+  var itemImgUrl = variantImgFileId
+    ? (variantImgUrl || (product || {}).image_url || '')
+    : (variantImgUrl || (product || {}).image_url || '');
+  return {
+    ok:true,
+    selected_variants:selected,
+    variant_key:buildVariantKey_(selected),
+    variant_info:infoParts.join(', '),
+    raw_unit_price:rawUnitPrice,
+    item_weight:itemWeight,
+    image_drive_file_id:itemImgFileId,
+    image_url:itemImgUrl
+  };
+}
+
+// Shared zero-trust cart boundary for submit + both public preview RPCs.
+function normalizeOrderCart_(rawItems, productMap) {
+  if (rawItems === undefined || rawItems === null) rawItems = [];
+  if (!Array.isArray(rawItems)) return { ok:false, error:'INVALID_ITEMS' };
+  if (!rawItems.length) return { ok:true, items:[], total_qty:0, by_product:{}, by_variant:{} };
+  if (rawItems.length > MAX_ORDER_LINES) {
+    return { ok:false, error:'TOO_MANY_ITEMS', limit:MAX_ORDER_LINES, actual:rawItems.length };
+  }
+
+  var out = [];
+  var byProduct = {};
+  var byVariant = {};
+  var totalQty = 0;
+  for (var i = 0; i < rawItems.length; i++) {
+    var raw = rawItems[i];
+    if (!_isPlainObject_(raw)) return { ok:false, error:'INVALID_ITEMS', item_index:i };
+    var qtyR = parseBoundedPositiveInteger_(raw.qty, MAX_QTY_PER_LINE);
+    if (!qtyR.ok) {
+      var qtyError = { ok:false, error:qtyR.error, item_index:i, product_id:String(raw.product_id || '') };
+      if (qtyR.limit !== undefined) qtyError.limit = qtyR.limit;
+      return qtyError;
+    }
+    var productId = String(raw.product_id || '');
+    var product = productMap && productMap[productId];
+    if (!product) return { ok:false, error:'PRODUCT_NOT_FOUND', item_index:i, product_id:productId };
+    var variantR = resolveServerVariantSelection_(product, raw.selected_variants);
+    if (!variantR.ok) {
+      return {
+        ok:false, error:variantR.error, item_index:i, product_id:productId,
+        variant_group:variantR.variant_group || ''
+      };
+    }
+
+    var qty = qtyR.value;
+    var variantAggregateKey = productId + '::' + variantR.variant_key;
+    byVariant[variantAggregateKey] = (byVariant[variantAggregateKey] || 0) + qty;
+    if (byVariant[variantAggregateKey] > MAX_QTY_PER_PRODUCT_VARIANT) {
+      return {
+        ok:false, error:'QTY_LIMIT_EXCEEDED', scope:'product_variant', item_index:i,
+        product_id:productId, variant_key:variantR.variant_key,
+        limit:MAX_QTY_PER_PRODUCT_VARIANT, actual:byVariant[variantAggregateKey]
+      };
+    }
+    byProduct[productId] = (byProduct[productId] || 0) + qty;
+    if (byProduct[productId] > MAX_QTY_PER_PRODUCT) {
+      return {
+        ok:false, error:'QTY_LIMIT_EXCEEDED', scope:'product', item_index:i,
+        product_id:productId, limit:MAX_QTY_PER_PRODUCT, actual:byProduct[productId]
+      };
+    }
+    totalQty += qty;
+    if (totalQty > MAX_TOTAL_ORDER_QTY) {
+      return {
+        ok:false, error:'QTY_LIMIT_EXCEEDED', scope:'order', item_index:i,
+        limit:MAX_TOTAL_ORDER_QTY, actual:totalQty
+      };
+    }
+
+    out.push({
+      prod:product,
+      qty:qty,
+      selectedVariants:variantR.selected_variants,
+      variantKey:variantR.variant_key,
+      rawUnitPrice:variantR.raw_unit_price,
+      itemWeight:variantR.item_weight,
+      variant_info:variantR.variant_info,
+      itemImgFileId:variantR.image_drive_file_id,
+      itemImgUrl:variantR.image_url
+    });
+  }
+  return { ok:true, items:out, total_qty:totalQty, by_product:byProduct, by_variant:byVariant };
+}
 
 function _idempotencyKey_(clientOrderId) {
   return IDEMPOTENCY_PREFIX + String(clientOrderId).slice(0, 80);
@@ -4611,9 +5275,14 @@ function submitOrderRpc(payload) {
     if (__dup) {
       var __dupResp = Object.assign({}, __dup, { ok:false, error:'DUPLICATE_ORDER' });
       try { Logger.log('submitOrderRpc DUPLICATE_ORDER hit for client_order_id=' + __clientOrderId); } catch(_) {}
+      // Split-order responses carry `orders: [...]` with no top-level order_id —
+      // log the first split order's id so the audit trail isn't an empty hash.
+      var __dupLogId = __dup.order_id
+        || (Array.isArray(__dup.orders) && __dup.orders.length ? __dup.orders[0].order_id : '');
       auditLog_('order.submit.duplicate', { category:['order'], type:['creation'],
         outcome:'unknown', route:'index', rpc:'submitOrderRpc',
-        meta:{ order_id_hash: hashForLog_(__dup.order_id, 'o_') } },
+        meta:{ order_id_hash: hashForLog_(__dupLogId, 'o_'),
+               split_count: Array.isArray(__dup.orders) ? __dup.orders.length : undefined } },
         sanitizeClientLogContext_(payload && payload.client_log_context));
       return __dupResp;
     }
@@ -4723,102 +5392,61 @@ function submitOrderRpc(payload) {
     __t('snap_loaded');
 
     const submitNow = new Date();
-    const inItems = Array.isArray(p.items) ? p.items : [];
+    const inItems = (p.items === undefined || p.items === null) ? [] : p.items;
 
-    // Pre-validate qty (must be positive integer) and variant selections (must match
-    // the product schema). Fail closed before any sheet write or stock deduction.
-    var _isPosInt = function(v) {
-      if (v === null || v === undefined || v === '') return false;
-      if (typeof v === 'number') return isFinite(v) && v > 0 && Math.floor(v) === v;
-      if (typeof v === 'string') return /^[1-9]\d*$/.test(v.trim());
-      return false;
-    };
-    for (var pvi = 0; pvi < inItems.length; pvi++) {
-      var pvItem = inItems[pvi] || {};
-      if (!_isPosInt(pvItem.qty)) {
-        return __finishTimings({ ok:false, error:'INVALID_QTY' });
-      }
-      var pvProd = prodMap[String(pvItem.product_id)];
-      if (!pvProd) continue;
-      var pvSel = pvItem.selected_variants || {};
-      var pvGroups = pvProd.variants || [];
-      var pvGroupByName = {};
-      pvGroups.forEach(function(g){ pvGroupByName[g.name] = g; });
-      var pvKeys = Object.keys(pvSel);
-      for (var pvk = 0; pvk < pvKeys.length; pvk++) {
-        var pvKey = pvKeys[pvk];
-        var pvVal = pvSel[pvKey];
-        if (pvVal === undefined || pvVal === null || pvVal === '') continue;
-        var pvGroup = pvGroupByName[pvKey];
-        if (!pvGroup) return __finishTimings({ ok:false, error:'INVALID_VARIANT_OPTION' });
-        var pvFound = (pvGroup.options || []).some(function(o){ return o.label === pvVal; });
-        if (!pvFound) return __finishTimings({ ok:false, error:'INVALID_VARIANT_OPTION' });
-      }
-    }
+    // 2. Process items — one shared boundary validates qty + variants and derives every
+    // price/weight/image field from the authoritative product snapshot.
+    //    Variant resolution (price/weight/image) is done per line first; promotion pricing
+    //    (direct + qualified conditional) is then computed for the whole cart at once via
+    //    resolveCartPromotions_ — the SAME pipeline the eligibility preview uses, so preview
+    //    and order can never diverge. Promotion is snapshotted into items_json so old orders
+    //    remain stable even if the promotion is later edited or deleted.
+    var normalizedCart = normalizeOrderCart_(inItems, prodMap);
+    if (!normalizedCart.ok) return __finishTimings(normalizedCart);
+    const preItems = normalizedCart.items;
+    var totalWeightGrams = preItems.reduce(function(sum, item) {
+      return sum + item.itemWeight * item.qty;
+    }, 0);
 
-    // 2. Process items — server looks up prices, variant deltas, and active promotions.
-    //    Promotion is snapshotted into items_json so old orders remain stable.
-    var subtotal = 0;
-    var totalWeightGrams = 0;
-    const outItems = inItems.map(function(item) {
-      const prod = prodMap[String(item.product_id)];
-      if (!prod) return null;
-      const basePrice = Number(prod.price || 0);
-      const qty = parseInt(item.qty, 10);
-      const selectedVariants = item.selected_variants || {};
-      var variantPrice = null;
-      var variantWeight = null;
-      var variantImgFileId = '';
-      var variantImgUrl    = '';
-      (prod.variants || []).forEach(function(group) {
-        const selectedLabel = selectedVariants[group.name];
-        if (selectedLabel) {
-          const opt = (group.options || []).filter(function(o){ return o.label === selectedLabel; })[0];
-          if (opt) {
-            if (opt.price !== undefined) variantPrice = Number(opt.price);
-            else if (opt.delta !== undefined) variantPrice = basePrice + Number(opt.delta || 0); // backward compat
-            if (opt.weight_grams > 0) variantWeight = Number(opt.weight_grams);
-            // ใช้รูป variant แรกที่เจอ (image_file_id = Drive ID, image = URL)
-            if (!variantImgFileId && opt.image_file_id) variantImgFileId = opt.image_file_id;
-            if (!variantImgUrl    && opt.image)         variantImgUrl    = opt.image;
-          }
-        }
-      });
-      const rawUnitPrice = variantPrice !== null ? variantPrice : basePrice;
-      const itemWeight = variantWeight !== null ? variantWeight : Number(prod.weight_grams || 0);
-      const variantKey = buildVariantKey_(selectedVariants);
-      const promo = getActivePromotionForProduct_(prod.id, variantKey, submitNow);
-      const pricing = calcPromotionPrice_(rawUnitPrice, promo);
-      const lineSub  = pricing.unit_final_price * qty;
-      subtotal         += lineSub;
-      totalWeightGrams += itemWeight * qty;
-      // ถ้า variant ที่เลือกมีรูปของตัวเอง ใช้รูปนั้น มิฉะนั้น fallback ไปรูปหลักสินค้า
-      const itemImgFileId = variantImgFileId || prod.image_drive_file_id || '';
-      const itemImgUrl    = variantImgFileId  ? (variantImgUrl || prod.image_url || '')
-                          : (variantImgUrl    || prod.image_url || '');
+    if (preItems.length === 0) return __finishTimings({ ok:false, error:'ไม่พบสินค้าที่ถูกต้องในคำสั่งซื้อ' });
+
+    // Cart-level promotion resolution (direct + qualified conditional). Lines come back in
+    // the same order as preItems.
+    const cartPricing = resolveCartPromotions_(preItems.map(function(pi){
+      return { product_id: pi.prod.id, variant_key: pi.variantKey, qty: pi.qty, raw_unit_price: pi.rawUnitPrice, title: pi.prod.title };
+    }), submitNow);
+    var subtotal = cartPricing.subtotal;
+    // Order-total (whole-order) promotion discount — applied once to the item subtotal,
+    // after per-line pricing and before shipping. Snapshot for persistence + response.
+    var orderDiscountObj = cartPricing.order_discount;   // { promotion, amount } | null
+    var orderDiscountAmount = orderDiscountObj ? Number(orderDiscountObj.amount || 0) : 0;
+    var orderDiscountSnap = orderDiscountObj
+      ? { promotion: publicPromoSummary_(orderDiscountObj.promotion), amount: orderDiscountAmount }
+      : null;
+    const outItems = preItems.map(function(pi, idx) {
+      const ln = cartPricing.lines[idx] || {};
+      const promo = ln.promotion || null;
       return {
         line_type:         'product',
-        product_id:        prod.id,
-        title:             prod.title,
-        variant_info:      String(item.variant_info || ''),
-        selected_variants: selectedVariants,
-        variant_key:       variantKey,
+        product_id:        pi.prod.id,
+        title:             pi.prod.title,
+        variant_info:      pi.variant_info,
+        selected_variants: pi.selectedVariants,
+        variant_key:       pi.variantKey,
         // Promotion-aware pricing snapshot
-        unit_base_price:     pricing.unit_base_price,
-        unit_discount_amount: pricing.unit_discount_amount,
-        unit_final_price:    pricing.unit_final_price,
+        unit_base_price:     ln.unit_base_price,
+        unit_discount_amount: ln.unit_discount_amount,
+        unit_final_price:    ln.unit_final_price,
         // Backward-compat: legacy display code reads `unit_price` and `subtotal`
-        unit_price:        pricing.unit_final_price,
-        qty:               qty,
-        subtotal:          lineSub,
+        unit_price:        ln.unit_final_price,
+        qty:               pi.qty,
+        subtotal:          ln.subtotal,
         promotion:         promo ? publicPromoSummary_(promo) : null,
-        image_drive_file_id: itemImgFileId,
-        image_url:           itemImgUrl,
-        _itemWeight:         itemWeight
+        image_drive_file_id: pi.itemImgFileId,
+        image_url:           pi.itemImgUrl,
+        _itemWeight:         pi.itemWeight
       };
-    }).filter(Boolean);
-
-    if (outItems.length === 0) return __finishTimings({ ok:false, error:'ไม่พบสินค้าที่ถูกต้องในคำสั่งซื้อ' });
+    });
     __t('items_processed');
 
     // 2a. Sale Window check — reject items not currently sellable
@@ -4910,7 +5538,8 @@ function submitOrderRpc(payload) {
         fee:          fee
       };
     }).filter(Boolean);
-    const total = subtotal + shippingFee;
+    // Order-total discount nets the item subtotal (clamped ≥ 0 already), then shipping is added.
+    const total = Math.max(0, subtotal - orderDiscountAmount) + shippingFee;
     const primaryMethodId = outShipping.length > 0 ? outShipping[0].method_id : '';
 
     // Client pricing snapshot validation (optional — only runs if payload sends it).
@@ -4921,17 +5550,29 @@ function submitOrderRpc(payload) {
     if (p.client_pricing && typeof p.client_pricing === 'object') {
       var _cp = p.client_pricing;
       var _diff = [];
+      var _cpItems = Array.isArray(_cp.items) ? _cp.items : [];
+      if (_cpItems.length > MAX_ORDER_LINES) {
+        return __finishTimings({
+          ok:false, error:'TOO_MANY_ITEMS', field:'client_pricing.items',
+          limit:MAX_ORDER_LINES, actual:_cpItems.length
+        });
+      }
+      var _cpByKey = {};
+      for (var _cpi = 0; _cpi < _cpItems.length; _cpi++) {
+        var _cpItem = _cpItems[_cpi];
+        if (!_isPlainObject_(_cpItem)) continue;
+        var _cpPid = String(_cpItem.product_id || '');
+        var _cpProd = prodMap[_cpPid];
+        if (!_cpProd) continue;
+        var _cpVariant = resolveServerVariantSelection_(_cpProd, _cpItem.selected_variants);
+        if (!_cpVariant.ok) continue;
+        var _cpKey = _cpPid + '::' + _cpVariant.variant_key;
+        if (!_cpByKey[_cpKey]) _cpByKey[_cpKey] = _cpItem;
+      }
       for (var _ci = 0; _ci < outItems.length; _ci++) {
         var _srv = outItems[_ci];
         var _srvVk = _srv.variant_key || '';
-        var _cli = null;
-        var _cpItems = Array.isArray(_cp.items) ? _cp.items : [];
-        for (var _cj = 0; _cj < _cpItems.length; _cj++) {
-          var _c = _cpItems[_cj];
-          if (!_c) continue;
-          var _cliVk = buildVariantKey_(_c.selected_variants || {});
-          if (String(_c.product_id) === String(_srv.product_id) && _cliVk === _srvVk) { _cli = _c; break; }
-        }
+        var _cli = _cpByKey[String(_srv.product_id) + '::' + _srvVk] || null;
         if (!_cli) {
           _diff.push({ kind:'item_missing', product_id:_srv.product_id, variant_key:_srvVk, title:_srv.title });
           continue;
@@ -4950,6 +5591,12 @@ function submitOrderRpc(payload) {
       if (isFinite(_cpSub) && _cpSub !== subtotal) _diff.push({ kind:'subtotal', client:_cpSub, server:subtotal });
       var _cpFee = Math.round(Number(_cp.shipping_fee));
       if (isFinite(_cpFee) && _cpFee !== shippingFee) _diff.push({ kind:'shipping_fee', client:_cpFee, server:shippingFee });
+      // Order-total discount (0 when absent, so a legacy/older client that omits it and had
+      // no order-total promo still matches). A mismatch means the order-total promo changed.
+      var _cpOrdDisc = (_cp.order_discount === undefined || _cp.order_discount === null)
+        ? 0 : Math.round(Number(_cp.order_discount));
+      if (isFinite(_cpOrdDisc) && _cpOrdDisc !== orderDiscountAmount)
+        _diff.push({ kind:'order_discount', client:_cpOrdDisc, server:orderDiscountAmount });
       var _cpTot = Math.round(Number(_cp.total));
       if (isFinite(_cpTot) && _cpTot !== total) _diff.push({ kind:'total', client:_cpTot, server:total });
 
@@ -4971,6 +5618,7 @@ function submitOrderRpc(payload) {
             };
           }),
           updated_subtotal: subtotal,
+          updated_order_discount: orderDiscountAmount,
           updated_shipping_fee: shippingFee,
           updated_total: total
         });
@@ -5063,10 +5711,33 @@ function submitOrderRpc(payload) {
       drafts.push({
         orderId: orderId, token: token,
         items: outItems,
-        subtotal: subtotal, fee: shippingFee, total: total,
+        // Gross total here (subtotal + fee); the order-total discount is applied in the
+        // unified allocation step below so split and non-split share one code path.
+        subtotal: subtotal, fee: shippingFee, total: subtotal + shippingFee,
         primaryMethodId: primaryMethodId,
         shippingArr: outShipping
       });
+    }
+
+    // Allocate the whole-order discount across drafts proportionally by item subtotal, so no
+    // draft can go negative and the allocated amounts sum to the full discount (remainder to
+    // the last eligible draft). For the common single-draft order this assigns the full amount.
+    drafts.forEach(function(d){ d.orderDiscount = null; });
+    if (orderDiscountAmount > 0 && subtotal > 0) {
+      var _allocRemaining = orderDiscountAmount;
+      for (var _di = 0; _di < drafts.length; _di++) {
+        var _d = drafts[_di];
+        var _isLast = (_di === drafts.length - 1);
+        var _alloc = _isLast
+          ? _allocRemaining
+          : Math.min(_d.subtotal, Math.round(orderDiscountAmount * _d.subtotal / subtotal));
+        _alloc = Math.max(0, Math.min(_alloc, _d.subtotal, _allocRemaining));
+        _allocRemaining -= _alloc;
+        if (_alloc > 0) {
+          _d.total = Math.max(0, _d.subtotal - _alloc) + _d.fee;
+          _d.orderDiscount = { promotion: orderDiscountSnap.promotion, amount: _alloc };
+        }
+      }
     }
 
     // 5. Evaluate gift candidates ONCE per cart, then allocate each awarded gift
@@ -5079,12 +5750,14 @@ function submitOrderRpc(payload) {
     drafts.forEach(function(d){ d.giftCandidates = []; });
     try {
       var cartItems = [];
-      var cartSubtotal = 0;
       drafts.forEach(function(d) {
-        cartSubtotal += Number(d.subtotal || 0);
         (d.items || []).forEach(function(it){ cartItems.push(it); });
       });
-      var cartCtx = { items: cartItems, subtotal_after_promo: cartSubtotal, subtotal_before_shipping: cartSubtotal };
+      // Gift min_subtotal base = subtotal after DIRECT discounts only (conditional promo
+      // discounts are excluded), matching previewGiftEligibilityRpc so gift preview and
+      // gift submit never diverge. cartPricing.subtotal_after_direct is the whole-cart base.
+      var giftBaseSubtotal = Number(cartPricing.subtotal_after_direct || 0);
+      var cartCtx = { items: cartItems, subtotal_after_promo: giftBaseSubtotal, subtotal_before_shipping: giftBaseSubtotal };
       var awarded = evaluateGiftRulesForCart_(cartCtx, submitNow) || [];
       awarded.forEach(function(c) {
         var rule = c.rule || {};
@@ -5196,30 +5869,58 @@ function submitOrderRpc(payload) {
         };
       });
 
-      // 5b. Verify stock for every item across all drafts before any writes
+      // 5b. Verify stock for every item across all drafts before any writes.
+      // effStock is a fixed snapshot read once per product/variant (not decremented between
+      // lines here — actual deduction happens later in 5c), so duplicate lines for the same
+      // product/variant must have their requested qty AGGREGATED and checked cumulatively.
+      // Otherwise two lines that are each individually within stock (e.g. qty 3 + qty 3
+      // against stock 3) would both pass this check independently even though their combined
+      // demand oversells the product.
       var pendingDeducts = []; // {pid, type, gIdx, oIdx, qty}
+      var requestedSoFar = {}; // stockKey -> cumulative qty requested so far in this submit
       for (var d1 = 0; d1 < drafts.length; d1++) {
-        var dr = drafts[d1];
-        for (var i1 = 0; i1 < dr.items.length; i1++) {
-          var it = dr.items[i1];
-          var pinfo = prodStockMap[String(it.product_id)];
-          if (!pinfo) continue; // product vanished — let it through (no stock to track)
-          var sel = it.selected_variants || {};
-          var effStock = pinfo.prodStock;
-          var matchedG = -1, matchedO = -1;
+          var dr = drafts[d1];
+          for (var i1 = 0; i1 < dr.items.length; i1++) {
+            var it = dr.items[i1];
+            var pinfo = prodStockMap[String(it.product_id)];
+            if (!pinfo) {
+              __t('stock_product_missing');
+              return __finishTimings({
+                ok:false, error:'PRODUCT_NOT_FOUND', product_id:String(it.product_id)
+              });
+            }
+            // Revalidate against the fresh sheet row while holding the lock. A product or
+            // variant edit between prepare and commit must never fall back to product stock.
+            var freshVariant = resolveServerVariantSelection_(
+              { id:it.product_id, price:it.unit_base_price, variants:pinfo.variants },
+              it.selected_variants
+            );
+            if (!freshVariant.ok) {
+              __t('stock_variant_changed');
+              return __finishTimings({
+                ok:false, error:freshVariant.error, product_id:String(it.product_id),
+                variant_group:freshVariant.variant_group || ''
+              });
+            }
+            var sel = freshVariant.selected_variants;
+            var effStock = pinfo.prodStock;
+            var matchedG = -1, matchedO = -1;
           for (var gi2 = 0; gi2 < pinfo.variants.length; gi2++) {
             var sg = pinfo.variants[gi2];
             var chosen = sel[sg.name];
             if (!chosen) continue;
             for (var oi2 = 0; oi2 < (sg.options || []).length; oi2++) {
-              if (sg.options[oi2].label === chosen && sg.options[oi2].stock !== undefined) {
-                effStock = Number(sg.options[oi2].stock);
-                matchedG = gi2; matchedO = oi2;
-                break;
+                if (sg.options[oi2].label === chosen) {
+                  effStock = sg.options[oi2].stock === undefined ? -1 : Number(sg.options[oi2].stock);
+                  matchedG = gi2; matchedO = oi2;
+                  break;
               }
             }
           }
-          if (effStock !== -1 && effStock < it.qty) {
+          var stockKey = String(it.product_id) + '::' + (matchedG >= 0 ? (matchedG + '.' + matchedO) : 'product');
+          var cumulativeQty = (requestedSoFar[stockKey] || 0) + it.qty;
+          requestedSoFar[stockKey] = cumulativeQty;
+          if (effStock !== -1 && effStock < cumulativeQty) {
             __t('stock_insufficient');
             return __finishTimings({
               ok:false, error:'STOCK_INSUFFICIENT',
@@ -5227,7 +5928,7 @@ function submitOrderRpc(payload) {
               product_id: String(it.product_id),
               variant_key: it.variant_key || '',
               selected_variants: it.selected_variants || {},
-              requested_qty: it.qty,
+              requested_qty: cumulativeQty,
               available_qty: Math.max(0, effStock)
             });
           }
@@ -5343,7 +6044,9 @@ function submitOrderRpc(payload) {
             JSON.stringify(finalItems),
             JSON.stringify([{ status:'unpaid', timestamp:now }]),
             JSON.stringify(d2.shippingArr),
-            encPii.customer_contact, encryptOrderToken_(d2.token), '', tokenExpiresAt
+            encPii.customer_contact, encryptOrderToken_(d2.token), '', tokenExpiresAt,
+            '', '', // tracking_json, fulfillment_shipping_json (set later when shipped)
+            JSON.stringify(d2.orderDiscount || null)
           ]);
           appendedOrderIds.push(d2.orderId);
         }
@@ -5706,6 +6409,9 @@ function getOrderByTokenRpc(token) {
     }
     var record = Object.assign({}, vt.record);
     record.token = vt.tokenStr;
+    // Never expose internal-only fulfillment fields (reason, changed_by, previous company)
+    // to the customer — keep only the customer-safe "will ship via X" subset.
+    record.fulfillment_shipping = _customerSafeFulfillment_(record.fulfillment_shipping);
     enqueueLog_('order.view.token.success', { category:['order'], type:['access'],
       outcome:'success', route:'order-view', rpc:'getOrderByTokenRpc',
       meta:{ order_id_hash: hashForLog_(record.order_id, 'o_') } }, null);
@@ -5915,6 +6621,10 @@ function _changeOrderStock_(items, direction) {
   }
 
   // ---- apply product writes ----
+  // Restore is a plain `cur + need`: the deduct pre-check above guarantees a deduct
+  // never actually clamps, so deduct/restore stay symmetric — UNLESS an admin manually
+  // lowered stock while the order was active, in which case restore intentionally puts
+  // back the full ordered qty (the manual edit, not this function, owns that delta).
   Object.keys(prodTargets).forEach(function(key) {
     var t = prodTargets[key];
     var pinfo = prodStockMap[t.pid];
@@ -6072,6 +6782,8 @@ function orderUpdateFieldsRpc(token, orderId, patch) {
   var _sess = requireAdmin_(token);
   if (!_sess) return { ok: false, error: 'AUTH_REQUIRED' };
   if (checkRotateLock_()) return { ok:false, error:'ROTATE_LOCK' };
+  var _fieldsLock = LockService.getScriptLock();
+  if (!_fieldsLock.tryLock(15000)) return { ok:false, error:'SERVER_BUSY' };
   try {
     const sh  = sheetOrders_();
     const n   = sh.getLastRow();
@@ -6081,6 +6793,18 @@ function orderUpdateFieldsRpc(token, orderId, patch) {
     if (idx < 0) return { ok:false, error:'not found' };
     const rowNo = idx + 2;
     const p = patch || {};
+    // Read the current row once — needed to enforce the monetary lock and to compute
+    // the order total from trusted, server-stored values (never from client input).
+    const _curNumCols = Math.min(ORDER_COLS.length, sh.getLastColumn());
+    var _curRow = sh.getRange(rowNo, 1, 1, _curNumCols).getValues()[0];
+    while (_curRow.length < ORDER_COLS.length) _curRow.push('');
+    const _curOrder = rowToOrder_(_curRow);
+    const _pricingIsLocked = _pricingLocked_(_curOrder);
+    // subtotal is never editable via this RPC.
+    if (p.subtotal !== undefined) return { ok:false, error:'SUBTOTAL_IMMUTABLE' };
+    // Monetary fields are frozen once the order has ever been paid (persists across rollback).
+    if (_pricingIsLocked && (p.shipping_fee !== undefined || p.total !== undefined))
+      return { ok:false, error:'PRICING_LOCKED' };
     // --- INPUT VALIDATION ---
     if (p.customer_notes !== undefined) {
       var cnR = normalizeMultilineText_(String(p.customer_notes||''), { maxLen:VLEN.LONG, fieldName:'หมายเหตุ', allowEmpty:true });
@@ -6116,12 +6840,17 @@ function orderUpdateFieldsRpc(token, orderId, patch) {
       p.customer_phone = _phR.value;
     }
     // --- END VALIDATION ---
-    if (p.shipping_fee !== undefined)
-      sh.getRange(rowNo, ORDER_COLS.indexOf('shipping_fee')+1).setValue(Number(p.shipping_fee));
+    // Shipping-fee edit (only reachable before payment — locked orders rejected above).
+    // The client-supplied `total` is never trusted; recompute it on the backend from the
+    // stored subtotal so total always equals subtotal + shipping_fee.
+    if (p.shipping_fee !== undefined) {
+      var _newFee = Number(p.shipping_fee);
+      if (!isFinite(_newFee) || _newFee < 0) return { ok:false, error:'ค่าจัดส่งไม่ถูกต้อง' };
+      sh.getRange(rowNo, ORDER_COLS.indexOf('shipping_fee')+1).setValue(_newFee);
+      sh.getRange(rowNo, ORDER_COLS.indexOf('total')+1).setValue(Number(_curOrder.subtotal || 0) + _newFee);
+    }
     if (p.customer_notes !== undefined)
       sh.getRange(rowNo, ORDER_COLS.indexOf('customer_notes')+1).setValue(encryptField_(p.customer_notes));
-    if (p.total !== undefined)
-      sh.getRange(rowNo, ORDER_COLS.indexOf('total')+1).setValue(Number(p.total));
     if (hasAddrPatch) {
       sh.getRange(rowNo, ORDER_COLS.indexOf('shipping_name')+1)        .setValue(encryptField_(p.shipping_name));
       sh.getRange(rowNo, ORDER_COLS.indexOf('shipping_address')+1)     .setValue(encryptField_(p.shipping_address));
@@ -6142,13 +6871,118 @@ function orderUpdateFieldsRpc(token, orderId, patch) {
       userId:_sess.userId, sessionId:token,
       meta:{ resource_type:'order', order_id_hash: hashForLog_(orderId, 'o_'),
              shipping_fee_changed: p.shipping_fee !== undefined,
-             total_changed: p.total !== undefined,
+             total_recomputed: p.shipping_fee !== undefined,
              notes_changed: p.customer_notes !== undefined,
              address_changed: hasAddrPatch,
              phone_changed: p.customer_phone !== undefined } }, _sess.logCtx);
     return { ok:true };
   } catch(err) {
     return { ok:false, error:String(err) };
+  } finally {
+    try { _fieldsLock.releaseLock(); } catch(_) {}
+  }
+}
+
+// Record the ACTUAL fulfillment carrier the seller ships with — a separate concept from
+// the customer's paid selection (shipping_method_id / shipping_info_json), which is never
+// touched here. Does NOT recalculate price and does NOT change the order status.
+// Allowed only for unpaid/paid/approved. Carrier/provider/URL are resolved on the backend
+// from the shipping config and snapshotted so the order stays readable if config changes.
+function orderUpdateFulfillmentShippingRpc(token, orderId, companyId, methodId, reason) {
+  var _sess = requireAdmin_(token);
+  if (!_sess) {
+    enqueueLog_('auth.required', { category:['authentication'], type:['denied'],
+      outcome:'failure', level:'warning', route:'order', rpc:'orderUpdateFulfillmentShippingRpc' }, null);
+    return { ok: false, error: 'AUTH_REQUIRED' };
+  }
+  if (checkRotateLock_()) return { ok:false, error:'ROTATE_LOCK' };
+  var _lock = LockService.getScriptLock();
+  if (!_lock.tryLock(15000)) return { ok:false, error:'SERVER_BUSY' };
+  try {
+    const sh  = sheetOrders_();
+    const n   = sh.getLastRow();
+    if (n < 2) return { ok:false, error:'not found' };
+    const ids = sh.getRange(2,1,n-1,1).getValues().map(function(r){ return String(r[0]); });
+    const idx = ids.indexOf(String(orderId));
+    if (idx < 0) return { ok:false, error:'not found' };
+    const rowNo = idx + 2;
+    // Read the latest order INSIDE the lock (status + existing override).
+    const numCols = Math.min(ORDER_COLS.length, sh.getLastColumn());
+    var row = sh.getRange(rowNo, 1, 1, numCols).getValues()[0];
+    while (row.length < ORDER_COLS.length) row.push('');
+    const order = rowToOrder_(row);
+    const curStatus = String(order.status || '');
+    // Carrier override is allowed only before shipment.
+    var ALLOWED = { unpaid:1, paid:1, approved:1 };
+    if (!ALLOWED[curStatus]) return { ok:false, error:'STATUS_NOT_ALLOWED' };
+    // Reason is mandatory once money is committed (paid/approved).
+    var reasonR = normalizeMultilineText_(String(reason||''), { maxLen:VLEN.LONG, fieldName:'เหตุผล', allowEmpty:true });
+    if (!reasonR.ok) return { ok:false, error:reasonR.error };
+    var reasonVal = reasonR.value;
+    if ((curStatus === 'paid' || curStatus === 'approved') && !reasonVal)
+      return { ok:false, error:'REASON_REQUIRED' };
+    // Validate company/method against the live shipping config, distinguishing a bad
+    // company (COMPANY_INVALID) from a bad/foreign/inactive method (METHOD_INVALID).
+    var companies = getShippingCached_();
+    var company = null;
+    for (var ci = 0; ci < companies.length; ci++) {
+      if (String(companies[ci].id) === String(companyId)) { company = companies[ci]; break; }
+    }
+    if (!company || company.active === false) return { ok:false, error:'COMPANY_INVALID' };
+    var methods = Array.isArray(company.methods) ? company.methods : [];
+    var method = null;
+    for (var mi = 0; mi < methods.length; mi++) {
+      if (String(methods[mi].id) === String(methodId)) { method = methods[mi]; break; }
+    }
+    if (!method || method.active === false) return { ok:false, error:'METHOD_INVALID' };
+    var now = nowISO_();
+    // changed_from = previous override company if any, else the customer's original company.
+    var prevOverride = order.fulfillment_shipping || null;
+    var originalCompanyId = (Array.isArray(order.shipping_info) && order.shipping_info[0])
+      ? String(order.shipping_info[0].company_id || '') : '';
+    var changedFrom = prevOverride ? String(prevOverride.company_id || '') : originalCompanyId;
+    // Carrier metadata resolved by the backend and snapshotted (never trusted from client).
+    var fulfillment = {
+      company_id:            String(company.id || ''),
+      company_name:          String(company.name || ''),
+      method_id:             String(method.id || ''),
+      method_name:           String(method.name || ''),
+      carrier_id:            String(company.carrier_id || 'other'),
+      tracking_provider:     String(company.tracking_provider || ''),
+      tracking_url_template: String(company.tracking_url_template || ''),
+      changed_from_company_id: changedFrom,
+      changed_at:            now,
+      changed_by:            String(_sess.userId || ''),
+      reason:                reasonVal
+    };
+    // Append a customer-safe history event WITHOUT changing the main order status.
+    const histCol = ORDER_COLS.indexOf('status_history_json') + 1;
+    var history = [];
+    try { history = JSON.parse(String(sh.getRange(rowNo, histCol).getValue() || '[]')); } catch(_) { history = []; }
+    history.push({ status:'shipping_carrier_changed', timestamp:now,
+                   note:'เปลี่ยนบริษัทขนส่งเป็น ' + fulfillment.company_name });
+    // Write ONLY the override + history + updated_at. Never touch shipping_method_id,
+    // shipping_info_json, shipping_fee, subtotal, total, or status.
+    sh.getRange(rowNo, ORDER_COLS.indexOf('fulfillment_shipping_json')+1).setValue(JSON.stringify(fulfillment));
+    sh.getRange(rowNo, histCol).setValue(JSON.stringify(history));
+    sh.getRange(rowNo, ORDER_COLS.indexOf('updated_at')+1).setValue(now);
+    auditLog_('order.fulfillment.update', { category:['order'], type:['change'],
+      outcome:'success', route:'order', rpc:'orderUpdateFulfillmentShippingRpc',
+      userId:_sess.userId, sessionId:token,
+      meta:{ resource_type:'order', order_id_hash: hashForLog_(orderId, 'o_'),
+             order_status: curStatus,
+             from_company: safeLogString_(changedFrom, 40),
+             to_company: safeLogString_(fulfillment.company_id, 40),
+             carrier: safeLogString_(fulfillment.carrier_id, 40),
+             has_reason: !!reasonVal } }, _sess.logCtx);
+    // Re-read and return the updated record.
+    var row2 = sh.getRange(rowNo, 1, 1, numCols).getValues()[0];
+    while (row2.length < ORDER_COLS.length) row2.push('');
+    return { ok:true, record: rowToOrder_(row2) };
+  } catch(err) {
+    return { ok:false, error:String(err) };
+  } finally {
+    try { _lock.releaseLock(); } catch(_) {}
   }
 }
 
@@ -6160,6 +6994,8 @@ function orderMarkShippedRpc(token, orderId, trackingData) {
     return { ok: false, error: 'AUTH_REQUIRED' };
   }
   if (checkRotateLock_()) return { ok:false, error:'ROTATE_LOCK' };
+  var _shipLock = LockService.getScriptLock();
+  if (!_shipLock.tryLock(15000)) return { ok:false, error:'SERVER_BUSY' };
   try {
     const sh  = sheetOrders_();
     const n   = sh.getLastRow();
@@ -6169,60 +7005,69 @@ function orderMarkShippedRpc(token, orderId, trackingData) {
     if (idx < 0) return { ok:false, error:'not found' };
     const rowNo = idx + 2;
     const statusColIdx  = ORDER_COLS.indexOf('status') + 1;
-    const curStatus = String(sh.getRange(rowNo, statusColIdx).getValue() || '');
-    // Allow shipping from 'approved' or re-shipping from 'shipped'
+    // Read the full order INSIDE the lock — status re-check + fulfillment/original carrier.
+    const numCols = Math.min(ORDER_COLS.length, sh.getLastColumn());
+    var srcRow = sh.getRange(rowNo, 1, 1, numCols).getValues()[0];
+    while (srcRow.length < ORDER_COLS.length) srcRow.push('');
+    const order = rowToOrder_(srcRow);
+    const curStatus = String(order.status || '');
+    // Allow shipping from 'approved' or re-shipping from 'shipped' (tracking-number fix).
     if (curStatus !== 'approved' && curStatus !== 'shipped') {
       return { ok:false, error:'ORDER_NOT_APPROVED' };
     }
     const td  = trackingData || {};
-    // --- INPUT VALIDATION ---
+    // --- INPUT VALIDATION (only tracking_number + note come from the client) ---
     var tnRaw = String(td.tracking_number||'').trim().replace(/[\x00-\x1F\x7F\x80-\x9F]/g,'');
     var tnLenE = assertMaxLength_(tnRaw, 100, 'หมายเลขพัสดุ');
     if (tnLenE) return { ok:false, error:tnLenE };
-    td.tracking_number = tnRaw;
-    var ciRaw = String(td.carrier_id||'other').trim();
-    if (!/^[a-zA-Z0-9_\-]{1,50}$/.test(ciRaw)) return { ok:false, error:'carrier_id ไม่ถูกต้อง (ต้องเป็น alphanumeric/dash/underscore สูงสุด 50 ตัว)' };
-    td.carrier_id = ciRaw;
-    if (td.carrier_name) {
-      var cnR2 = normalizePlainText_(td.carrier_name||'', { maxLen:VLEN.SHORT, fieldName:'ชื่อขนส่ง', allowEmpty:true });
-      if (!cnR2.ok) return { ok:false, error:cnR2.error };
-      td.carrier_name = cnR2.value;
-    }
-    if (td.tracking_url) {
-      var tuR = normalizeUrl_(td.tracking_url||'', { fieldName:'tracking_url' });
-      if (!tuR.ok) return { ok:false, error:tuR.error };
-      td.tracking_url = tuR.value;
-    }
+    var noteVal = '';
     if (td.note) {
       var tnoteR = normalizeMultilineText_(td.note||'', { maxLen:VLEN.LONG, fieldName:'หมายเหตุ', allowEmpty:true });
       if (!tnoteR.ok) return { ok:false, error:tnoteR.error };
-      td.note = tnoteR.value;
-    }
-    var TPROVIDERS = ['aftership','thaipost','etracking',''];
-    var tpStr = String(td.tracking_provider!=null ? td.tracking_provider : '');
-    if (tpStr !== '' && TPROVIDERS.indexOf(tpStr) < 0) {
-      return { ok:false, error:'tracking_provider ไม่ถูกต้อง (อนุญาต: aftership, thaipost, etracking, หรือ ว่าง)' };
+      noteVal = tnoteR.value;
     }
     // --- END VALIDATION ---
     const now = nowISO_();
-    // Trust client's tracking_provider (already resolved from shipping config in order.html)
-    // Fallback: lookup from sheet by carrier_id if not provided
-    var carrierId = String(td.carrier_id || 'other');
-    var resolvedProvider = String(td.tracking_provider || '');
-    if (!resolvedProvider && carrierId !== 'other') {
-      var companies = readShippingFromSheet_();
-      var matchedCompany = companies.filter(function(c){ return c.carrier_id === carrierId; })[0] || null;
-      resolvedProvider = (matchedCompany && matchedCompany.tracking_provider) || '';
+    // Resolve the ACTUAL fulfillment carrier on the backend (never trusted from the client):
+    // use the override if present, else the customer's original selection. carrier_id /
+    // tracking_provider / tracking_url_template come from the live shipping config, with a
+    // snapshot fallback if the company was later deleted from config.
+    var ff = order.fulfillment_shipping || null;
+    var firstShip = (Array.isArray(order.shipping_info) && order.shipping_info[0]) ? order.shipping_info[0] : null;
+    var srcCompanyId = ff ? String(ff.company_id||'') : (firstShip ? String(firstShip.company_id||'') : '');
+    var srcMethodId  = ff ? String(ff.method_id||'')  : (firstShip ? String(firstShip.method_id||'')  : '');
+    var carrierId = 'other', carrierName = '', resolvedProvider = '', urlTemplate = '';
+    var resolvedCarrier = resolveShippingCompanyMethod_(srcCompanyId, srcMethodId);
+    if (resolvedCarrier) {
+      carrierId       = String(resolvedCarrier.company.carrier_id || 'other');
+      carrierName     = String(resolvedCarrier.company.name || '');
+      resolvedProvider= String(resolvedCarrier.company.tracking_provider || '');
+      urlTemplate     = String(resolvedCarrier.company.tracking_url_template || '');
+    } else if (ff) {
+      // Company deleted from config → use the metadata snapshotted at override time.
+      carrierId        = String(ff.carrier_id || 'other');
+      carrierName      = String(ff.company_name || '');
+      resolvedProvider = String(ff.tracking_provider || '');
+      urlTemplate      = String(ff.tracking_url_template || '');
+    } else if (firstShip) {
+      carrierName = String(firstShip.company_name || '');
+    }
+    if (!/^[a-zA-Z0-9_\-]{1,50}$/.test(carrierId)) carrierId = 'other';
+    var trackingUrl = '';
+    if (urlTemplate && tnRaw) {
+      try { trackingUrl = urlTemplate.replace('{T}', encodeURIComponent(tnRaw)); } catch(_) { trackingUrl = ''; }
     }
     const trackingJson = {
-      tracking_number:   String(td.tracking_number || ''),
+      tracking_number:   tnRaw,
       carrier_id:        carrierId,
-      carrier_name:      String(td.carrier_name || ''),
-      tracking_url:      String(td.tracking_url || ''),
+      carrier_name:      carrierName,
+      tracking_url:      trackingUrl,
       shipped_at:        now,
-      note:              String(td.note || ''),
+      note:              noteVal,
       auto_tracking:     resolvedProvider !== '',   // backward compat for old readers
-      tracking_provider: resolvedProvider
+      tracking_provider: resolvedProvider,
+      // Provenance: whether this shipment used the fulfillment override or the original selection.
+      fulfillment_source: ff ? 'override' : 'original'
     };
     // Build history note
     var histNote = trackingJson.carrier_name;
@@ -6255,7 +7100,6 @@ function orderMarkShippedRpc(token, orderId, trackingData) {
       aftershipResult = { ok: true, source: resolvedProvider || 'skipped' };
     }
     // Re-read and return updated record
-    const numCols = Math.min(ORDER_COLS.length, sh.getLastColumn());
     var row = sh.getRange(rowNo, 1, 1, numCols).getValues()[0];
     while (row.length < ORDER_COLS.length) row.push('');
     enqueueLog_('order.mark.shipped', { category:['order'], type:['change'],
@@ -6263,11 +7107,14 @@ function orderMarkShippedRpc(token, orderId, trackingData) {
       userId:_sess.userId, sessionId:token,
       meta:{ order_id_hash: hashForLog_(orderId, 'o_'), order_status:'shipped',
              carrier: safeLogString_(carrierId, 40),
+             fulfillment_source: trackingJson.fulfillment_source,
              has_tracking_no: !!trackingJson.tracking_number,
              tracking_provider: safeLogString_(resolvedProvider, 20) } }, _sess.logCtx);
     return { ok:true, record: rowToOrder_(row), aftership: aftershipResult };
   } catch(err) {
     return { ok:false, error:String(err) };
+  } finally {
+    try { _shipLock.releaseLock(); } catch(_) {}
   }
 }
 
@@ -6314,6 +7161,53 @@ function getShippingCached_() {
   const data = readShippingFromSheet_();
   try { cache.put(CACHE_SHIPPING_LIST, JSON.stringify(data), 600); } catch(_) {}
   return data;
+}
+
+// Resolve a shipping company + method by id from the shipping config.
+// Returns { company, method } (raw config objects) or null if either is missing.
+// Does not enforce active — callers decide (submit needs active; readback/label may not).
+function resolveShippingCompanyMethod_(companyId, methodId) {
+  var cid = String(companyId || '');
+  var mid = String(methodId || '');
+  if (!cid || !mid) return null;
+  var companies = getShippingCached_();
+  var company = null;
+  for (var i = 0; i < companies.length; i++) {
+    if (String(companies[i].id) === cid) { company = companies[i]; break; }
+  }
+  if (!company) return null;
+  var methods = Array.isArray(company.methods) ? company.methods : [];
+  var method = null;
+  for (var j = 0; j < methods.length; j++) {
+    if (String(methods[j].id) === mid) { method = methods[j]; break; }
+  }
+  if (!method) return null;
+  return { company: company, method: method };
+}
+
+// Persistent monetary lock: an order whose money is frozen. Locked once the order has
+// EVER reached paid/approved/shipped/delivered — even if later rolled back to unpaid —
+// so shipping_fee/subtotal/total can never be edited after payment. Derived from status
+// history (backward-compatible: paid orders already carry 'paid' in status_history).
+function _pricingLocked_(order) {
+  var LOCKED = { paid:1, approved:1, shipped:1, delivered:1 };
+  if (order && LOCKED[String(order.status || '')]) return true;
+  var hist = (order && Array.isArray(order.status_history)) ? order.status_history : [];
+  for (var i = 0; i < hist.length; i++) {
+    if (LOCKED[String(hist[i] && hist[i].status || '')]) return true;
+  }
+  return false;
+}
+
+// Strip internal-only fields from a fulfillment override before exposing it to the
+// customer. Keeps only what is safe to show ("will ship via <company> <method>").
+function _customerSafeFulfillment_(f) {
+  if (!f || typeof f !== 'object') return null;
+  return {
+    company_name: String(f.company_name || ''),
+    method_name:  String(f.method_name || ''),
+    carrier_id:   String(f.carrier_id || '')
+  };
 }
 
 function getShippingRpc() {
@@ -6433,9 +7327,15 @@ function saveShippingRpc(token, data) {
       (c.methods || []).forEach(function(m) { if (m.id) oldMethodIds.add(m.id); });
     });
 
-    // ลบแถวข้อมูลเก่าทั้งหมด (เหลือแค่ header)
-    if(sh.getLastRow() > 1) sh.deleteRows(2, sh.getLastRow() - 1);
+    // Clear old data without deleting physical rows. deleteRows() shrinks the
+    // sheet grid, so a later write with more companies can make getRange()
+    // exceed getMaxRows() (especially after repeated QA fixture saves).
+    if(sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 7).clearContent();
     if(cleanArr.length > 0){
+      var requiredRows = cleanArr.length + 1; // header + data
+      if (sh.getMaxRows() < requiredRows) {
+        sh.insertRowsAfter(sh.getMaxRows(), requiredRows - sh.getMaxRows());
+      }
       const rows = cleanArr.map(function(c) { return [
         c.id,
         sanitizeSheetCell_(c.name),
@@ -6630,7 +7530,10 @@ function loginVerifyOtpRpc(email, otp, clientCtx) {
           meta:{ email_hash:emailHash, reason:'attempts_exceeded' } }, ctx);
         return { ok:false, error:'พยายามเกินกำหนด รหัส OTP ถูกยกเลิก กรุณาเข้าสู่ระบบใหม่' };
       }
-      CacheService.getScriptCache().put(key, JSON.stringify(data), LOGIN_OTP_TTL);
+      // Re-put with the REMAINING ttl (like otpFail_) — a full LOGIN_OTP_TTL here
+      // would slide the cache lifetime forward on every wrong guess.
+      var _remainSec = Math.max(1, Math.ceil((Number(data.expires) - Date.now()) / 1000));
+      CacheService.getScriptCache().put(key, JSON.stringify(data), Math.min(LOGIN_OTP_TTL, _remainSec));
       enqueueLog_('otp.verify.fail', { category:['authentication'], type:['denied'],
         outcome:'failure', route:'login', rpc:'loginVerifyOtpRpc', userId:data.id,
         meta:{ email_hash:emailHash, reason:'bad_otp', attempts:data.attempts } }, ctx);
@@ -7027,7 +7930,7 @@ function rowToGiftItem_(r) {
     description: String(r[2]||''),
     image_drive_file_id: String(r[3]||''),
     image_url: String(r[4]||''),
-    stock: (function(){ var v=Number(r[5]); return isNaN(v) ? 0 : v; })(),
+    stock: (r[5] === '' || r[5] === null || r[5] === undefined || typeof r[5] === 'boolean') ? NaN : Number(r[5]),
     enabled: r[6] !== false && String(r[6]).toUpperCase() !== 'FALSE',
     created_at: String(r[7]||''),
     updated_at: String(r[8]||''),
@@ -7055,7 +7958,9 @@ function rowToGiftRule_(r) {
     gift_id: String(r[3]||''),
     condition_type: String(r[4]||''),
     condition_json: conditionJson,
-    gift_qty: (function(){ var v=Number(r[6]); return isNaN(v)||v<1 ? 1 : v; })(),
+    // Preserve invalid legacy values so admin APIs can surface the real data.
+    // Operational validation below decides whether the rule may be awarded.
+    gift_qty: (function(){ if (typeof r[6] === 'boolean') return 0; var v=Number(r[6]); return isNaN(v) ? 0 : v; })(),
     repeat_mode: String(r[7]||'once_per_order'),
     starts_at: String(r[8]||''),
     ends_at: String(r[9]||''),
@@ -7098,6 +8003,105 @@ function listGiftRulesFromSheet_(includeDeleted) {
   }
   out.sort(function(a,b){ return Number(b.priority||0) - Number(a.priority||0); });
   return out;
+}
+
+function _giftIsPositiveInteger_(value) {
+  if (value === '' || value === null || value === undefined || typeof value === 'boolean' || Array.isArray(value)) return false;
+  var n = Number(value);
+  return isFinite(n) && Math.floor(n) === n && n >= 1;
+}
+
+function _giftIsValidStock_(value) {
+  if (value === '' || value === null || value === undefined || typeof value === 'boolean' || Array.isArray(value)) return false;
+  var n = Number(value);
+  return isFinite(n) && Math.floor(n) === n && (n === -1 || n >= 0);
+}
+
+function _giftIsPositiveNumber_(value) {
+  if (value === '' || value === null || value === undefined || typeof value === 'boolean' || Array.isArray(value)) return false;
+  var n = Number(value);
+  return isFinite(n) && n > 0;
+}
+
+function _giftItemContractErrors_(gift) {
+  var errors = [];
+  if (!gift) return ['GIFT_NOT_FOUND'];
+  if (!_giftIsValidStock_(gift.stock)) errors.push('GIFT_STOCK_MUST_BE_MINUS_ONE_OR_NON_NEGATIVE_INTEGER');
+  return errors;
+}
+
+function _giftOperationalContext_() {
+  var giftMap = {};
+  listGiftItemsFromSheet_(false).forEach(function(g){ giftMap[String(g.gift_id)] = g; });
+  var productMap = {};
+  try {
+    getSnap_().forEach(function(p){ productMap[String(p.id)] = p; });
+  } catch(_) {}
+  return { giftMap: giftMap, productMap: productMap };
+}
+
+function _giftRuleContractErrors_(rule, context) {
+  var errors = [];
+  var ctx = context || _giftOperationalContext_();
+  var gift = ctx.giftMap[String((rule || {}).gift_id || '')];
+  if (!gift) errors.push('GIFT_NOT_FOUND');
+  else {
+    var giftErrors = _giftItemContractErrors_(gift);
+    for (var ge = 0; ge < giftErrors.length; ge++) errors.push(giftErrors[ge]);
+  }
+
+  var type = String((rule || {}).condition_type || '');
+  var cj = (rule && rule.condition_json && typeof rule.condition_json === 'object') ? rule.condition_json : {};
+  if (['min_subtotal','required_products','required_variants'].indexOf(type) < 0) {
+    errors.push('GIFT_CONDITION_TYPE_INVALID');
+  }
+  if (!_giftIsPositiveInteger_((rule || {}).gift_qty)) errors.push('GIFT_QTY_MUST_BE_POSITIVE_INTEGER');
+
+  if (type === 'min_subtotal') {
+    if (!_giftIsPositiveNumber_(cj.min_subtotal)) errors.push('MIN_SUBTOTAL_MUST_BE_POSITIVE_NUMBER');
+  }
+
+  var refs = type === 'required_products' ? cj.required_products
+    : (type === 'required_variants' ? cj.required_variants : null);
+  if (refs !== null) {
+    if (!Array.isArray(refs) || !refs.length) {
+      errors.push(type === 'required_products' ? 'REQUIRED_PRODUCTS_EMPTY' : 'REQUIRED_VARIANTS_EMPTY');
+    } else {
+      var seen = {};
+      for (var i = 0; i < refs.length; i++) {
+        var ref = refs[i] || {};
+        var productId = String(ref.product_id || '');
+        var product = ctx.productMap[productId];
+        var prefix = type === 'required_products' ? 'REQUIRED_PRODUCT_' : 'REQUIRED_VARIANT_';
+        if (!_giftIsPositiveInteger_(ref.min_qty)) errors.push(prefix + 'MIN_QTY_MUST_BE_POSITIVE_INTEGER:' + i);
+        if (!product) errors.push(prefix + 'PRODUCT_NOT_FOUND:' + productId);
+
+        var identity = productId;
+        if (type === 'required_variants') {
+          var variantKey = String(ref.variant_key || '');
+          identity += '|' + variantKey;
+          if (product && !(product.variants || []).length) {
+            errors.push('REQUIRED_VARIANT_PRODUCT_HAS_NO_VARIANTS:' + productId);
+          } else if (product && enumerateVariantKeys_(product).indexOf(variantKey) < 0) {
+            errors.push('REQUIRED_VARIANT_KEY_INVALID:' + productId + ':' + variantKey);
+          }
+        }
+        if (seen[identity]) errors.push(type === 'required_products' ? 'REQUIRED_PRODUCT_DUPLICATE:' + identity : 'REQUIRED_VARIANT_DUPLICATE:' + identity);
+        seen[identity] = true;
+      }
+    }
+  }
+  return errors;
+}
+
+function _decorateGiftItemOperational_(gift) {
+  var errors = _giftItemContractErrors_(gift);
+  return Object.assign({}, gift, { operational: errors.length === 0, validation_errors: errors });
+}
+
+function _decorateGiftRuleOperational_(rule, context) {
+  var errors = _giftRuleContractErrors_(rule, context);
+  return Object.assign({}, rule, { operational: errors.length === 0, validation_errors: errors });
 }
 
 function _invalidateGiftCaches_() {
@@ -7145,9 +8149,11 @@ function getGiftRuleStatus_(rule, now) {
 
 function getActiveGiftRules_(now) {
   var rules = listGiftRulesFromSheet_(false);
+  var context = _giftOperationalContext_();
   var out = [];
   for (var i = 0; i < rules.length; i++) {
-    if (getGiftRuleStatus_(rules[i], now) === 'active') out.push(rules[i]);
+    var decorated = _decorateGiftRuleOperational_(rules[i], context);
+    if (decorated.operational && getGiftRuleStatus_(decorated, now) === 'active') out.push(decorated);
   }
   return out;
 }
@@ -7160,11 +8166,15 @@ function formatGiftConditionSummary_(rule) {
   }
   if (rule.condition_type === 'required_products') {
     var arr = cj.required_products || [];
-    return 'ซื้อสินค้าที่กำหนดครบทั้ง ' + arr.length + ' รายการ';
+    return cj.match_mode === 'any'
+      ? 'ซื้อสินค้าที่กำหนดอย่างใดอย่างหนึ่ง (จาก ' + arr.length + ' รายการ)'
+      : 'ซื้อสินค้าที่กำหนดครบทั้ง ' + arr.length + ' รายการ';
   }
   if (rule.condition_type === 'required_variants') {
     var arr2 = cj.required_variants || [];
-    return 'ซื้อรุ่น/ตัวเลือกที่กำหนดครบ ' + arr2.length + ' รายการ';
+    return cj.match_mode === 'any'
+      ? 'ซื้อรุ่น/ตัวเลือกที่กำหนดอย่างใดอย่างหนึ่ง (จาก ' + arr2.length + ' รายการ)'
+      : 'ซื้อรุ่น/ตัวเลือกที่กำหนดครบ ' + arr2.length + ' รายการ';
   }
   return '';
 }
@@ -7224,37 +8234,59 @@ function formatGiftConditionDetails_(rule, prodMap) {
   return out;
 }
 
+// The three evaluators return an integer MULTIPLIER: the number of complete
+// times the cart satisfies the rule's threshold (0 = not eligible). Callers
+// that only need a boolean still work because 0 is falsy and N>=1 is truthy.
+// The 'per_threshold' repeat mode multiplies gift_qty by this value; the
+// default 'once_per_order' mode clamps it to 1 (see evaluateGiftRulesForCart_).
 function evaluateMinSubtotalGiftRule_(rule, ctx) {
   var cj = rule.condition_json || {};
   var minSub = Number(cj.min_subtotal || 0);
+  if (minSub <= 0) return 0;
   // calculation_base default = after_discount_before_shipping
   var subtotal = Number(ctx.subtotal_after_promo || 0);
-  return subtotal >= minSub;
+  return Math.floor(subtotal / minSub);
 }
 
 function evaluateRequiredProductsGiftRule_(rule, ctx) {
   var cj = rule.condition_json || {};
   var req = cj.required_products || [];
-  if (!req.length) return false;
+  if (!req.length) return 0;
+  // match_mode 'all' (default): every entry must be met; multiplier = lowest (min) completed rounds.
+  // match_mode 'any': at least one entry must be met; multiplier = SUM of completed rounds across
+  // every qualifying entry (entries with 0 completed rounds contribute nothing).
+  var anyMode = cj.match_mode === 'any';
+  var mult = anyMode ? 0 : Infinity;
   for (var i = 0; i < req.length; i++) {
     var rq = req[i];
     var minQ = Number(rq.min_qty || 1);
+    if (minQ <= 0) minQ = 1;
     var totalQ = 0;
     for (var j = 0; j < ctx.items.length; j++) {
       if (String(ctx.items[j].product_id) === String(rq.product_id)) totalQ += Number(ctx.items[j].qty || 0);
     }
-    if (totalQ < minQ) return false;
+    var times = Math.floor(totalQ / minQ);
+    if (anyMode) {
+      mult += times;                      // sum completed rounds from all qualifying entries
+    } else {
+      if (times < 1) return 0;            // any unmet entry disqualifies the rule
+      if (times < mult) mult = times;     // lowest completed multiplier wins
+    }
   }
-  return true;
+  if (anyMode) return mult;               // 0 = no entry qualified
+  return mult === Infinity ? 0 : mult;
 }
 
 function evaluateRequiredVariantsGiftRule_(rule, ctx) {
   var cj = rule.condition_json || {};
   var req = cj.required_variants || [];
-  if (!req.length) return false;
+  if (!req.length) return 0;
+  var anyMode = cj.match_mode === 'any';
+  var mult = anyMode ? 0 : Infinity;
   for (var i = 0; i < req.length; i++) {
     var rq = req[i];
     var minQ = Number(rq.min_qty || 1);
+    if (minQ <= 0) minQ = 1;
     var totalQ = 0;
     for (var j = 0; j < ctx.items.length; j++) {
       if (String(ctx.items[j].product_id) === String(rq.product_id)
@@ -7262,33 +8294,45 @@ function evaluateRequiredVariantsGiftRule_(rule, ctx) {
         totalQ += Number(ctx.items[j].qty || 0);
       }
     }
-    if (totalQ < minQ) return false;
+    var times = Math.floor(totalQ / minQ);
+    if (anyMode) {
+      mult += times;
+    } else {
+      if (times < 1) return 0;
+      if (times < mult) mult = times;
+    }
   }
-  return true;
+  if (anyMode) return mult;
+  return mult === Infinity ? 0 : mult;
 }
 
+// Returns the completed-threshold multiplier (0 = not eligible).
 function evaluateGiftRule_(rule, ctx, now) {
   if (rule.condition_type === 'min_subtotal') return evaluateMinSubtotalGiftRule_(rule, ctx);
   if (rule.condition_type === 'required_products') return evaluateRequiredProductsGiftRule_(rule, ctx);
   if (rule.condition_type === 'required_variants') return evaluateRequiredVariantsGiftRule_(rule, ctx);
-  return false;
+  return 0;
 }
 
 function evaluateGiftRulesForCart_(ctx, now) {
   var rules = getActiveGiftRules_(now);
   var awarded = [];
-  // once_per_order: each rule can fire at most once
   for (var i = 0; i < rules.length; i++) {
     var rule = rules[i];
-    if (!evaluateGiftRule_(rule, ctx, now)) continue;
+    var mult = evaluateGiftRule_(rule, ctx, now);
+    if (mult < 1) continue;
     var gift = getGiftItemById_(rule.gift_id);
-    if (!gift || !gift.enabled) continue;
-    awarded.push({ rule: rule, gift: gift, qty: rule.gift_qty || 1 });
+    if (!gift || !gift.enabled || _giftItemContractErrors_(gift).length) continue;
+    // per_threshold: grant gift_qty for every completed threshold.
+    // once_per_order (default): fire at most once regardless of multiplier.
+    var times = (rule.repeat_mode === 'per_threshold') ? mult : 1;
+    awarded.push({ rule: rule, gift: gift, qty: (rule.gift_qty || 1) * times });
   }
   return awarded;
 }
 
 function reserveGiftStock_(giftId, qty) {
+  if (!_giftIsPositiveInteger_(qty)) return false;
   var sh = sheetGiftItems_();
   var n = sh.getLastRow();
   if (n < 2) return false;
@@ -7297,13 +8341,14 @@ function reserveGiftStock_(giftId, qty) {
   if (idx < 0) return false;
   var rowNo = idx + 2;
   var stock = Number(sh.getRange(rowNo, 6).getValue());
-  if (isNaN(stock)) stock = 0;
+  if (!_giftIsValidStock_(stock)) return false;
   if (stock !== -1 && stock < qty) return false;
   if (stock !== -1) sh.getRange(rowNo, 6).setValue(stock - qty);
   return true;
 }
 
 function restoreGiftStock_(giftId, qty) {
+  if (!_giftIsPositiveInteger_(qty)) return false;
   var sh = sheetGiftItems_();
   var n = sh.getLastRow();
   if (n < 2) return false;
@@ -7312,7 +8357,7 @@ function restoreGiftStock_(giftId, qty) {
   if (idx < 0) return false;
   var rowNo = idx + 2;
   var stock = Number(sh.getRange(rowNo, 6).getValue());
-  if (isNaN(stock)) stock = 0;
+  if (!_giftIsValidStock_(stock)) return false;
   if (stock === -1) return true;
   sh.getRange(rowNo, 6).setValue(stock + qty);
   return true;
@@ -7359,7 +8404,7 @@ function _attachAutoGiftLinesToItems_(items, cartCtx, now) {
 function listGiftItemsRpc(token, opts) {
   if (!requireAdmin_(token)) return { ok:false, error:'AUTH_REQUIRED' };
   try {
-    var items = listGiftItemsFromSheet_(false);
+    var items = listGiftItemsFromSheet_(false).map(_decorateGiftItemOperational_);
     var q = opts && opts.q ? String(opts.q).toLowerCase() : '';
     if (q) items = items.filter(function(g){
       return String(g.name||'').toLowerCase().indexOf(q) >= 0
@@ -7384,9 +8429,8 @@ function _validateGiftItemPayload_(p, isUpdate) {
   }
   if (p.description !== undefined) p.description = String(p.description||'').slice(0, 1000);
   if (p.stock !== undefined) {
-    var s = Number(p.stock);
-    if (isNaN(s) || s < -1) return { ok:false, error:'stock ไม่ถูกต้อง' };
-    p.stock = s;
+    if (!_giftIsValidStock_(p.stock)) return { ok:false, error:'GIFT_STOCK_MUST_BE_MINUS_ONE_OR_NON_NEGATIVE_INTEGER' };
+    p.stock = Number(p.stock);
   }
   if (p.image && p.image.mode === 'url') {
     var iuR = normalizeUrl_(p.image.url || '', { fieldName:'gift.image.url' });
@@ -7525,40 +8569,39 @@ function deleteGiftItemRpc(token, giftId) {
 /* ---------- Gift Rule RPCs ---------- */
 
 function _validateGiftRulePayload_(p, isUpdate) {
-  if (!isUpdate || p.name !== undefined) {
-    var nm = String(p.name||'').trim();
-    if (!nm) return { ok:false, error:'ชื่อกฎห้ามว่าง' };
-    p.name = nm;
+  var nm = String(p.name || '').trim();
+  if (!nm) return { ok:false, error:'GIFT_RULE_NAME_REQUIRED' };
+  p.name = nm;
+  p.description = String(p.description || '').slice(0, 1000);
+  p.gift_id = String(p.gift_id || '');
+  p.condition_type = String(p.condition_type || '');
+
+  var cj = p.condition_json || {};
+  if (typeof cj === 'string') {
+    try { cj = JSON.parse(cj); } catch(_) { return { ok:false, error:'GIFT_CONDITION_JSON_INVALID' }; }
   }
-  if (p.description !== undefined) p.description = String(p.description||'').slice(0, 1000);
-  if (!isUpdate || p.gift_id !== undefined) {
-    if (!p.gift_id) return { ok:false, error:'ต้องเลือกของแถม' };
-    var gi = getGiftItemById_(p.gift_id);
-    if (!gi) return { ok:false, error:'ไม่พบของแถมที่เลือก' };
+  if (!cj || typeof cj !== 'object' || Array.isArray(cj)) cj = {};
+  if (p.condition_type === 'required_products' || p.condition_type === 'required_variants') {
+    cj.match_mode = cj.match_mode === 'any' ? 'any' : 'all';
   }
-  if (!isUpdate || p.condition_type !== undefined) {
-    if (['min_subtotal','required_products','required_variants'].indexOf(String(p.condition_type)) < 0) {
-      return { ok:false, error:'ประเภทเงื่อนไขไม่ถูกต้อง' };
-    }
-  }
-  if (!isUpdate || p.condition_json !== undefined) {
-    var cj = p.condition_json || {};
-    if (typeof cj === 'string') { try { cj = JSON.parse(cj); } catch(_) { cj = {}; } }
-    if (p.condition_type === 'min_subtotal' && (!cj.min_subtotal || Number(cj.min_subtotal) <= 0)) {
-      return { ok:false, error:'ต้องระบุ min_subtotal มากกว่า 0' };
-    }
-    if (p.condition_type === 'required_products' && (!Array.isArray(cj.required_products) || !cj.required_products.length)) {
-      return { ok:false, error:'ต้องเลือกสินค้าอย่างน้อย 1 รายการ' };
-    }
-    if (p.condition_type === 'required_variants' && (!Array.isArray(cj.required_variants) || !cj.required_variants.length)) {
-      return { ok:false, error:'ต้องเลือก variant อย่างน้อย 1 รายการ' };
-    }
-    p.condition_json = cj;
-  }
-  if (p.gift_qty !== undefined) {
-    var q = Number(p.gift_qty);
-    if (isNaN(q) || q < 1) return { ok:false, error:'gift_qty ต้องอย่างน้อย 1' };
-    p.gift_qty = q;
+  p.condition_json = cj;
+
+  var contractErrors = _giftRuleContractErrors_(p, _giftOperationalContext_());
+  if (contractErrors.length) return { ok:false, error:contractErrors[0], validation_errors:contractErrors };
+  p.gift_qty = Number(p.gift_qty);
+
+  if (p.condition_type === 'min_subtotal') {
+    p.condition_json.min_subtotal = Number(p.condition_json.min_subtotal);
+  } else {
+    var refKey = p.condition_type === 'required_products' ? 'required_products' : 'required_variants';
+    p.condition_json[refKey] = p.condition_json[refKey].map(function(ref) {
+      var normalized = {
+        product_id: String(ref.product_id || ''),
+        min_qty: Number(ref.min_qty)
+      };
+      if (refKey === 'required_variants') normalized.variant_key = String(ref.variant_key || '');
+      return normalized;
+    });
   }
   if (!isUpdate || p.starts_at !== undefined || p.ends_at !== undefined || p.no_end_date !== undefined) {
     var sw = _normalizeSchedule_({ starts_at: p.starts_at, ends_at: p.ends_at, no_end_date: p.no_end_date });
@@ -7568,7 +8611,9 @@ function _validateGiftRulePayload_(p, isUpdate) {
     p.ends_at = sw.ends_at || '';
     p.no_end_date = sw.no_end_date;
   }
-  if (p.repeat_mode === undefined) p.repeat_mode = 'once_per_order';
+  // repeat_mode: 'per_threshold' grants gift_qty per completed threshold;
+  // anything else (incl. missing/legacy blank) normalizes to once-per-order.
+  p.repeat_mode = (p.repeat_mode === 'per_threshold') ? 'per_threshold' : 'once_per_order';
   if (p.priority === undefined) p.priority = 0;
   return { ok:true, value: p };
 }
@@ -7577,9 +8622,11 @@ function listGiftRulesRpc(token, opts) {
   if (!requireAdmin_(token)) return { ok:false, error:'AUTH_REQUIRED' };
   try {
     var rules = listGiftRulesFromSheet_(false);
+    var context = _giftOperationalContext_();
     var now = new Date();
     var withStatus = rules.map(function(r){
-      return Object.assign({}, r, { status: getGiftRuleStatus_(r, now) });
+      var decorated = _decorateGiftRuleOperational_(r, context);
+      return Object.assign({}, decorated, { status: getGiftRuleStatus_(decorated, now) });
     });
     var q = opts && opts.q ? String(opts.q).toLowerCase() : '';
     var statusFilter = opts && opts.status ? String(opts.status) : 'all';
@@ -7601,7 +8648,7 @@ function getGiftRuleRpc(token, ruleId) {
     var rules = listGiftRulesFromSheet_(false);
     var match = rules.filter(function(r){ return String(r.rule_id) === String(ruleId); })[0];
     if (!match) return { ok:false, error:'ไม่พบกฎ' };
-    return { ok:true, rule: match };
+    return { ok:true, rule: _decorateGiftRuleOperational_(match, _giftOperationalContext_()) };
   } catch(err) { return { ok:false, error:String(err) }; }
 }
 
@@ -7770,9 +8817,14 @@ function addManualGiftToOrderRpc(token, orderId, payload) {
   try {
     var p = payload || {};
     if (!p.gift_id) return { ok:false, error:'ต้องเลือกของแถม' };
-    var qty = (p.qty === undefined || p.qty === null || p.qty === '') ? 1 : Number(p.qty);
-    if (Math.floor(qty) !== qty) return { ok:false, error:'INVALID_QTY' };
-    if (isNaN(qty) || qty < 1) return { ok:false, error:'จำนวนต้องอย่างน้อย 1' };
+    var qtyInput = (p.qty === undefined || p.qty === null || p.qty === '') ? 1 : p.qty;
+    var qtyR = parseBoundedPositiveInteger_(qtyInput, MAX_QTY_PER_LINE);
+    if (!qtyR.ok) {
+      var qtyError = { ok:false, error:qtyR.error };
+      if (qtyR.limit !== undefined) qtyError.limit = qtyR.limit;
+      return qtyError;
+    }
+    var qty = qtyR.value;
     var ord = getOrderRow_(orderId);
     if (!ord) return { ok:false, error:'ไม่พบคำสั่งซื้อ' };
     var status = String(ord.sheet.getRange(ord.rowNo, 4).getValue()||'').toLowerCase();
@@ -7781,6 +8833,8 @@ function addManualGiftToOrderRpc(token, orderId, payload) {
     }
     var gi = getGiftItemById_(p.gift_id);
     if (!gi) return { ok:false, error:'ไม่พบของแถม' };
+    var giErrors = _giftItemContractErrors_(gi);
+    if (giErrors.length) return { ok:false, error:giErrors[0], validation_errors:giErrors };
     if (!reserveGiftStock_(gi.gift_id, qty)) return { ok:false, error:'ของแถมในสต็อกไม่พอ' };
     var snap = _buildGiftLineSnapshot_(gi, null, qty, 'manual', sess.email||'', p.note||'', '');
     var upd = _updateOrderItemsJsonUnlocked_(orderId, function(items){
@@ -7854,9 +8908,13 @@ function updateGiftLineQtyRpc(token, orderId, giftSnapshotId, qty) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(15000)) return { ok:false, error:'SERVER_BUSY' };
   try {
-    var newQty = Number(qty);
-    if (isNaN(newQty) || newQty < 1) return { ok:false, error:'จำนวนต้องอย่างน้อย 1' };
-    if (Math.floor(newQty) !== newQty) return { ok:false, error:'INVALID_QTY' };
+    var newQtyR = parseBoundedPositiveInteger_(qty, MAX_QTY_PER_LINE);
+    if (!newQtyR.ok) {
+      var qtyError = { ok:false, error:newQtyR.error };
+      if (newQtyR.limit !== undefined) qtyError.limit = newQtyR.limit;
+      return qtyError;
+    }
+    var newQty = newQtyR.value;
     if (!giftSnapshotId) return { ok:false, error:'GIFT_LINE_NOT_FOUND' };
     // A released order (rejected/cancelled) holds no stock, so a qty change there must
     // only update items_json — no reserve/restore. The new qty is what gets re-deducted
@@ -7933,14 +8991,18 @@ function getActiveGiftCampaignsRpc() {
     try {
       getSnap_().forEach(function(prod){ prodMap[String(prod.id)] = prod; });
     } catch(_) {}
+    var operationalContext = { giftMap: giftMap, productMap: prodMap };
     var now = new Date();
     var out = [];
     for (var i = 0; i < rules.length; i++) {
       var r = rules[i];
+      var decoratedRule = _decorateGiftRuleOperational_(r, operationalContext);
+      if (!decoratedRule.operational) continue;
+      r = decoratedRule;
       var status = getGiftRuleStatus_(r, now);
       if (status !== 'active' && status !== 'scheduled') continue;
       var gi = giftMap[r.gift_id];
-      if (!gi || !gi.enabled) continue;
+      if (!gi || !gi.enabled || _giftItemContractErrors_(gi).length) continue;
       out.push({
         rule_id: r.rule_id, name: r.name, description: r.description,
         starts_at: r.starts_at, ends_at: r.ends_at, no_end_date: r.no_end_date,
@@ -7964,38 +9026,37 @@ function getActiveGiftCampaignsRpc() {
 // Payload shape mirrors submitOrderRpc.items: [{ product_id, qty, selected_variants }]
 function previewGiftEligibilityRpc(cartPayload) {
   try {
-    ensureGiftSheets_();
     var p = cartPayload || {};
-    var inItems = Array.isArray(p.items) ? p.items : [];
+    var inItems = (p.items === undefined || p.items === null) ? [] : p.items;
+    if (!Array.isArray(inItems)) {
+      return { ok:false, error:'INVALID_ITEMS', eligible:[], near:[], subtotal_after_promo:0 };
+    }
     if (!inItems.length) {
       return { ok: true, eligible: [], near: [], subtotal_after_promo: 0 };
     }
     var snap = getSnap_();
     var prodMap = {};
     snap.forEach(function(prod){ prodMap[prod.id] = prod; });
+    var normalizedCart = normalizeOrderCart_(inItems, prodMap);
+    if (!normalizedCart.ok) {
+      return Object.assign({ ok:false, eligible:[], near:[], subtotal_after_promo:0 }, normalizedCart);
+    }
+    ensureGiftSheets_();
     var now = new Date();
+    var allPromos = listPromotionsFromSheet_(false);
     var subtotal = 0;
     var ctxItems = [];
-    for (var i = 0; i < inItems.length; i++) {
-      var it = inItems[i] || {};
-      var prod = prodMap[String(it.product_id)];
-      if (!prod) continue;
-      var qty = Math.max(1, parseInt(it.qty) || 1);
-      var sel = it.selected_variants || {};
-      var basePrice = Number(prod.price || 0);
-      var variantPrice = null;
-      (prod.variants || []).forEach(function(group) {
-        var sl = sel[group.name];
-        if (!sl) return;
-        var opt = (group.options || []).filter(function(o){ return o.label === sl; })[0];
-        if (!opt) return;
-        if (opt.price !== undefined) variantPrice = Number(opt.price);
-        else if (opt.delta !== undefined) variantPrice = basePrice + Number(opt.delta || 0);
-      });
-      var rawUnit = variantPrice !== null ? variantPrice : basePrice;
-      var vk = buildVariantKey_(sel);
-      var promo = getActivePromotionForProduct_(prod.id, vk, now);
-      var pricing = calcPromotionPrice_(rawUnit, promo);
+    for (var i = 0; i < normalizedCart.items.length; i++) {
+      var normalizedItem = normalizedCart.items[i];
+      var prod = normalizedItem.prod;
+      var qty = normalizedItem.qty;
+      var rawUnit = normalizedItem.rawUnitPrice;
+      var vk = normalizedItem.variantKey;
+      // Gift min_subtotal base = subtotal after DIRECT discounts (matches the snapshot and
+      // the promotion pipeline's Pass-A base). Conditional promos are excluded here so a
+      // conditional discount never inflates/deflates gift eligibility circularly.
+      var lineBest = resolveBestPromotionForLine_(allPromos, prod.id, vk, rawUnit, now, _promoIsDirect_);
+      var pricing = lineBest ? lineBest.pricing : calcPromotionPrice_(rawUnit, null);
       subtotal += pricing.unit_final_price * qty;
       ctxItems.push({
         product_id: String(prod.id),
@@ -8016,18 +9077,24 @@ function previewGiftEligibilityRpc(cartPayload) {
     for (var r = 0; r < rules.length; r++) {
       var rule = rules[r];
       var gift = giftMap[rule.gift_id];
-      if (!gift || !gift.enabled) continue;
+      if (!gift || !gift.enabled || _giftItemContractErrors_(gift).length) continue;
       var matched = evaluateGiftRule_(rule, ctx, now);
+      // Reflect the multiplied grant so the storefront preview matches what
+      // submitOrderRpc will actually attach for per_threshold rules.
+      var times = (rule.repeat_mode === 'per_threshold' && matched >= 1) ? matched : 1;
       var giftSummary = {
         gift_id: gift.gift_id, name: gift.name, description: gift.description,
         image_url: gift.image_url, image_drive_file_id: gift.image_drive_file_id,
-        qty: rule.gift_qty || 1,
+        qty: (rule.gift_qty || 1) * times,
         stock: gift.stock
       };
+      var ruleMatchMode = (rule.condition_json || {}).match_mode === 'any' ? 'any' : 'all';
       if (matched) {
         eligible.push({
           rule_id: rule.rule_id, rule_name: rule.name,
+          starts_at: rule.starts_at || '', ends_at: rule.ends_at || '', no_end_date: !!rule.no_end_date,
           condition_type: rule.condition_type,
+          match_mode: ruleMatchMode,
           condition_summary: formatGiftConditionSummary_(rule),
           condition_details: formatGiftConditionDetails_(rule, prodMap),
           gift: giftSummary
@@ -8056,7 +9123,7 @@ function previewGiftEligibilityRpc(cartPayload) {
               missing.push({ product_id: String(rq.product_id), title: prodForLabel ? prodForLabel.title : String(rq.product_id), need: minQ - have });
             }
           }
-          if (missing.length) nearInfo = { type: 'required_products', missing: missing };
+          if (missing.length) nearInfo = { type: 'required_products', missing: missing, match_mode: ruleMatchMode };
         } else if (rule.condition_type === 'required_variants') {
           var reqV = (rule.condition_json||{}).required_variants || [];
           var missingV = [];
@@ -8078,11 +9145,13 @@ function previewGiftEligibilityRpc(cartPayload) {
               });
             }
           }
-          if (missingV.length) nearInfo = { type: 'required_variants', missing: missingV };
+          if (missingV.length) nearInfo = { type: 'required_variants', missing: missingV, match_mode: ruleMatchMode };
         }
         near.push({
           rule_id: rule.rule_id, rule_name: rule.name,
+          starts_at: rule.starts_at || '', ends_at: rule.ends_at || '', no_end_date: !!rule.no_end_date,
           condition_type: rule.condition_type,
+          match_mode: ruleMatchMode,
           gift: giftSummary,
           condition_summary: formatGiftConditionSummary_(rule),
           condition_details: formatGiftConditionDetails_(rule, prodMap),
@@ -8093,6 +9162,201 @@ function previewGiftEligibilityRpc(cartPayload) {
     return { ok: true, eligible: eligible, near: near, subtotal_after_promo: subtotal };
   } catch (err) {
     return { ok: false, error: String(err), eligible: [], near: [] };
+  }
+}
+
+// Describe what a promotion's discount target covers (what RECEIVES the discount),
+// resolving product titles from the snapshot map.
+function _promoTargetDescriptor_(promo, prodMap) {
+  var t = promo.target_type;
+  if (t === 'all') return { target_type: 'all', items: [] };
+  var arr = Array.isArray(promo.target) ? promo.target : [];
+  var items = arr.map(function(x){
+    var pr = prodMap[String(x.product_id)];
+    return { product_id: String(x.product_id), title: pr ? pr.title : String(x.product_id), variant_key: String(x.variant_key || '') };
+  });
+  return { target_type: t, items: items };
+}
+
+// Describe a conditional promotion's qualifying condition (what the customer must BUY).
+function _promoConditionDescriptor_(promo, prodMap) {
+  var ct = promo.condition_type;
+  var cj = promo.condition_json || {};
+  if (ct === 'min_subtotal') {
+    return { condition_type: 'min_subtotal', min_subtotal: Number(cj.min_subtotal || 0) };
+  }
+  var mm = (cj.match_mode === 'any') ? 'any' : 'all';
+  if (ct === 'required_products') {
+    var rp = (cj.required_products || []).map(function(r){
+      var pr = prodMap[String(r.product_id)];
+      return { product_id: String(r.product_id), title: pr ? pr.title : String(r.product_id), min_qty: Number(r.min_qty || 1) };
+    });
+    return { condition_type: 'required_products', match_mode: mm, required_products: rp };
+  }
+  if (ct === 'required_variants') {
+    var rv = (cj.required_variants || []).map(function(r){
+      var pr = prodMap[String(r.product_id)];
+      return { product_id: String(r.product_id), title: pr ? pr.title : String(r.product_id), variant_key: String(r.variant_key || ''), min_qty: Number(r.min_qty || 1) };
+    });
+    return { condition_type: 'required_variants', match_mode: mm, required_variants: rv };
+  }
+  return { condition_type: ct || '' };
+}
+
+// Public cart preview for CONDITIONAL promotions (no auth). Re-prices the cart via the
+// SAME resolveCartPromotions_ pipeline submitOrderRpc uses, so preview line prices and
+// eligibility can never diverge from the placed order. Returns per-line pricing (so the
+// storefront can show the discounted price + build its client_pricing snapshot) plus
+// eligible / near-miss lists for conditional promos.
+function previewPromotionEligibilityRpc(cartPayload) {
+  try {
+    var p = cartPayload || {};
+    var inItems = (p.items === undefined || p.items === null) ? [] : p.items;
+    if (!Array.isArray(inItems)) {
+      return { ok:false, error:'INVALID_ITEMS', eligible:[], near:[], lines:[], subtotal:0, subtotal_after_promo:0 };
+    }
+    if (!inItems.length) {
+      return { ok: true, eligible: [], near: [], lines: [], subtotal: 0, subtotal_after_promo: 0 };
+    }
+    var snap = getSnap_();
+    var prodMap = {};
+    snap.forEach(function(prod){ prodMap[String(prod.id)] = prod; });
+    var normalizedCart = normalizeOrderCart_(inItems, prodMap);
+    if (!normalizedCart.ok) {
+      return Object.assign({ ok:false, eligible:[], near:[], lines:[], subtotal:0, subtotal_after_promo:0 }, normalizedCart);
+    }
+    var now = new Date();
+
+    // Build pipeline input (raw unit price after variant resolution).
+    var ctxItems = [];
+    for (var i = 0; i < normalizedCart.items.length; i++) {
+      var normalizedItem = normalizedCart.items[i];
+      var prod = normalizedItem.prod;
+      ctxItems.push({
+        product_id:String(prod.id), variant_key:normalizedItem.variantKey,
+        qty:normalizedItem.qty, raw_unit_price:normalizedItem.rawUnitPrice, title:prod.title
+      });
+    }
+
+    var cart = resolveCartPromotions_(ctxItems, now);
+    var qualifiedSet = {};
+    (cart.qualified_conditional_ids || []).forEach(function(id){ qualifiedSet[String(id)] = true; });
+    // Which promo actually won each line (so we can report where a discount landed).
+    var appliedByPromo = {};
+    cart.lines.forEach(function(ln){
+      if (ln.promotion) {
+        var pid = String(ln.promotion.promotion_id);
+        (appliedByPromo[pid] = appliedByPromo[pid] || []).push({ product_id: ln.product_id, variant_key: ln.variant_key });
+      }
+    });
+
+    var outLines = cart.lines.map(function(ln){
+      return {
+        product_id: ln.product_id, variant_key: ln.variant_key, qty: ln.qty,
+        unit_base_price: ln.unit_base_price, unit_final_price: ln.unit_final_price,
+        unit_discount_amount: ln.unit_discount_amount,
+        promotion: ln.promotion ? publicPromoSummary_(ln.promotion) : null
+      };
+    });
+
+    var ctx = cart.ctx;
+    var subtotalAfterDirect = cart.subtotal_after_direct;
+    var eligible = [];
+    var near = [];
+    for (var q = 0; q < cart.promos.length; q++) {
+      var promo = cart.promos[q];
+      if (promo.application_mode !== 'conditional') continue;
+      if (!_promoIsActive_(promo, now)) continue;
+      var cj = promo.condition_json || {};
+      var mm = (cj.match_mode === 'any') ? 'any' : 'all';
+      var base = {
+        promotion_id: promo.promotion_id, name: promo.name,
+        starts_at: promo.starts_at || '', ends_at: promo.ends_at || '', no_end_date: !!promo.no_end_date,
+        discount_type: promo.discount_type, discount_value: promo.discount_value,
+        discount_scope: promo.discount_scope || 'item',
+        condition_type: promo.condition_type, match_mode: mm,
+        condition: _promoConditionDescriptor_(promo, prodMap),
+        target: _promoTargetDescriptor_(promo, prodMap)
+      };
+      if (qualifiedSet[String(promo.promotion_id)]) {
+        if (promo.discount_scope === 'order_total') {
+          // Order-total promos never land on a line. Only one can win per order (largest
+          // discount); a qualified loser is reported applied:false so the storefront can show
+          // "qualified but a bigger order-total discount applied". order_discount_amount is the
+          // winner's applied amount, or (for a loser) what this promo would have deducted.
+          var _isWinner = !!(cart.order_discount
+            && String(cart.order_discount.promotion.promotion_id) === String(promo.promotion_id));
+          base.applied = _isWinner;
+          base.order_discount_amount = _isWinner
+            ? Number(cart.order_discount.amount || 0)
+            : calcOrderTotalDiscount_(cart.subtotal, promo);
+          eligible.push(base);
+        } else {
+          base.applied_lines = appliedByPromo[String(promo.promotion_id)] || [];
+          // Best-price resolution means a qualified promo can still lose every line it
+          // targets to a bigger discount. `applied` + `outpriced_lines` let the storefront
+          // label it "qualified but not applied" instead of implying it discounted something.
+          base.applied = base.applied_lines.length > 0;
+          base.outpriced_lines = cart.lines.filter(function(ln){
+            var winId = ln.promotion ? String(ln.promotion.promotion_id) : '';
+            return winId !== String(promo.promotion_id)
+                && promoMatchesTarget_(promo, ln.product_id, ln.variant_key);
+          }).map(function(ln){ return { product_id: ln.product_id, variant_key: ln.variant_key }; });
+          eligible.push(base);
+        }
+      } else {
+        // Near-miss detail per condition type (shape mirrors gift preview).
+        var nearInfo = null;
+        if (promo.condition_type === 'min_subtotal') {
+          var minSub = Number(cj.min_subtotal || 0);
+          var diff = Math.max(0, minSub - subtotalAfterDirect);
+          if (diff > 0 && minSub > 0) nearInfo = { type: 'min_subtotal', remaining: diff, target: minSub };
+        } else if (promo.condition_type === 'required_products') {
+          var reqP = cj.required_products || [];
+          var missP = [];
+          for (var rp2 = 0; rp2 < reqP.length; rp2++) {
+            var rqp = reqP[rp2]; var minQ = Number(rqp.min_qty || 1); var have = 0;
+            for (var ci = 0; ci < ctx.items.length; ci++) {
+              if (String(ctx.items[ci].product_id) === String(rqp.product_id)) have += ctx.items[ci].qty;
+            }
+            if (have < minQ) {
+              var plabel = prodMap[String(rqp.product_id)];
+              missP.push({ product_id: String(rqp.product_id), title: plabel ? plabel.title : String(rqp.product_id), need: minQ - have });
+            }
+          }
+          if (missP.length) nearInfo = { type: 'required_products', missing: missP, match_mode: mm };
+        } else if (promo.condition_type === 'required_variants') {
+          var reqV = cj.required_variants || [];
+          var missV = [];
+          for (var rv2 = 0; rv2 < reqV.length; rv2++) {
+            var rqv = reqV[rv2]; var minQv = Number(rqv.min_qty || 1); var haveV = 0;
+            for (var cj2 = 0; cj2 < ctx.items.length; cj2++) {
+              if (String(ctx.items[cj2].product_id) === String(rqv.product_id)
+                  && String(ctx.items[cj2].variant_key || '') === String(rqv.variant_key || '')) haveV += ctx.items[cj2].qty;
+            }
+            if (haveV < minQv) {
+              var vlabel = prodMap[String(rqv.product_id)];
+              missV.push({ product_id: String(rqv.product_id), title: vlabel ? vlabel.title : String(rqv.product_id), variant_key: String(rqv.variant_key || ''), need: minQv - haveV });
+            }
+          }
+          if (missV.length) nearInfo = { type: 'required_variants', missing: missV, match_mode: mm };
+        }
+        base.near = nearInfo;
+        near.push(base);
+      }
+    }
+    return {
+      ok: true, eligible: eligible, near: near, lines: outLines,
+      subtotal: cart.subtotal, subtotal_after_promo: subtotalAfterDirect,
+      // Whole-order discount applied to the item subtotal (once). null when no order-total
+      // promo qualifies/wins. subtotal_after_order_discount = subtotal − order_discount.amount.
+      order_discount: cart.order_discount
+        ? { promotion: publicPromoSummary_(cart.order_discount.promotion), amount: cart.order_discount.amount }
+        : null,
+      subtotal_after_order_discount: cart.subtotal_after_order_discount
+    };
+  } catch (err) {
+    return { ok: false, error: String(err), eligible: [], near: [], lines: [] };
   }
 }
 

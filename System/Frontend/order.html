@@ -85,6 +85,7 @@
     .odm-history-dot.delivered  { background: #14b8a6; }
     .odm-history-dot.rejected   { background: #ef4444; }
     .odm-history-dot.address_updated { background: #8b5cf6; }
+    .odm-history-dot.shipping_carrier_changed { background: #f97316; }
 
     .modal-content { border-radius: var(--radius); }
     .pill { border-radius: 999px; }
@@ -389,8 +390,19 @@
         </div>
 
         <div class="odm-section" id="odmShippingInfoSection">
-          <div class="odm-section-title"><i class="bi bi-send me-1"></i>วิธีการจัดส่ง</div>
+          <div class="odm-section-title"><i class="bi bi-send me-1"></i>การจัดส่งที่ลูกค้าเลือก</div>
           <div id="odmShippingInfoList" class="d-flex flex-column gap-2"></div>
+        </div>
+
+        <!-- Actual fulfillment carrier (seller's real carrier — separate from customer's paid selection) -->
+        <div class="odm-section" id="odmFulfillmentSection">
+          <div class="odm-section-title d-flex align-items-center justify-content-between">
+            <span><i class="bi bi-truck me-1"></i>บริษัทขนส่งจริง (Fulfillment)</span>
+            <button id="btnChangeFulfillment" class="btn btn-sm btn-outline-secondary pill" style="display:none" onclick="openFulfillmentModal()">
+              <i class="bi bi-arrow-left-right me-1"></i>เปลี่ยนบริษัทขนส่งจริง
+            </button>
+          </div>
+          <div id="odmFulfillmentBody" class="d-flex flex-column gap-2"></div>
         </div>
 
         <!-- Tracking section: ship form (approved) or tracking info (shipped) -->
@@ -442,6 +454,10 @@
             <div class="odm-total-line">
               <span>ค่าสินค้า</span>
               <span id="odmSubtotal">฿0</span>
+            </div>
+            <div class="odm-total-line" id="odmOrderDiscountLine" style="display:none;color:#c2410c">
+              <span>ส่วนลดท้ายบิล</span>
+              <span id="odmOrderDiscount">-฿0</span>
             </div>
             <div class="odm-total-line align-items-center">
               <span>ค่าจัดส่ง</span>
@@ -586,6 +602,50 @@
         <button type="button" class="btn btn-outline-secondary btn-sm pill" data-bs-dismiss="modal">ยกเลิก</button>
         <button type="button" class="btn btn-dark btn-sm pill px-4" id="btnSaveAddress" onclick="saveShippingAddress()">
           <span class="spinner-border spinner-border-sm me-1 d-none" id="eaSaveSpinner"></span>
+          บันทึก
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Change Fulfillment Carrier Modal -->
+<div class="modal fade" id="fulfillmentModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:480px">
+    <div class="modal-content" style="border-radius:16px;overflow:hidden">
+      <div class="modal-header" style="background:#f8fafc">
+        <div>
+          <h5 class="modal-title fw-bold mb-0"><i class="bi bi-arrow-left-right me-2"></i>เปลี่ยนบริษัทขนส่งจริง</h5>
+          <div class="text-muted small">เลขคำสั่งซื้อ: <span id="ffOrderId">—</span></div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3 p-2 rounded-3" style="background:#f8fafc;border:1px solid #e5e7eb">
+          <div class="text-muted small mb-1">การจัดส่งที่ลูกค้าเลือก (ไม่เปลี่ยนแปลง)</div>
+          <div class="fw-semibold small" id="ffOriginalSelection">—</div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold small mb-1">บริษัทขนส่ง <span class="text-danger">*</span></label>
+          <select id="ffCompanySelect" class="form-select form-select-sm" onchange="_ffOnCompanyChange()"></select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold small mb-1">วิธีจัดส่ง <span class="text-danger">*</span></label>
+          <select id="ffMethodSelect" class="form-select form-select-sm"></select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold small mb-1">เหตุผล <span id="ffReasonReq" class="text-danger" style="display:none">*</span></label>
+          <textarea id="ffReason" class="form-control form-control-sm" rows="2" maxlength="2000" placeholder="เช่น บริษัทที่ลูกค้าเลือกไม่รับพัสดุในพื้นที่นี้"></textarea>
+        </div>
+        <div class="alert alert-info py-2 mb-0" style="font-size:.8rem">
+          <i class="bi bi-info-circle me-1"></i>การเปลี่ยนนี้จะไม่เปลี่ยนค่าจัดส่งหรือยอดรวมของคำสั่งซื้อ ส่วนต่างค่าขนส่ง (ถ้ามี) ร้านเป็นผู้รับผิดชอบ
+        </div>
+        <div id="ffSaveError" class="alert alert-danger mt-3 mb-0 d-none" style="font-size:.82rem"></div>
+      </div>
+      <div class="modal-footer" style="background:#f8fafc">
+        <button type="button" class="btn btn-outline-secondary btn-sm pill" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-dark btn-sm pill px-4" id="btnConfirmFulfillment" onclick="confirmFulfillmentChange()">
+          <span class="spinner-border spinner-border-sm me-1 d-none" id="ffSaveSpinner"></span>
           บันทึก
         </button>
       </div>
@@ -744,7 +804,9 @@
     approved: 'อนุมัติแล้ว',
     shipped: 'จัดส่งแล้ว',
     delivered: 'จัดส่งสำเร็จ',
-    rejected: 'ปฏิเสธ'
+    rejected: 'ปฏิเสธ',
+    address_updated: 'แก้ไขที่อยู่จัดส่ง',
+    shipping_carrier_changed: 'เปลี่ยนบริษัทขนส่งจริง'
   };
 
   var STATUS_ICON = {
@@ -753,7 +815,8 @@
     approved: 'bi-check-circle',
     shipped: 'bi-truck',
     delivered: 'bi-check-circle-fill',
-    rejected: 'bi-x-circle'
+    rejected: 'bi-x-circle',
+    shipping_carrier_changed: 'bi-arrow-left-right'
   };
 
   function _buildProviderTag(provider) {
@@ -1868,6 +1931,8 @@
       shipInfoList.innerHTML = '';
     }
 
+    renderFulfillmentSection(o);
+
     var slipSection = document.getElementById('odmSlipSection');
     // Restore odmSlipImgWrap to original structure in case a previous async callback destroyed it
     var slipWrap = document.getElementById('odmSlipImgWrap');
@@ -1936,6 +2001,14 @@
     }
 
     document.getElementById('odmSubtotal').textContent = money(o.subtotal);
+    var _odLine = document.getElementById('odmOrderDiscountLine');
+    var _odAmt = (o.order_discount && Number(o.order_discount.amount)) || 0;
+    if (_odAmt > 0) {
+      _odLine.style.display = '';
+      document.getElementById('odmOrderDiscount').textContent = '-' + money(_odAmt);
+    } else {
+      _odLine.style.display = 'none';
+    }
     document.getElementById('odmShippingFeeInput').value = o.shipping_fee || 0;
     document.getElementById('odmTotal').textContent = money(o.total);
 
@@ -1952,12 +2025,19 @@
 
     if (o.status === 'approved' || o.status === 'shipped' || o.status === 'delivered') {
       trackSect.style.display = '';
-      // Find company from shipping_info
-      var shipInfoCompanyId = (o.shipping_info && o.shipping_info[0]) ? o.shipping_info[0].company_id : null;
+      // Carrier shown in the ship form = the ACTUAL fulfillment carrier (override if present,
+      // else the customer's original selection). The backend re-resolves authoritatively on save.
+      var _ff = o.fulfillment_shipping || null;
+      var shipInfoCompanyId = _ff ? _ff.company_id
+        : ((o.shipping_info && o.shipping_info[0]) ? o.shipping_info[0].company_id : null);
       var matchedCompany = _allShippingCompanies.find(function(c){ return c.id === shipInfoCompanyId; });
-      var carrierId = matchedCompany ? (matchedCompany.carrier_id || 'other') : 'other';
-      var carrierName = matchedCompany ? matchedCompany.name : ((o.shipping_info && o.shipping_info[0]) ? (o.shipping_info[0].company_name || 'ขนส่ง') : 'ขนส่ง');
-      var trackingTpl = matchedCompany ? (matchedCompany.tracking_url_template || '') : '';
+      var carrierId = matchedCompany ? (matchedCompany.carrier_id || 'other')
+        : (_ff ? (_ff.carrier_id || 'other') : 'other');
+      var carrierName = matchedCompany ? matchedCompany.name
+        : (_ff ? (_ff.company_name || 'ขนส่ง')
+          : ((o.shipping_info && o.shipping_info[0]) ? (o.shipping_info[0].company_name || 'ขนส่ง') : 'ขนส่ง'));
+      var trackingTpl = matchedCompany ? (matchedCompany.tracking_url_template || '')
+        : (_ff ? (_ff.tracking_url_template || '') : '');
       var bc = BUILTIN_CARRIERS.find(function(x){ return x.id === carrierId; });
       if (!trackingTpl && bc && bc.tpl) trackingTpl = bc.tpl;
 
@@ -1969,7 +2049,7 @@
         ? '<img src="' + escapeHtml(logoUrl) + '" style="width:28px;height:28px;object-fit:contain;border-radius:4px;flex-shrink:0" onerror="_onOrderCarrierImgErr(this,' + JSON.stringify(initials) + ',' + JSON.stringify(logoColor) + ')">'
         : _orderCarrierBadge(initials, logoColor);
 
-      var trackingProvider = matchedCompany ? (matchedCompany.tracking_provider || (matchedCompany.auto_tracking === true ? 'aftership' : '')) : '';
+      var trackingProvider = matchedCompany ? (matchedCompany.tracking_provider || (matchedCompany.auto_tracking === true ? 'aftership' : '')) : (_ff ? (_ff.tracking_provider || '') : '');
       var carrierLeftHtml = '<div class="d-flex align-items-center gap-2">' + logoHtml
         + '<div><div class="fw-bold small">' + escapeHtml(carrierName) + '</div>'
         + '<div class="text-muted" style="font-size:.72rem">' + escapeHtml(carrierId !== 'other' ? (bc ? bc.name : carrierId) : 'กำหนดเอง') + '</div></div></div>';
@@ -2202,7 +2282,15 @@
 
     var snapshotId = currentOrder.order_id;
     var fee = Number(document.getElementById('odmShippingFeeInput').value || 0);
-    var total = Number(currentOrder.subtotal || 0) + fee;
+    if (!isFinite(fee) || fee < 0) {
+      hideHUD('err', 'ค่าจัดส่งไม่ถูกต้อง (ต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป)');
+      return;
+    }
+    fee = Math.round(fee);
+    // Preserve any whole-order (order-total) promotion discount when recomputing the total,
+    // so editing shipping never silently drops it. total = (subtotal − orderDiscount) + fee.
+    var _odAmt = (currentOrder.order_discount && Number(currentOrder.order_discount.amount)) || 0;
+    var total = Math.max(0, Number(currentOrder.subtotal || 0) - _odAmt) + fee;
 
     showHUD('กำลังบันทึกค่าจัดส่ง…');
     try {
@@ -2374,17 +2462,11 @@
       hideHUD('err', 'กรุณากรอกหมายเลขพัสดุสำหรับติดตามพัสดุอัตโนมัติ');
       return;
     }
-    var trackingUrl = '';
-    if (trackingNumber && sd.trackingTpl) {
-      trackingUrl = sd.trackingTpl.replace('{T}', encodeURIComponent(trackingNumber));
-    }
+    // The backend resolves carrier / provider / tracking URL authoritatively from the
+    // order's fulfillment override or original selection — the client sends only these.
     var trackingData = {
       tracking_number: trackingNumber,
-      carrier_id:      sd.carrierId || 'other',
-      carrier_name:    sd.carrierName || '',
-      tracking_url:    trackingUrl,
-      note:            note,
-      tracking_provider: sd.tracking_provider || ''
+      note:            note
     };
 
     showHUD('กำลังบันทึกการจัดส่ง…');
@@ -2430,7 +2512,9 @@
           currentOrder = updatedRecord;
         } else {
           currentOrder.status = 'shipped';
-          currentOrder.tracking = trackingData;
+          // Merge over the existing tracking object — replacing it would drop
+          // carrier/provider info until the next full refresh.
+          currentOrder.tracking = Object.assign({}, currentOrder.tracking || {}, trackingData);
         }
         fillDetail(currentOrder);
       }
@@ -2470,6 +2554,150 @@
       }
     } catch (err) {
       hideHUD('err', translateRpcError(err, 'ไม่สามารถบันทึกการจัดส่งได้'));
+    }
+  }
+
+  // ===== Actual fulfillment carrier override =====
+  var _ffModal = null;
+
+  function _ffStatusAllowsChange(status) {
+    return ['unpaid','paid','approved'].indexOf(status) !== -1;
+  }
+
+  function _ffErrMsg(code) {
+    var M = {
+      STATUS_NOT_ALLOWED: 'ไม่สามารถเปลี่ยนบริษัทขนส่งจริงในสถานะนี้ได้',
+      REASON_REQUIRED: 'กรุณาระบุเหตุผล',
+      COMPANY_INVALID: 'บริษัทขนส่งไม่ถูกต้องหรือถูกปิดใช้งาน',
+      METHOD_INVALID: 'วิธีจัดส่งไม่ถูกต้องหรือถูกปิดใช้งาน',
+      SERVER_BUSY: 'ระบบกำลังประมวลผลคำขออื่น กรุณาลองใหม่',
+      AUTH_REQUIRED: 'กรุณาเข้าสู่ระบบใหม่'
+    };
+    return M[code] || code || 'บันทึกไม่สำเร็จ';
+  }
+
+  // Render the actual-fulfillment-carrier section + toggle the change button by status.
+  function renderFulfillmentSection(o) {
+    var body = document.getElementById('odmFulfillmentBody');
+    var btn  = document.getElementById('btnChangeFulfillment');
+    if (!body) return;
+    if (btn) btn.style.display = _ffStatusAllowsChange(o.status) ? '' : 'none';
+    var ff = o.fulfillment_shipping || null;
+    if (!ff) {
+      body.innerHTML = '<div class="text-muted small">ใช้ตามที่ลูกค้าเลือก</div>';
+      return;
+    }
+    var carrierId = ff.carrier_id || 'other';
+    var bc = BUILTIN_CARRIERS.find(function(x){ return x.id === carrierId; });
+    var logoColor = (bc && bc.color) || '#6b7280';
+    var logoUrl   = (bc && bc.logo)  || null;
+    var initials  = (ff.company_name || '?').charAt(0).toUpperCase();
+    var logoHtml = logoUrl
+      ? '<img src="' + escapeHtml(logoUrl) + '" style="width:32px;height:32px;object-fit:contain;border-radius:6px;flex-shrink:0" onerror="_onOrderCarrierImgErr(this,' + JSON.stringify(initials) + ',' + JSON.stringify(logoColor) + ')">'
+      : _orderCarrierBadge(initials, logoColor);
+    var origName = (o.shipping_info && o.shipping_info[0]) ? (o.shipping_info[0].company_name || '') : '';
+    var meta = [];
+    if (origName) meta.push('เดิม: ' + escapeHtml(origName));
+    if (ff.changed_by) meta.push('โดย: ' + escapeHtml(ff.changed_by));
+    if (ff.changed_at) meta.push(escapeHtml(fmtDate(ff.changed_at)));
+    body.innerHTML = ''
+      + '<div style="display:flex;align-items:center;gap:10px;padding:.5rem .75rem;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px">'
+      +   logoHtml
+      +   '<div>'
+      +     '<div style="font-weight:700;font-size:.85rem">' + escapeHtml(ff.company_name || '—') + '</div>'
+      +     '<div style="font-size:.75rem;color:#6b7280">' + escapeHtml(ff.method_name || '—') + '</div>'
+      +   '</div>'
+      + '</div>'
+      + (meta.length ? '<div style="font-size:.72rem;color:#9a3412">' + meta.join(' · ') + '</div>' : '')
+      + (ff.reason ? '<div style="font-size:.72rem;color:#6b7280">เหตุผล: ' + escapeHtml(ff.reason) + '</div>' : '');
+  }
+
+  function openFulfillmentModal() {
+    if (!currentOrder) return;
+    var o = currentOrder;
+    if (!_ffStatusAllowsChange(o.status)) return;
+    document.getElementById('ffOrderId').textContent = o.order_id;
+    var orig = (o.shipping_info && o.shipping_info[0]) ? o.shipping_info[0] : null;
+    document.getElementById('ffOriginalSelection').textContent = orig
+      ? ((orig.company_name || '—') + ' · ' + (orig.method_name || '—'))
+      : '—';
+    var reasonReq = (o.status === 'paid' || o.status === 'approved');
+    document.getElementById('ffReasonReq').style.display = reasonReq ? '' : 'none';
+    document.getElementById('ffReason').value = '';
+    var errEl = document.getElementById('ffSaveError');
+    errEl.classList.add('d-none'); errEl.textContent = '';
+    var compSel = document.getElementById('ffCompanySelect');
+    var active = (_allShippingCompanies || []).filter(function(c){ return c.active !== false; });
+    compSel.innerHTML = active.length
+      ? active.map(function(c){ return '<option value="' + escapeHtml(c.id) + '">' + escapeHtml(c.name) + '</option>'; }).join('')
+      : '<option value="">— ไม่มีบริษัทขนส่งที่ใช้งานได้ —</option>';
+    var ff = o.fulfillment_shipping || null;
+    var preferCompanyId = ff ? ff.company_id : (orig ? orig.company_id : '');
+    if (preferCompanyId && active.some(function(c){ return c.id === preferCompanyId; })) compSel.value = preferCompanyId;
+    _ffOnCompanyChange();
+    _ffModal = _ffModal || bootstrap.Modal.getOrCreateInstance(document.getElementById('fulfillmentModal'));
+    _ffModal.show();
+  }
+
+  function _ffOnCompanyChange() {
+    var compSel = document.getElementById('ffCompanySelect');
+    var methodSel = document.getElementById('ffMethodSelect');
+    var comp = (_allShippingCompanies || []).find(function(c){ return c.id === compSel.value; });
+    var methods = (comp && Array.isArray(comp.methods)) ? comp.methods.filter(function(m){ return m.active !== false; }) : [];
+    methodSel.innerHTML = methods.length
+      ? methods.map(function(m){ return '<option value="' + escapeHtml(m.id) + '">' + escapeHtml(m.name) + '</option>'; }).join('')
+      : '<option value="">— ไม่มีวิธีจัดส่งที่ใช้งานได้ —</option>';
+  }
+
+  async function confirmFulfillmentChange() {
+    if (!currentOrder) return;
+    var snapshotId = currentOrder.order_id;
+    var status = currentOrder.status;
+    var companyId = document.getElementById('ffCompanySelect').value;
+    var methodId = document.getElementById('ffMethodSelect').value;
+    var reason = document.getElementById('ffReason').value.trim();
+    var errEl = document.getElementById('ffSaveError');
+    errEl.classList.add('d-none'); errEl.textContent = '';
+    if (!companyId || !methodId) {
+      errEl.textContent = 'กรุณาเลือกบริษัทขนส่งและวิธีจัดส่ง';
+      errEl.classList.remove('d-none');
+      return;
+    }
+    if ((status === 'paid' || status === 'approved') && !reason) {
+      errEl.textContent = 'กรุณาระบุเหตุผลสำหรับคำสั่งซื้อที่ชำระ/อนุมัติแล้ว';
+      errEl.classList.remove('d-none');
+      return;
+    }
+    var confirmed = await Swal.fire({
+      title: 'ยืนยันเปลี่ยนบริษัทขนส่งจริง?',
+      html: 'การเปลี่ยนนี้ <b>จะไม่เปลี่ยนค่าจัดส่งหรือยอดรวม</b> ของคำสั่งซื้อ',
+      icon: 'question', showCancelButton: true,
+      confirmButtonText: 'ยืนยัน', cancelButtonText: 'ยกเลิก', confirmButtonColor: '#111827'
+    });
+    if (!confirmed.isConfirmed) return;
+    var btn = document.getElementById('btnConfirmFulfillment');
+    _setButtonBusy(btn, true);
+    try {
+      if (!GAS_ENV) throw new Error('GAS not available');
+      var r = await _rpc('orderUpdateFulfillmentShippingRpc', snapshotId, companyId, methodId, reason);
+      if (!r || !r.ok) {
+        errEl.textContent = _ffErrMsg((r && r.error) || '');
+        errEl.classList.remove('d-none');
+        return;
+      }
+      var updated = r.record || null;
+      if (updated) {
+        _replaceOrderInClientCache(updated);
+        renderTable();
+        if (currentOrder && currentOrder.order_id === snapshotId) fillDetail(currentOrder);
+      }
+      if (_ffModal) _ffModal.hide();
+      hideHUD('ok', '✓ เปลี่ยนบริษัทขนส่งจริงแล้ว');
+    } catch (err) {
+      errEl.textContent = translateRpcError(err, 'ไม่สามารถเปลี่ยนบริษัทขนส่งได้');
+      errEl.classList.remove('d-none');
+    } finally {
+      _setButtonBusy(btn, false);
     }
   }
 
@@ -2546,6 +2774,7 @@
     var items    = opts.items    || [];
     var gifts   = opts.gifts   || [];
     var subtotal = opts.subtotal || 0;
+    var orderDiscount = opts.orderDiscount || 0;
     var shippingFee = opts.shippingFee || 0;
     var total    = opts.total    || 0;
     var shippingInfo = opts.shippingInfo || [];
@@ -2618,6 +2847,7 @@
       ? '<hr class="rdiv">'
         + '<div class="rtots">'
         + '<div class="rtr"><span>\u0e23\u0e32\u0e04\u0e32\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32</span><span>' + fmtMoney(subtotal) + '</span></div>'
+        + (orderDiscount > 0 ? '<div class="rtr"><span style="color:#c2410c">\u0e2a\u0e48\u0e27\u0e19\u0e25\u0e14\u0e17\u0e49\u0e32\u0e22\u0e1a\u0e34\u0e25</span><span style="color:#c2410c">-' + fmtMoney(orderDiscount) + '</span></div>' : '')
         + shippingRows
         + '<div class="rgrand"><span>\u0e23\u0e27\u0e21\u0e17\u0e31\u0e49\u0e07\u0e2a\u0e34\u0e49\u0e19</span><span>' + fmtMoney(total) + '</span></div>'
         + '</div>'
@@ -2808,6 +3038,7 @@
         orderId:          order.order_id,
         createdAt:        order.created_at,
         subtotal:         order.subtotal || 0,
+        orderDiscount:    (order.order_discount && Number(order.order_discount.amount)) || 0,
         shippingFee:      order.shipping_fee || 0,
         total:            order.total || 0,
         shippingInfo:     order.shipping_info || [],

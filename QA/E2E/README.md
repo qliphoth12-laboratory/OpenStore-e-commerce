@@ -1,6 +1,7 @@
-# Chromium E2E Checkout Warnings
+# Chromium E2E Tests
 
-ชุดนี้เป็น Browser E2E ที่รันบน Chromium กับ deployed Google Apps Script Web App จริง โดย helper สำหรับสร้าง/แก้/ล้างข้อมูลทดสอบอยู่เฉพาะใน `QA/Integration/integration-tests.gs`
+ชุดนี้อ้างอิง **Open Storefront `v1.1.0`** และรัน Browser E2E บน Chromium กับ deployed Google Apps Script Web App จริง
+helper สำหรับสร้าง/แก้/ล้างข้อมูลทดสอบอยู่เฉพาะใน `QA/Integration/integration-tests.gs`
 
 ## เตรียม Apps Script
 
@@ -63,6 +64,18 @@ npm run e2e:ui
 
 ค่า default รันเฉพาะ Chromium desktop, `workers=1`, เก็บ trace และ screenshot เฉพาะตอน fail
 
+รันเฉพาะ Mega promotion/gift workflow:
+
+```powershell
+npm run e2e:mega
+```
+
+รันเฉพาะ order-total promotion workflow:
+
+```powershell
+npm run e2e:order-total
+```
+
 ## Scenarios
 
 - `product-stock-zero-after-cart`
@@ -71,9 +84,12 @@ npm run e2e:ui
 - `gift-stock-depleted-after-preview`
 - `price-changed-after-cart`
 - `promotion-ended-after-cart`
+- `active-promotion-stable` — โปรโมชันยัง active และราคาจาก preview/client pricing ต้องตรงกัน
 - `sale-not-active-after-cart`
 - `happy-path` — สินค้าพร้อมขายปกติ สต็อกเยอะ ไม่มี gift/promo/variant (ใช้กับ validation, cart, success)
 - `happy-path-variants` — สินค้าพร้อมขาย มีกลุ่มตัวเลือก "ขนาด" (S / M) สำหรับทดสอบ variant
+- `mega-promotion-gift` — 1 order, 6 product lines, item/order-total promotions 8 รายการ และ gift rules 5 รายการ; ตรวจ UI ตั้งแต่ cart ถึง customer order-view
+- `promotion-order-total` — conditional fixed discount หักครั้งเดียวจากยอดสินค้าโดยไม่เปลี่ยน unit price
 
 ทุก test จะเรียก cleanup ใน `afterEach` เพื่อลบ order/product/gift/promotion/shipping ของ fixture run นั้น
 
@@ -84,6 +100,10 @@ npm run e2e:ui
 - `tests/cart.spec.js` — ตะกร้า: เพิ่มสินค้า · เพิ่มจำนวน · ลบสินค้า → ตะกร้าว่าง (area 3)
 - `tests/product-variants.spec.js` — ตัวเลือกสินค้า: ตัวเลือกเริ่มต้นถูกเลือก + เปลี่ยนตัวเลือกแล้วราคาปรับ (area 2/3)
 - `tests/order-success.spec.js` — สั่งซื้อสำเร็จ: การ์ดสำเร็จ + ลิงก์ชำระเงิน · ปุ่มถูก disable ระหว่างส่ง (area 9/10)
+- `tests/mega-promotion-gift.spec.js` — Mega workflow หนึ่ง order: best-price/outpriced promotions, gift quantities, checkout totals, success popup, token order-view และ stocks
+- `tests/promotion-order-total.spec.js` — conditional order-total promotion: preview, cart display, checkout total, persisted snapshot และ stock
+
+Mega spec ต้องรันบน dedicated QA deployment ที่ไม่มี promotion `target=all` หรือ min-subtotal gift จากข้อมูลภายนอกมารบกวนผลลัพธ์ ตัว test สร้าง fixture ผ่าน QA RPC และ cleanup order/promotion/gift/rule/product/shipping แม้ assertion หลัง submit ล้ม
 
 ## ยังไม่ครอบคลุม (แนะนำให้เพิ่มภายหลัง)
 
@@ -93,4 +113,6 @@ npm run e2e:ui
   หมายเหตุ: ปัจจุบัน frontend แสดงข้อความ `SHIPPING_INVALID` แบบรวม ไม่ได้โชว์ `message` ละเอียด
   ที่ backend ส่งกลับ (เช่น "มีสินค้าที่ยังไม่ได้กำหนดวิธีจัดส่ง") — เป็นจุดที่ควรปรับปรุงใน production ภายหลัง
 
-ก่อนเริ่ม suite จะเรียก `e2eCleanupAllCheckoutWarningFixturesRpc()` ในไฟล์ integration test เพื่อล้าง fixture `E2E-...` ที่ค้างจากรอบก่อน จากนั้นแต่ละ test จะเรียก `e2ePrepareCheckoutWarningFixtureRpc()` เพื่อสร้างสินค้าทดสอบเองและรอจนสินค้าขึ้นบนหน้าร้านจริงก่อนเริ่มกด UI
+ก่อนเริ่ม suite จะเรียก `e2eCleanupAllCheckoutWarningFixturesRpc()` เพื่อล้าง fixture `E2E-...` ที่ค้างจากรอบก่อน
+spec ทั่วไปใช้ `e2ePrepareCheckoutWarningFixtureRpc()` ส่วน mega และ order-total ใช้ fixture RPC เฉพาะของตน
+ทุก spec รอจนสินค้าขึ้นบนหน้าร้านจริงก่อนเริ่มกด UI และ cleanup ข้อมูลของ run ใน `afterEach`

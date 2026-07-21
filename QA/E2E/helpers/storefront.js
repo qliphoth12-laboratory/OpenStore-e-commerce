@@ -15,6 +15,21 @@ function adminToken() {
   return requiredConfig('adminToken', loadE2eConfig().adminToken);
 }
 
+function fixtureRpcError(action, result) {
+  const code = result && result.error ? String(result.error) : 'UNKNOWN_ERROR';
+  if (code === 'AUTH_REQUIRED' || code === 'SESSION_INVALID') {
+    const cfg = loadE2eConfig();
+    const source = process.env.E2E_ADMIN_TOKEN ? 'E2E_ADMIN_TOKEN' : 'e2e.config.local.json';
+    const loginUrl = `${String(cfg.baseUrl || '').replace(/\/+$/, '')}?page=login`;
+    return new Error(
+      `${action} failed: ${code}. The admin session from ${source} is invalid or expired. `
+      + `Log in to the same Apps Script deployment (${loginUrl}), copy localStorage `
+      + 'ADMIN_SESSION_V1, then replace the E2E token. Admin sessions expire after 6 hours.'
+    );
+  }
+  return new Error(`${action} failed: ${code}`);
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -43,11 +58,14 @@ async function openStorefront(page) {
   await frame.locator('body').waitFor({ state: 'visible' });
 }
 
-async function waitForGoogleScriptRun(page) {
-  const timeoutMs = loadE2eConfig().googleScriptTimeoutMs;
+async function waitForGoogleScriptRun(page, timeoutOverrideMs) {
+  const timeoutMs = Number.isFinite(Number(timeoutOverrideMs))
+    ? Math.max(0, Number(timeoutOverrideMs))
+    : loadE2eConfig().googleScriptTimeoutMs;
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
+    if (page.isClosed()) throw new Error('Page was closed while waiting for google.script.run');
     for (const frame of page.frames()) {
       const ready = await frame.evaluate(
         () => !!(window.google && window.google.script && window.google.script.run)
@@ -107,6 +125,21 @@ async function prepareFixture(page, scenario) {
   return result;
 }
 
+async function prepareMegaPromotionGiftFixture(page) {
+  const result = await gasRun(page, 'e2ePrepareMegaPromotionGiftFixtureRpc', [adminToken()]);
+  if (!result || !result.ok) {
+    throw fixtureRpcError('prepare mega promotion/gift fixture', result);
+  }
+  const productTitles = Object.values(result.products || {}).map((product) => product.title);
+  try {
+    await waitForPreparedProducts(page, productTitles, result.runId);
+  } catch (err) {
+    await cleanupMegaPromotionGiftFixture(page, result.fixture).catch(() => {});
+    throw err;
+  }
+  return result;
+}
+
 async function cleanupAllCheckoutFixtures(page) {
   const result = await gasRun(page, 'e2eCleanupAllCheckoutWarningFixturesRpc', [adminToken()]);
   if (!result || !result.ok) throw new Error(`cleanup all E2E fixtures failed: ${result && result.error}`);
@@ -123,6 +156,46 @@ async function cleanupFixture(page, runId) {
   if (!runId) return;
   const result = await gasRun(page, 'e2eCleanupCheckoutWarningFixtureRpc', [adminToken(), runId]);
   if (!result || !result.ok) throw new Error(`cleanup ${runId} failed: ${result && result.error}`);
+}
+
+async function inspectMegaPromotionGiftFixture(page, fixture) {
+  const result = await gasRun(page, 'e2eInspectMegaPromotionGiftFixtureRpc', [adminToken(), fixture]);
+  if (!result || !result.ok) throw new Error(`inspect mega fixture failed: ${result && result.error}`);
+  return result;
+}
+
+async function prepareOrderTotalPromoFixture(page) {
+  const result = await gasRun(page, 'e2ePrepareOrderTotalPromoFixtureRpc', [adminToken()]);
+  if (!result || !result.ok) {
+    throw fixtureRpcError('prepare order-total promo fixture', result);
+  }
+  try {
+    await waitForPreparedProducts(page, [result.product.title], result.runId);
+  } catch (err) {
+    await cleanupOrderTotalPromoFixture(page, result.fixture).catch(() => {});
+    throw err;
+  }
+  return result;
+}
+
+async function inspectOrderTotalPromoFixture(page, fixture) {
+  const result = await gasRun(page, 'e2eInspectOrderTotalPromoFixtureRpc', [adminToken(), fixture]);
+  if (!result || !result.ok) throw new Error(`inspect order-total fixture failed: ${result && result.error}`);
+  return result;
+}
+
+async function cleanupOrderTotalPromoFixture(page, fixture) {
+  if (!fixture) return;
+  const result = await gasRun(page, 'e2eCleanupOrderTotalPromoFixtureRpc', [adminToken(), fixture]);
+  if (!result || !result.ok) throw new Error(`cleanup order-total fixture failed: ${result && result.error}`);
+  return result;
+}
+
+async function cleanupMegaPromotionGiftFixture(page, fixture) {
+  if (!fixture) return;
+  const result = await gasRun(page, 'e2eCleanupMegaPromotionGiftFixtureRpc', [adminToken(), fixture]);
+  if (!result || !result.ok) throw new Error(`cleanup mega fixture failed: ${result && result.error}`);
+  return result;
 }
 
 async function waitForPreparedProduct(page, productTitle, runId) {
@@ -151,6 +224,39 @@ async function waitForPreparedProduct(page, productTitle, runId) {
   );
 }
 
+async function waitForPreparedProducts(page, productTitles, runId) {
+  const cfg = loadE2eConfig();
+  const titles = (productTitles || []).filter(Boolean);
+  const deadline = Date.now() + cfg.fixtureVisibleTimeoutMs;
+  let lastBodyText = '';
+  let missingTitles = titles.slice();
+  let attempts = 0;
+
+  while (Date.now() < deadline) {
+    attempts += 1;
+    await page.goto(`${indexUrl()}&e2eRun=${encodeURIComponent(runId)}&e2eTs=${Date.now()}`);
+    await page.waitForLoadState('domcontentloaded');
+    const frame = await waitForGoogleScriptRun(page);
+    await frame.locator('body').waitFor({ state: 'visible' });
+
+    missingTitles = [];
+    for (const title of titles) {
+      const card = frame.locator('.product-card').filter({ hasText: title }).first();
+      if (!await card.isVisible().catch(() => false)) missingTitles.push(title);
+    }
+    if (!missingTitles.length) return;
+
+    lastBodyText = await frame.locator('body').innerText().catch(() => '');
+    await sleep(cfg.fixturePollMs);
+  }
+
+  throw new Error(
+    `Prepared mega products did not all appear after ${cfg.fixtureVisibleTimeoutMs}ms. `
+    + `Missing: ${missingTitles.join(', ')}. Attempts: ${attempts}. `
+    + `Last page text: ${lastBodyText.slice(0, 700)}`
+  );
+}
+
 async function openProductDetails(page, productTitle) {
   const frame = await waitForGoogleScriptRun(page);
   const productCard = frame.locator('.product-card').filter({ hasText: productTitle }).first();
@@ -164,10 +270,36 @@ async function addProductToCart(page, productTitle, qty = 1) {
   await openProductDetails(page, productTitle);
   const frame = await waitForGoogleScriptRun(page);
   const qtyInput = frame.locator('#productQty');
+  const cartCount = frame.locator('#cartCount');
+  const countBeforeAdd = Number((await cartCount.innerText()).trim());
   await expect(qtyInput).toBeVisible();
   await qtyInput.fill(String(qty));
   await frame.locator('#addToCartFromDetail').click();
-  await expect(frame.locator('#cartCount')).not.toHaveText(/^0$/, { timeout: 45000 });
+  await expect(cartCount).toHaveText(String(countBeforeAdd + qty), { timeout: 45000 });
+
+  const detailModal = frame.locator('#productDetailsModal');
+  if (await detailModal.isVisible().catch(() => false)) {
+    const closeButton = frame
+      .locator('#productDetailsModal .pdm-close, #productDetailsModal [data-bs-dismiss="modal"]')
+      .first();
+    if (await closeButton.isVisible().catch(() => false)) {
+      await closeButton.click({ force: true }).catch(() => {});
+    }
+    await expect(detailModal).toBeHidden({ timeout: 10000 }).catch(() => {});
+  }
+}
+
+async function addProductVariantToCart(page, productTitle, optionLabel, qty = 1) {
+  await openProductDetails(page, productTitle);
+  await selectVariant(page, optionLabel);
+  const frame = await waitForGoogleScriptRun(page);
+  const qtyInput = frame.locator('#productQty');
+  const cartCount = frame.locator('#cartCount');
+  const countBeforeAdd = Number((await cartCount.innerText()).trim());
+  await expect(qtyInput).toBeVisible();
+  await qtyInput.fill(String(qty));
+  await frame.locator('#addToCartFromDetail').click();
+  await expect(cartCount).toHaveText(String(countBeforeAdd + qty), { timeout: 45000 });
 
   const detailModal = frame.locator('#productDetailsModal');
   if (await detailModal.isVisible().catch(() => false)) {
@@ -294,7 +426,11 @@ async function expectSwal(page, titlePattern, bodyPattern) {
 }
 
 async function closeSwal(page) {
-  const frame = await waitForGoogleScriptRun(page).catch(() => null);
+  // Teardown must stay quick when Playwright is already stopping/closing the page.
+  // The normal helper can wait up to 3 minutes for a cold Apps Script frame, which
+  // otherwise prevents a failed worker from exiting promptly.
+  if (page.isClosed()) return;
+  const frame = await waitForGoogleScriptRun(page, 3000).catch(() => null);
   if (!frame) return;
   const popup = frame.locator('.swal2-popup');
   if (await popup.isVisible().catch(() => false)) {
@@ -309,9 +445,11 @@ async function closeSwal(page) {
 
 module.exports = {
   addProductToCart,
+  addProductVariantToCart,
   appLocator,
   cleanupAllCheckoutFixtures,
   cleanupFixture,
+  cleanupMegaPromotionGiftFixture,
   clearBrowserState,
   clickCheckoutSubmit,
   closeSwal,
@@ -323,13 +461,19 @@ module.exports = {
   fillCheckoutForm,
   getCartCount,
   incrementFirstCartItem,
+  inspectMegaPromotionGiftFixture,
+  inspectOrderTotalPromoFixture,
+  cleanupOrderTotalPromoFixture,
+  prepareOrderTotalPromoFixture,
   mutateFixture,
   openCart,
   openCheckout,
   openProductDetails,
   openStorefront,
   prepareFixture,
+  prepareMegaPromotionGiftFixture,
   removeFirstCartItem,
   selectVariant,
-  submitCheckout
+  submitCheckout,
+  waitForGoogleScriptRun
 };

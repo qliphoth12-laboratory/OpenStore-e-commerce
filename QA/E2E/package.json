@@ -5,6 +5,8 @@
   "description": "Chromium UI E2E tests for deployed Open Storefront checkout warnings.",
   "scripts": {
     "e2e": "playwright test",
+    "e2e:mega": "playwright test tests/mega-promotion-gift.spec.js",
+    "e2e:order-total": "playwright test tests/promotion-order-total.spec.js",
     "e2e:headed": "playwright test --headed",
     "e2e:ui": "playwright test --ui",
     "e2e:report": "playwright show-report"

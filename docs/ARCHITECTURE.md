@@ -1,5 +1,7 @@
 # Architecture
 
+เอกสารนี้อ้างอิงระบบ **Open Storefront `v1.1.0`**
+
 เอกสารนี้อธิบายสถาปัตยกรรมของ Open Storefront ในระดับที่เหมาะสำหรับนักพัฒนาที่ต้องดูแล ต่อยอด หรือ debug ระบบจริง
 ระบบนี้เป็น e-commerce storefront ที่รันบน Google Apps Script ทั้ง backend และการ serve หน้าเว็บ โดยใช้ Google Sheets เป็นฐานข้อมูลหลัก
 และ Google Drive เป็นพื้นที่เก็บไฟล์รูปภาพ/สลิป/ไฟล์ log
@@ -81,6 +83,10 @@ Apps Script RPC functions
 | `?page=payment` | `payment.html` |
 | `?page=user` | `user.html` |
 | `?page=system` | `system.html` |
+| `?page=legal` | `legal.html` |
+| `?page=print-order` | `print-order.html` |
+| `?page=qa-integration` | `integration-dashboard.html` (ติดตั้งเฉพาะ QA deployment) |
+| `?page=login` | `login.html` |
 | `?page=privacy-policy` | `privacy-policy.html` |
 | `?page=term-and-service` | `term_and_service.html` |
 
@@ -184,6 +190,8 @@ Google Sheets เป็นฐานข้อมูลหลัก ทุก shee
 | `slip_drive_file_id` | ไฟล์สลิปใน Drive |
 | `token_expires_at` | วันหมดอายุ token |
 | `tracking_json` | tracking result/cache เข้ารหัส at rest |
+| `fulfillment_shipping_json` | บริษัทขนส่งจริงที่ร้านใช้จัดส่ง (แยกจากที่ลูกค้าเลือก) — plaintext, ไม่มี PII |
+| `order_discount_json` | snapshot ส่วนลดระดับทั้งออเดอร์ เช่น promotion id, ชื่อ, type, value และจำนวนเงินที่หัก |
 
 ### `store`
 
@@ -215,10 +223,14 @@ Google Sheets เป็นฐานข้อมูลหลัก ทุก shee
 
 - รองรับส่วนลดแบบ fixed/percent
 - target ได้ทั้งทุกสินค้า สินค้าเฉพาะรายการ หรือ variant เฉพาะ
+- `application_mode` เป็น `direct` หรือ `conditional`; แถว legacy ที่ว่างถือเป็น `direct`
+- `condition_type` + `condition_json` รองรับ `min_subtotal`, `required_products`, `required_variants` และ `match_mode` แบบ `all`/`any`
+- `discount_scope` เป็น `item` หรือ `order_total`; `order_total` ใช้ได้เฉพาะ conditional promotion และถูกบันทึกลง `order_discount_json`
 - มี `starts_at`, `ends_at`, `enabled`, `no_end_date`, `deleted_at`
 - status เช่น active/scheduled/expired/disabled คำนวณแบบ dynamic
 
-ราคาที่ผ่าน promotion ถูก inject เข้า product snapshot เพื่อให้ storefront ใช้งานได้ทันที
+เฉพาะ direct promotion ถูก inject เข้า product snapshot เพื่อให้ storefront ใช้งานได้ทันที
+ส่วน conditional promotion ต้องประเมินจาก cart ปัจจุบันผ่าน `previewPromotionEligibilityRpc` และประเมินซ้ำใน `submitOrderRpc`
 
 ### `gift_items` และ `gift_rules`
 
@@ -229,10 +241,14 @@ Google Sheets เป็นฐานข้อมูลหลัก ทุก shee
 - ยอด subtotal ขั้นต่ำ
 - สินค้า/variant ที่เข้าเงื่อนไข
 - จำนวนของแถม
+- `repeat_mode`: `once_per_order` หรือ `per_threshold`
+- `match_mode` ใน `condition_json`: `all` หรือ `any`
 - ช่วงเวลาเริ่ม/จบ
 - enabled/deleted state
 
 ตอน checkout ระบบจะคำนวณ eligibility และ commit ของแถมลง `items_json` ด้วย `line_type: "gift"`
+จำนวน stock, `gift_qty` และ `min_qty` ต้องเป็นจำนวนเต็มตาม contract; legacy row ที่ผิด contract ยังอ่านในหน้า admin ได้
+แต่ถูกทำเครื่องหมาย `operational=false` และไม่สามารถแจกบน storefront/order ได้
 
 ### `payment`
 
@@ -292,11 +308,15 @@ product snapshot คือ array ของสินค้าที่ normalize 
 - `PROD_SNAPSHOT_TS`
 - `PROD_SNAP_META`
 - `PROD_SNAP_PART_*`
+- `PROD_SNAP_VALID_UNTIL`
 - `PROD_DRIVE_TS_CHECKED`
 
 ถ้า JSON snapshot มีขนาดเกิน limit ของ `CacheService` ระบบจะใช้ chunked snapshot
 โดยเขียน chunk ภายใต้ version ใหม่ แล้วค่อยเขียน meta เป็นขั้นสุดท้าย
 เพื่อป้องกัน reader ประกอบ snapshot จาก chunk คนละ version
+
+`PROD_SNAP_VALID_UNTIL` เป็นขอบเขตเวลาที่ snapshot ยังเชื่อถือได้ โดยคำนวณจากเวลาเริ่ม/สิ้นสุดที่ใกล้ที่สุดของ direct promotion
+และมี TTL สูงสุด 10 นาที ทำให้ราคาใน snapshot หมดอายุตรงตาม schedule โดยไม่ต้องรอการแก้ Sheet หรือ trigger รอบถัดไป
 
 `tickSync()` จะเรียก `syncSnapIfStale_()` ทุก 1 นาที
 และมี sentinel TTL ประมาณ 30 วินาทีเพื่อลดการเรียก `DriveApp.getFileById(...).getLastUpdated()`
@@ -331,16 +351,20 @@ product snapshot คือ array ของสินค้าที่ normalize 
 ### Checkout
 
 1. ลูกค้าสร้าง cart ใน `index.html`
-2. frontend เรียก backend เพื่อ preview promotion/gift/shipping ตามข้อมูลที่เลือก
+2. frontend เรียก `previewPromotionEligibilityRpc` และ `previewGiftEligibilityRpc` เพื่อ preview promotion/gift ตาม cart ปัจจุบัน
 3. เมื่อ submit order จะเรียก `submitOrderRpc(...)`
-4. backend validate payload, stock, shipping method, promotion/gift eligibility และข้อมูลลูกค้า
-5. ใช้ `LockService` เพื่อลด race condition ขณะ commit stock และ append order
-6. สร้าง `order_id` และ order token
-7. append แถวลง `orders`
-8. patch/rebuild product snapshot เพื่อสะท้อน stock ใหม่
-9. คืน token ให้ลูกค้าเปิดหน้า `order-view`
+4. backend normalize cart ด้วย product snapshot ฝั่ง server: ทุก variant group ต้องครบ, ห้าม group/option แปลกปลอม และไม่เชื่อราคา/น้ำหนัก/รูป/stock จาก client
+5. backend validate positive safe-integer quantity, resource limits, stock, shipping assignment, `client_pricing`, promotion/gift eligibility และข้อมูลลูกค้า
+6. ถ้า `client_pricing` เก่า ระบบคืน `PRICE_CHANGED` พร้อม diff โดยยังไม่เขียน order หรือหัก stock
+7. ใช้ `LockService` เพื่อลด race condition ขณะตรวจ stock ซ้ำ, commit stock/gift และ append order
+8. สร้าง order draft หนึ่งรายการหรือหลายรายการเมื่อ split shipping พร้อมกระจาย `order_total` discount แบบผลรวมไม่สูญหาย
+9. สร้าง `order_id` และ order token แล้ว append แถวลง `orders`
+10. patch/rebuild product snapshot เพื่อสะท้อน stock ใหม่
+11. คืน token และ snapshot ผลลัพธ์ให้ลูกค้าเปิดหน้า `order-view`
 
 ระบบมี idempotency ด้วย `client_order_id` เพื่อลดความเสี่ยงจากการกด submit ซ้ำหรือ retry จาก browser
+
+Public checkout limits ปัจจุบันคือ 100 raw lines, 9,999 units ต่อ line/product/variant และ 50,000 units ต่อ order
 
 ### Customer Order View
 
@@ -364,6 +388,7 @@ admin สามารถ:
 - เปิดรายละเอียด order
 - เปลี่ยนสถานะ
 - เพิ่ม/แก้/ลบของแถมใน order
+- เลือกบริษัท/วิธีจัดส่งจริงสำหรับ fulfillment โดยไม่แก้ข้อมูลที่ลูกค้าเลือกหรือยอดเงิน
 - mark shipped พร้อม tracking number
 - ดู production summary
 - อัปเดตวันหมดอายุ order token
@@ -373,8 +398,20 @@ admin สามารถ:
 
 ## Promotion Flow
 
-Promotion ถูกอ่านจาก `promotions` และ apply เข้า product snapshot ใน `rebuildSnap_()`
-แนวคิดสำคัญคือ storefront ไม่ต้องคำนวณหนักเองทุกครั้ง แต่รับ product object ที่มีข้อมูลราคาหลัง promotion พร้อมใช้
+Promotion แบ่งเป็นสองชั้น:
+
+1. **Direct promotion** — ไม่ต้องมีเงื่อนไข cart และถูก apply เข้า product snapshot ใน `rebuildSnap_()`
+2. **Conditional promotion** — ประเมินจาก cart ทั้งก้อนใน `resolveCartPromotions_()` และใช้ pipeline เดียวกันใน preview กับ submit
+
+Conditional condition แยกจาก discount target: สินค้าที่ลูกค้าต้องซื้ออาจเป็นคนละสินค้ากับ line ที่ได้รับส่วนลด
+`min_subtotal` ใช้ subtotal หลัง direct promotion แต่ก่อน order-total discount และก่อนค่าส่ง
+
+เมื่อ promotion หลายตัวตรง line เดียวกัน ระบบไม่ stack แต่เลือกตัวที่ทำให้ราคาสุทธิต่ำที่สุด
+ถ้าราคาเท่ากันจึงใช้ specificity (`variant > product > all`) และ `created_at` เป็นตัวตัดสิน
+Conditional promotion ที่ผ่านเงื่อนไขแต่แพ้ราคายังถูกส่งใน preview ด้วย `applied:false` เพื่ออธิบายให้ UI ได้
+
+`discount_scope=order_total` หักส่วนลดครั้งเดียวจาก subtotal ทั้ง cart รองรับ fixed/percent, clamp ไม่เกิน subtotal
+และเลือกผู้ชนะเพียงหนึ่งรายการ ส่วนลดนี้ไม่เปลี่ยน unit price และไม่ลดฐานที่ gift rule ใช้ตรวจ eligibility
 
 status ของ promotion คำนวณจาก:
 
@@ -385,6 +422,7 @@ status ของ promotion คำนวณจาก:
 - `deleted_at`
 
 เมื่อ promotion เปลี่ยน ต้อง invalidate/rebuild snapshot เพื่อให้ product card และ checkout เห็นราคาใหม่
+แต่ submit จะประเมินกฎและเวลา ณ ปัจจุบันซ้ำเสมอ ไม่เชื่อ preview เก่า
 
 ## Gift Flow
 
@@ -401,6 +439,15 @@ cart/order   -> preview eligibility -> commit เป็น line_type="gift"
 
 ของแถมที่ติดไปกับ order จะถูก snapshot ลง `items_json`
 เพื่อให้ order history ยังอ่านได้แม้ภายหลัง gift item จะถูกแก้ชื่อ/รูป/ปิดใช้งาน
+
+`repeat_mode=once_per_order` แจก `gift_qty` หนึ่งชุด ส่วน `per_threshold` คูณจำนวนชุดตาม threshold ที่ทำครบ:
+
+- `min_subtotal`: `floor(subtotal_after_direct / min_subtotal)`
+- required แบบ ALL: ใช้ multiplier ต่ำสุดของทุกเงื่อนไข
+- required แบบ ANY: รวม multiplier ของเงื่อนไขที่ผ่าน
+
+quantity จาก cart lines ที่ซ้ำกันจะถูกรวมก่อนคำนวณ และ required variant นับเฉพาะ canonical `variant_key` ที่ตรงกัน
+ถ้าจำนวนของแถมที่ต้องแจกมากกว่า stock ระบบ skip grant นั้นทั้งก้อนแบบ atomic ไม่แจกเพียงบางส่วนและไม่ทำให้ stock ติดลบ
 
 ## Shipping And Tracking
 
@@ -439,6 +486,38 @@ events ถูก normalize เป็น oldest-first
 
 เมื่อ tracking บอกว่าจัดส่งสำเร็จแล้ว ระบบสามารถ persist result ลง `tracking_json`
 และเปลี่ยนสถานะ order เป็น delivered ตามเงื่อนไขที่กำหนด
+
+### Fulfillment Carrier Override (บริษัทขนส่งจริง)
+
+ระบบแยก **สองแนวคิด** ของการจัดส่งออกจากกัน:
+
+1. **ที่ลูกค้าเลือกและจ่ายเงิน** — เก็บใน `shipping_method_id` + `shipping_info_json`
+   เป็น snapshot ที่ไม่เปลี่ยนแปลง (หลักฐานของสิ่งที่ลูกค้าเลือก) — **ห้ามเขียนทับ**
+2. **บริษัทขนส่งจริงที่ร้านใช้จัดส่ง** — เก็บใน `fulfillment_shipping_json`
+   ร้านเปลี่ยนได้หลังสร้าง order โดย**ไม่กระทบราคา** (ส่วนต่างค่าขนส่งร้านรับผิดชอบเอง)
+
+RPC `orderUpdateFulfillmentShippingRpc(token, orderId, companyId, methodId, reason)`:
+
+- อนุญาตเฉพาะสถานะ `unpaid` / `paid` / `approved` (ปฏิเสธ `shipped` / `delivered` /
+  `rejected` / `cancelled`) และ**ไม่เปลี่ยนสถานะหลักของ order**
+- ต้องระบุ `reason` เมื่อสถานะเป็น `paid` / `approved`
+- ตรวจสอบว่า company + method active และ method เป็นของ company นั้นจริง
+- `carrier_id` / `tracking_provider` / `tracking_url_template` **resolve ฝั่ง backend**
+  จาก shipping config แล้ว snapshot ไว้ (order ยังอ่านได้แม้ config ถูกแก้/ลบภายหลัง) —
+  ไม่เชื่อค่าจาก frontend
+- บันทึก history event `shipping_carrier_changed` (note แบบ customer-safe) + audit log
+- ทำงานภายใต้ `LockService` ป้องกัน race กับ `orderMarkShippedRpc`
+
+`orderMarkShippedRpc` เลือก carrier ตาม `fulfillment_shipping_json` ก่อน ถ้าไม่มีจึง fall
+back ไปที่ company เดิมใน `shipping_info_json`; order เก่าที่ไม่มี override ทำงานเหมือนเดิม
+
+**Monetary field locking**: เมื่อ order เคยถึงสถานะ `paid`/`approved`/`shipped`/`delivered`
+แล้ว (พิจารณาจาก status history — ล็อกถาวรแม้ย้อนกลับเป็น `unpaid`) `orderUpdateFieldsRpc`
+จะปฏิเสธการแก้ `shipping_fee` / `subtotal` / `total`; ก่อนชำระเงินที่ยังแก้ค่าส่งได้
+`total` คำนวณใหม่ฝั่ง backend จาก `subtotal + shipping_fee` เสมอ (ไม่เชื่อ `total` จาก client)
+
+หน้า `order-view.html` แสดงข้อความก่อนจัดส่งว่าจะส่งด้วยบริษัทจริงใด (เฉพาะ `company_name`
+ที่ผ่านการ sanitize — ไม่เปิดเผย reason/ผู้แก้ไข/บริษัทเดิมให้ลูกค้า)
 
 ## Authentication And Authorization
 
@@ -503,6 +582,10 @@ backend มี helper สำหรับ:
 - sanitize string cell ที่ขึ้นต้นด้วย `=`, `+`, `-`, `@`, tab หรือ newline เพื่อกัน formula injection ใน Google Sheets
 - validate upload mime/type/size สำหรับรูปและสลิป
 - validate URL และ Drive file access
+- validate cart แบบ zero-trust โดย resolve variant, ราคา, น้ำหนัก, รูป และ stock จาก server เท่านั้น
+- จำกัด raw cart lines และ quantity ต่อ line/product/variant/order ก่อนเข้า pricing หรือ sheet write
+- validate split-shipping assignment ให้สินค้าทุกชิ้นอยู่หนึ่ง method พอดี ห้ามขาด ซ้ำ หรืออ้าง product/method ที่ไม่ถูกต้อง
+- validate promotion/gift configuration และทำให้ legacy rule ที่ผิด contract fail closed
 
 ### Access To Files
 
@@ -590,8 +673,11 @@ trigger ทุก 1 นาที ทำงานเบื้องหลัง:
 
 | Folder | ใช้ทดสอบ |
 |---|---|
+| `QA/unit/` | Dependency-free Node tests สำหรับ pricing parity และ zero-trust cart validation |
 | `QA/Integration/` | Apps Script integration dashboard |
 | `QA/E2E/` | Playwright tests กับ deployed Web App |
 | `QA/performance/` | Node.js load/performance smoke test |
 
 ดูรายละเอียดการทดสอบที่ [../QA/Dev.md](../QA/Dev.md)
+
+ลำดับ release gate ที่แนะนำ: Unit → Integration บน QA deployment → E2E → Performance smoke

@@ -1,0 +1,13 @@
+{
+  "name": "storefront-pricing-unit-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dependency-free Node unit tests asserting index.html and edit-store.html compute identical prices/promotions/totals from the same fixtures.",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node pricing-parity.test.js && node order-cart-validation.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

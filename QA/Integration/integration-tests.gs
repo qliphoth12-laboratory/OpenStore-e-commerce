@@ -14,7 +14,7 @@
  * - qaRunIntegrationTestCaseRpc(testId, options)
  */
 
-var QA_INTEGRATION_VERSION = '2026-05-17.6';
+var QA_INTEGRATION_VERSION = '2026-07-21.1';
 var QA_TRACE_CACHE_PREFIX = 'QA_TRACE_EVENTS_';
 var QA_TRACE_TTL_SECONDS = 3600;
 var QA_TRACE_MAX_EVENTS = 240;
@@ -180,14 +180,15 @@ function e2eCheckoutAppendGift_(ids, stock) {
   return { id: ids.giftId, name: giftName, stock: Number(stock), rule_id: ids.ruleId };
 }
 
-function e2eCheckoutAppendPromotion_(ids) {
+function e2eCheckoutAppendPromotion_(ids, discountValue) {
   var now = nowISO_();
+  var discount = discountValue === undefined ? 100 : Number(discountValue);
   sheetPromotions_().appendRow([
     ids.promotionId,
     sanitizeSheetCell_(ids.prefix + ' Promotion'),
     'Temporary E2E checkout warning promotion',
     'fixed',
-    100,
+    discount,
     'product',
     JSON.stringify([{ product_id: ids.productId }]),
     new Date(Date.now() - 60000).toISOString(),
@@ -200,7 +201,7 @@ function e2eCheckoutAppendPromotion_(ids) {
     '',
     'TRUE'
   ]);
-  return { id: ids.promotionId, discount_type: 'fixed', discount_value: 100 };
+  return { id: ids.promotionId, discount_type: 'fixed', discount_value: discount };
 }
 
 function e2eCheckoutProductRow_(productId) {
@@ -263,6 +264,7 @@ function e2ePrepareCheckoutWarningFixtureRpc(adminToken, scenario) {
       'gift-stock-depleted-after-preview': true,
       'price-changed-after-cart': true,
       'promotion-ended-after-cart': true,
+      'active-promotion-stable': true,
       'sale-not-active-after-cart': true,
       'happy-path': true,
       'happy-path-variants': true
@@ -273,15 +275,17 @@ function e2ePrepareCheckoutWarningFixtureRpc(adminToken, scenario) {
     var stock = scenario === 'product-stock-zero-after-cart' ? 1 : 5;
     if (scenario === 'product-stock-partial-after-cart') stock = 3;
     // happy-path scenarios เป็นสินค้าพร้อมขายปกติ สต็อกเยอะ ไม่มี gift/promo ให้รบกวน UI flow
-    if (scenario === 'happy-path' || scenario === 'happy-path-variants') stock = 50;
+    if (scenario === 'happy-path' || scenario === 'happy-path-variants' || scenario === 'active-promotion-stable') stock = 50;
     var shipping = e2eCheckoutAppendShipping_(ids);
     var variantsJson = (scenario === 'happy-path-variants') ? e2eCheckoutVariantsJson_(500) : '[]';
-    var product = e2eCheckoutAppendProduct_(ids, scenario, stock, 500, variantsJson);
+    var productPrice = scenario === 'active-promotion-stable' ? 150 : 500;
+    var product = e2eCheckoutAppendProduct_(ids, scenario, stock, productPrice, variantsJson);
     var gift = null;
     var promotion = null;
     if (scenario === 'gift-already-out-of-stock') gift = e2eCheckoutAppendGift_(ids, 0);
     if (scenario === 'gift-stock-depleted-after-preview') gift = e2eCheckoutAppendGift_(ids, 1);
     if (scenario === 'promotion-ended-after-cart') promotion = e2eCheckoutAppendPromotion_(ids);
+    if (scenario === 'active-promotion-stable') promotion = e2eCheckoutAppendPromotion_(ids, 15);
     e2eCheckoutFlush_();
     return {
       ok:true,
@@ -429,6 +433,414 @@ function e2eCleanupAllCheckoutWarningFixturesRpc(adminToken) {
     };
     e2eCheckoutFlush_();
     return out;
+  } catch(err) {
+    return { ok:false, error:String(err && err.message || err) };
+  }
+}
+
+function e2eMegaFixtureDescriptor_(runId, fx) {
+  return {
+    kind: 'mega-promotion-gift',
+    runId: String(runId || ''),
+    product_ids: (fx.product_ids || []).slice(),
+    promotion_ids: (fx.promotion_ids || []).slice(),
+    gift_ids: (fx.gift_ids || []).slice(),
+    rule_ids: (fx.rule_ids || []).slice(),
+    shipping: {
+      company: fx.shipping && fx.shipping.company,
+      method: fx.shipping && fx.shipping.method
+    }
+  };
+}
+
+function e2eMegaValidateDescriptor_(fixture) {
+  fixture = fixture || {};
+  if (fixture.kind !== 'mega-promotion-gift') throw new Error('INVALID_E2E_MEGA_FIXTURE');
+  if (!/^[A-Za-z0-9_-]{8,80}$/.test(String(fixture.runId || ''))) throw new Error('INVALID_E2E_MEGA_RUN_ID');
+  ['product_ids', 'promotion_ids', 'gift_ids', 'rule_ids'].forEach(function(key) {
+    if (!Array.isArray(fixture[key]) || fixture[key].length > 10) throw new Error('INVALID_E2E_MEGA_IDS: ' + key);
+  });
+  return fixture;
+}
+
+function e2eMegaMatchingOrderRows_(fixture) {
+  var sh = sheetOrders_();
+  var n = sh.getLastRow();
+  if (n < 2) return [];
+  var needles = (fixture.product_ids || []).concat(fixture.gift_ids || []).filter(Boolean).map(String);
+  var itemCol = ORDER_COLS.indexOf('items_json') + 1;
+  var values = sh.getRange(2, itemCol, n - 1, 1).getValues();
+  var rows = [];
+  for (var i = 0; i < values.length; i++) {
+    var raw = String(values[i][0] || '');
+    for (var j = 0; j < needles.length; j++) {
+      if (raw.indexOf(needles[j]) >= 0) {
+        rows.push(i + 2);
+        break;
+      }
+    }
+  }
+  return rows;
+}
+
+function e2eMegaOrderIds_(fixture) {
+  var sh = sheetOrders_();
+  return e2eMegaMatchingOrderRows_(fixture).map(function(rowNo) {
+    return String(sh.getRange(rowNo, 1).getValue() || '');
+  }).filter(Boolean);
+}
+
+function e2eMegaDeleteOrders_(fixture) {
+  var sh = sheetOrders_();
+  var rows = e2eMegaMatchingOrderRows_(fixture);
+  rows.sort(function(a, b) { return b - a; }).forEach(function(rowNo) { sh.deleteRow(rowNo); });
+  return rows.length;
+}
+
+function e2eMegaDeleteShipping_(adminToken, fixture) {
+  var companyId = fixture && fixture.shipping && fixture.shipping.company && fixture.shipping.company.id;
+  if (!companyId) return { ok:true, skipped:true };
+  var current = qaCall_('getShippingRpc');
+  qaAssertOk_(current);
+  var companies = (current.companies || []).filter(function(company) {
+    return String(company && company.id || '') !== String(companyId);
+  });
+  if (companies.length === (current.companies || []).length) return { ok:true, skipped:true };
+  return qaCall_('saveShippingRpc', [adminToken, companies]);
+}
+
+function e2eCleanupMegaPromotionGiftFixture_(adminToken, fixture) {
+  fixture = e2eMegaValidateDescriptor_(fixture);
+  var deletedOrders = e2eMegaDeleteOrders_(fixture);
+  var cleanup = qaCleanupCommerceFixture_({
+    token: adminToken,
+    order_ids: [],
+    promotion_ids: fixture.promotion_ids,
+    rule_ids: fixture.rule_ids,
+    gift_ids: fixture.gift_ids,
+    product_ids: fixture.product_ids,
+    shipping: fixture.shipping
+  });
+  cleanup.shipping = e2eMegaDeleteShipping_(adminToken, fixture);
+  if (!cleanup.shipping || cleanup.shipping.ok !== true) cleanup.ok = false;
+  cleanup.deleted_fixture_orders = deletedOrders;
+  e2eCheckoutFlush_();
+  return cleanup;
+}
+
+function e2ePrepareMegaPromotionGiftFixtureRpc(adminToken) {
+  var fx = null;
+  try {
+    e2eCheckoutRequireAdmin_(adminToken);
+    var runId = e2eCheckoutRunId_();
+    var labelSuffix = runId.slice(-8);
+    fx = qaCreateCommerceFixture_({ options:{ adminToken:adminToken } }, 'E2EMega' + labelSuffix, { flat_rate:125 });
+
+    function trackProduct(product) { fx.product_ids.push(product.id); return product; }
+    function trackPromotion(promotion) { fx.promotion_ids.push(promotion.promotion_id); return promotion; }
+    function trackGift(gift) { fx.gift_ids.push(gift.gift_id); return gift; }
+    function trackRule(rule) { fx.rule_ids.push(rule.rule_id); return rule; }
+    function giftName(label) { return 'QA Gift ' + label + ' ' + fx.stamp; }
+
+    var countdownEndsAt = new Date(Date.now() + 7200000).toISOString();
+    var saleEndsAt = new Date(Date.now() + 10800000).toISOString();
+    var scheduledStartsAt = new Date(Date.now() + 3600000).toISOString();
+    var scheduledEndsAt = new Date(Date.now() + 10800000).toISOString();
+
+    var productA = trackProduct(qaCreateOrderQaProduct_(adminToken, fx.shipping, fx.stamp, 'E2EMegaA' + labelSuffix, 20, {
+      price:1000,
+      sale_mode:'scheduled', sale_starts_at:new Date(Date.now() - 3600000).toISOString(), sale_ends_at:saleEndsAt
+    }));
+    var productB = trackProduct(qaCreateOrderQaProduct_(adminToken, fx.shipping, fx.stamp, 'E2EMegaB' + labelSuffix, 20, {
+      price:600
+    }));
+    var variantProduct = trackProduct(qaCreateOrderQaProduct_(adminToken, fx.shipping, fx.stamp, 'E2EMegaVariant' + labelSuffix, -1, {
+      price:400,
+      variants:[{ name:'Size', type:'text', options:[
+        { label:'M', price:800, weight_grams:100, stock:10 },
+        { label:'S', price:400, weight_grams:100, stock:10 }
+      ]}]
+    }));
+    var productD = trackProduct(qaCreateOrderQaProduct_(adminToken, fx.shipping, fx.stamp, 'E2EMegaD' + labelSuffix, 20, {
+      price:250
+    }));
+    var productE = trackProduct(qaCreateOrderQaProduct_(adminToken, fx.shipping, fx.stamp, 'E2EMegaE' + labelSuffix, 20, {
+      price:300
+    }));
+    var variantMKey = 'Size=M';
+    var variantSKey = 'Size=S';
+    var directBE = trackPromotion(qaCreatePromotion_(adminToken, productB.id, fx.stamp, 'E2EMegaDirectBE' + labelSuffix, {
+      discount_type:'percent', discount_value:10, target_type:'product',
+      target:[{ product_id:productB.id }, { product_id:productE.id }],
+      ends_at:countdownEndsAt, no_end_date:false
+    }));
+    var conditionalSubtotalAll = trackPromotion(qaCreatePromotion_(adminToken, '', fx.stamp, 'E2EMegaSubtotalAll' + labelSuffix, {
+      discount_type:'fixed', discount_value:20, target_type:'all', target:[],
+      application_mode:'conditional', condition_type:'min_subtotal', condition_json:{ min_subtotal:9500 },
+      ends_at:countdownEndsAt, no_end_date:false
+    }));
+    var conditionalProductAll = trackPromotion(qaCreatePromotion_(adminToken, productB.id, fx.stamp, 'E2EMegaProductAll' + labelSuffix, {
+      discount_type:'fixed', discount_value:100, target_type:'product', target:[{ product_id:productB.id }],
+      application_mode:'conditional', condition_type:'required_products',
+      condition_json:{ match_mode:'all', required_products:[
+        { product_id:productA.id, min_qty:3 },
+        { product_id:productD.id, min_qty:5 }
+      ]}
+    }));
+    var conditionalProductAny = trackPromotion(qaCreatePromotion_(adminToken, productB.id, fx.stamp, 'E2EMegaProductAny' + labelSuffix, {
+      discount_type:'percent', discount_value:30, target_type:'product', target:[{ product_id:productB.id }],
+      application_mode:'conditional', condition_type:'required_products',
+      condition_json:{ match_mode:'any', required_products:[
+        { product_id:productA.id, min_qty:99 },
+        { product_id:productE.id, min_qty:2 }
+      ]}
+    }));
+    var conditionalVariantAll = trackPromotion(qaCreatePromotion_(adminToken, variantProduct.id, fx.stamp, 'E2EMegaVariantAll' + labelSuffix, {
+      discount_type:'fixed', discount_value:250, target_type:'variant',
+      target:[{ product_id:variantProduct.id, variant_key:variantMKey }],
+      application_mode:'conditional', condition_type:'required_variants',
+      condition_json:{ match_mode:'all', required_variants:[
+        { product_id:variantProduct.id, variant_key:variantMKey, min_qty:2 },
+        { product_id:variantProduct.id, variant_key:variantSKey, min_qty:3 }
+      ]}
+    }));
+    var conditionalVariantAny = trackPromotion(qaCreatePromotion_(adminToken, variantProduct.id, fx.stamp, 'E2EMegaVariantAny' + labelSuffix, {
+      discount_type:'percent', discount_value:40, target_type:'variant',
+      target:[{ product_id:variantProduct.id, variant_key:variantMKey }],
+      application_mode:'conditional', condition_type:'required_variants',
+      condition_json:{ match_mode:'any', required_variants:[
+        { product_id:variantProduct.id, variant_key:variantMKey, min_qty:99 },
+        { product_id:variantProduct.id, variant_key:variantSKey, min_qty:3 }
+      ]}
+    }));
+
+    var giftSubtotalLabel = 'E2EMegaSubtotal' + labelSuffix;
+    var giftProductAllLabel = 'E2EMegaProductAll' + labelSuffix;
+    var giftProductAnyLabel = 'E2EMegaProductAny' + labelSuffix;
+    var giftVariantAllLabel = 'E2EMegaVariantAll' + labelSuffix;
+    var giftVariantAnyLabel = 'E2EMegaVariantAny' + labelSuffix;
+    var giftScheduledLabel = 'E2EMegaScheduled' + labelSuffix;
+    var giftSubtotal = trackGift(qaCreateGiftItem_(adminToken, fx.stamp, giftSubtotalLabel, { stock:50 }));
+    var giftProductAll = trackGift(qaCreateGiftItem_(adminToken, fx.stamp, giftProductAllLabel, { stock:50 }));
+    var giftProductAny = trackGift(qaCreateGiftItem_(adminToken, fx.stamp, giftProductAnyLabel, { stock:50 }));
+    var giftVariantAll = trackGift(qaCreateGiftItem_(adminToken, fx.stamp, giftVariantAllLabel, { stock:50 }));
+    var giftVariantAny = trackGift(qaCreateGiftItem_(adminToken, fx.stamp, giftVariantAnyLabel, { stock:50 }));
+    var giftScheduled = trackGift(qaCreateGiftItem_(adminToken, fx.stamp, giftScheduledLabel, { stock:50 }));
+
+    var ruleSubtotal = trackRule(qaCreateGiftRule_(adminToken, fx.stamp, giftSubtotalLabel, giftSubtotal.gift_id, {
+      condition_type:'min_subtotal', condition_json:{ min_subtotal:3000 },
+      gift_qty:1, repeat_mode:'per_threshold', priority:9500,
+      ends_at:countdownEndsAt, no_end_date:false
+    }));
+    var ruleProductAll = trackRule(qaCreateGiftRule_(adminToken, fx.stamp, giftProductAllLabel, giftProductAll.gift_id, {
+      condition_type:'required_products',
+      condition_json:{ match_mode:'all', required_products:[
+        { product_id:productA.id, min_qty:1 },
+        { product_id:productB.id, min_qty:2 }
+      ]},
+      gift_qty:2, repeat_mode:'once_per_order', priority:9400
+    }));
+    var ruleProductAny = trackRule(qaCreateGiftRule_(adminToken, fx.stamp, giftProductAnyLabel, giftProductAny.gift_id, {
+      condition_type:'required_products',
+      condition_json:{ match_mode:'any', required_products:[
+        { product_id:productA.id, min_qty:2 },
+        { product_id:productD.id, min_qty:2 },
+        { product_id:productE.id, min_qty:2 }
+      ]},
+      gift_qty:1, repeat_mode:'per_threshold', priority:9300
+    }));
+    var ruleVariantAll = trackRule(qaCreateGiftRule_(adminToken, fx.stamp, giftVariantAllLabel, giftVariantAll.gift_id, {
+      condition_type:'required_variants',
+      condition_json:{ match_mode:'all', required_variants:[
+        { product_id:variantProduct.id, variant_key:variantMKey, min_qty:1 },
+        { product_id:variantProduct.id, variant_key:variantSKey, min_qty:2 }
+      ]},
+      gift_qty:3, repeat_mode:'per_threshold', priority:9200
+    }));
+    var ruleVariantAny = trackRule(qaCreateGiftRule_(adminToken, fx.stamp, giftVariantAnyLabel, giftVariantAny.gift_id, {
+      condition_type:'required_variants',
+      condition_json:{ match_mode:'any', required_variants:[
+        { product_id:variantProduct.id, variant_key:variantMKey, min_qty:1 },
+        { product_id:variantProduct.id, variant_key:variantSKey, min_qty:1 }
+      ]},
+      gift_qty:1, repeat_mode:'per_threshold', priority:9100
+    }));
+    var ruleScheduled = trackRule(qaCreateGiftRule_(adminToken, fx.stamp, giftScheduledLabel, giftScheduled.gift_id, {
+      condition_type:'min_subtotal', condition_json:{ min_subtotal:1 },
+      gift_qty:1, repeat_mode:'once_per_order', priority:9000,
+      starts_at:scheduledStartsAt, ends_at:scheduledEndsAt, no_end_date:false
+    }));
+
+    e2eCheckoutFlush_();
+    var fixture = e2eMegaFixtureDescriptor_(runId, fx);
+    return {
+      ok:true,
+      runId:runId,
+      fixture:fixture,
+      shipping:{
+        company_id:fx.shipping.company.id,
+        method_id:fx.shipping.method.id,
+        method_name:fx.shipping.method.name,
+        fee:125
+      },
+      products:{
+        a:{ id:productA.id, title:productA.payload.title },
+        b:{ id:productB.id, title:productB.payload.title },
+        variant:{ id:variantProduct.id, title:variantProduct.payload.title },
+        d:{ id:productD.id, title:productD.payload.title },
+        e:{ id:productE.id, title:productE.payload.title }
+      },
+      promotions:{
+        direct_be:{ id:directBE.promotion_id, name:directBE.payload.name },
+        subtotal_all:{ id:conditionalSubtotalAll.promotion_id, name:conditionalSubtotalAll.payload.name },
+        product_all:{ id:conditionalProductAll.promotion_id, name:conditionalProductAll.payload.name },
+        product_any:{ id:conditionalProductAny.promotion_id, name:conditionalProductAny.payload.name },
+        variant_all:{ id:conditionalVariantAll.promotion_id, name:conditionalVariantAll.payload.name },
+        variant_any:{ id:conditionalVariantAny.promotion_id, name:conditionalVariantAny.payload.name }
+      },
+      gifts:[
+        { id:giftSubtotal.gift_id, rule_id:ruleSubtotal.rule_id, name:giftName(giftSubtotalLabel), qty:3 },
+        { id:giftProductAll.gift_id, rule_id:ruleProductAll.rule_id, name:giftName(giftProductAllLabel), qty:2 },
+        { id:giftProductAny.gift_id, rule_id:ruleProductAny.rule_id, name:giftName(giftProductAnyLabel), qty:4 },
+        { id:giftVariantAll.gift_id, rule_id:ruleVariantAll.rule_id, name:giftName(giftVariantAllLabel), qty:3 },
+        { id:giftVariantAny.gift_id, rule_id:ruleVariantAny.rule_id, name:giftName(giftVariantAnyLabel), qty:5 }
+      ],
+      scheduled_campaign:{
+        id:giftScheduled.gift_id, rule_id:ruleScheduled.rule_id, name:giftName(giftScheduledLabel)
+      },
+      expected:{
+        raw_subtotal:10050,
+        direct_subtotal:9750,
+        subtotal:8410,
+        shipping_fee:125,
+        total:8535,
+        product_stock:{ a:17, b:16, d:15, e:18, variant_m:8, variant_s:7 },
+        gift_stock:[47, 48, 46, 47, 45, 50]
+      }
+    };
+  } catch(err) {
+    var cleanup = null;
+    if (fx) {
+      try { cleanup = qaCleanupCommerceFixture_(fx); } catch(cleanupErr) {
+        cleanup = { ok:false, error:String(cleanupErr && cleanupErr.message || cleanupErr) };
+      }
+    }
+    return { ok:false, error:String(err && err.message || err), cleanup:cleanup };
+  }
+}
+
+function e2eInspectMegaPromotionGiftFixtureRpc(adminToken, fixture) {
+  try {
+    e2eCheckoutRequireAdmin_(adminToken);
+    fixture = e2eMegaValidateDescriptor_(fixture);
+    return {
+      ok:true,
+      order_ids:e2eMegaOrderIds_(fixture),
+      product_stock:{
+        a:qaGetProductStock_(fixture.product_ids[0]),
+        b:qaGetProductStock_(fixture.product_ids[1]),
+        d:qaGetProductStock_(fixture.product_ids[3]),
+        e:qaGetProductStock_(fixture.product_ids[4]),
+        variant_m:qaGetVariantStock_(fixture.product_ids[2], 'Size', 'M'),
+        variant_s:qaGetVariantStock_(fixture.product_ids[2], 'Size', 'S')
+      },
+      gift_stock:(fixture.gift_ids || []).map(function(id) { return qaGetGiftStock_(id); })
+    };
+  } catch(err) {
+    return { ok:false, error:String(err && err.message || err) };
+  }
+}
+
+function e2eCleanupMegaPromotionGiftFixtureRpc(adminToken, fixture) {
+  try {
+    e2eCheckoutRequireAdmin_(adminToken);
+    var cleanup = e2eCleanupMegaPromotionGiftFixture_(adminToken, fixture);
+    return { ok:cleanup && cleanup.ok === true, cleanup:cleanup };
+  } catch(err) {
+    return { ok:false, error:String(err && err.message || err) };
+  }
+}
+
+/* ---------- E2E fixture: order-total (whole-order) discount ----------
+ * One product + one conditional order-total promo. Exercises the storefront cart discount
+ * row, confirm modal, submit, and order-view — verifying the discount is deducted once from
+ * the subtotal. Reuses the generic order-matching/delete helpers from the mega fixture. */
+function e2eOrderTotalValidateDescriptor_(fixture) {
+  fixture = fixture || {};
+  if (fixture.kind !== 'order-total-promo') throw new Error('INVALID_E2E_ORDTOT_FIXTURE');
+  if (!/^[A-Za-z0-9_-]{8,80}$/.test(String(fixture.runId || ''))) throw new Error('INVALID_E2E_ORDTOT_RUN_ID');
+  ['product_ids', 'promotion_ids', 'gift_ids', 'rule_ids'].forEach(function(key) {
+    if (!Array.isArray(fixture[key]) || fixture[key].length > 10) throw new Error('INVALID_E2E_ORDTOT_IDS: ' + key);
+  });
+  return fixture;
+}
+
+function e2ePrepareOrderTotalPromoFixtureRpc(adminToken) {
+  var fx = null;
+  try {
+    e2eCheckoutRequireAdmin_(adminToken);
+    var runId = e2eCheckoutRunId_();
+    var labelSuffix = runId.slice(-8);
+    fx = qaCreateCommerceFixture_({ options:{ adminToken:adminToken } }, 'E2EOrdTot' + labelSuffix, { flat_rate:125 });
+
+    var product = qaCreateOrderQaProduct_(adminToken, fx.shipping, fx.stamp, 'E2EOrdTot' + labelSuffix, 20, { price:1000 });
+    fx.product_ids.push(product.id);
+
+    // Conditional order-total promo: qualifies at subtotal >= 1500, deducts 300 once.
+    var promo = qaCreatePromotion_(adminToken, product.id, fx.stamp, 'E2EOrdTot' + labelSuffix, {
+      discount_type:'fixed', discount_value:300, target_type:'all', target:[],
+      application_mode:'conditional', discount_scope:'order_total',
+      condition_type:'min_subtotal',
+      condition_json:{ min_subtotal:1500, calculation_base:'after_discount_before_shipping' }
+    });
+    fx.promotion_ids.push(promo.promotion_id);
+
+    e2eCheckoutFlush_();
+    var fixture = {
+      kind:'order-total-promo', runId:String(runId),
+      product_ids:fx.product_ids.slice(), promotion_ids:fx.promotion_ids.slice(),
+      gift_ids:[], rule_ids:[],
+      shipping:{ company:fx.shipping && fx.shipping.company, method:fx.shipping && fx.shipping.method }
+    };
+    return {
+      ok:true, runId:runId, fixture:fixture,
+      shipping:{ company_id:fx.shipping.company.id, method_id:fx.shipping.method.id, method_name:fx.shipping.method.name, fee:125 },
+      product:{ id:product.id, title:product.payload.title, price:1000 },
+      promotion:{ id:promo.promotion_id, name:promo.payload.name },
+      // qty 2 → subtotal 2000, order discount 300, net 1700, + shipping 125 → total 1825.
+      expected:{ qty:2, subtotal:2000, order_discount:300, subtotal_after_order_discount:1700, shipping_fee:125, total:1825 }
+    };
+  } catch(err) {
+    var cleanup = null;
+    if (fx) { try { cleanup = qaCleanupCommerceFixture_(fx); } catch(_){ cleanup = { ok:false }; } }
+    return { ok:false, error:String(err && err.message || err), cleanup:cleanup };
+  }
+}
+
+function e2eInspectOrderTotalPromoFixtureRpc(adminToken, fixture) {
+  try {
+    e2eCheckoutRequireAdmin_(adminToken);
+    fixture = e2eOrderTotalValidateDescriptor_(fixture);
+    return { ok:true, order_ids:e2eMegaOrderIds_(fixture), product_stock:qaGetProductStock_(fixture.product_ids[0]) };
+  } catch(err) {
+    return { ok:false, error:String(err && err.message || err) };
+  }
+}
+
+function e2eCleanupOrderTotalPromoFixtureRpc(adminToken, fixture) {
+  try {
+    e2eCheckoutRequireAdmin_(adminToken);
+    fixture = e2eOrderTotalValidateDescriptor_(fixture);
+    var deletedOrders = e2eMegaDeleteOrders_(fixture);
+    var cleanup = qaCleanupCommerceFixture_({
+      token:adminToken, order_ids:[], promotion_ids:fixture.promotion_ids,
+      rule_ids:fixture.rule_ids, gift_ids:fixture.gift_ids, product_ids:fixture.product_ids, shipping:fixture.shipping
+    });
+    cleanup.shipping = e2eMegaDeleteShipping_(adminToken, fixture);
+    if (!cleanup.shipping || cleanup.shipping.ok !== true) cleanup.ok = false;
+    cleanup.deleted_fixture_orders = deletedOrders;
+    e2eCheckoutFlush_();
+    return { ok:cleanup && cleanup.ok === true, cleanup:cleanup };
   } catch(err) {
     return { ok:false, error:String(err && err.message || err) };
   }
@@ -582,6 +994,14 @@ function qaConcurrentHeavySpecs_() {
       'critical',
       'Submit the same split-shipping checkout 6 times concurrently with the same client_order_id.',
       'Exactly one checkout should win and create two split orders; the other 5 should return DUPLICATE_ORDER and stock should be deducted once.'
+    ),
+    qaClientDrivenWriteSpec_(
+      'orders.concurrent-repeat-gift-multiplied-stock-race',
+      'Orders: concurrent promotion + multiplied gift stock race',
+      'orders',
+      'critical',
+      'Submit 8 two-unit checkouts concurrently against product stock=6, a direct promotion, and a per-threshold gift that requests 2 units per successful order from gift stock=4.',
+      'Exactly 3 orders succeed, 5 fail product stock validation, 2 orders attach 2 gifts each, the third skips atomically, and both product/gift stock end at 0.'
     )
   ];
 }
@@ -598,6 +1018,9 @@ function qaPaymentLifecycleDeepSpecs_() {
 
 function qaAdditionalEdgeSpecs_() {
   return [
+    qaWriteSpec_('orders.security-variant-selection-contract', 'Orders security: required variant selection contract', 'orders', 'critical', 'Send missing, partial, unknown, and invalid variant selections through both previews and submit.', 'All three RPCs must reject with the same explicit error; complete variants and no-variant products must still submit successfully.', 'qaRunOrderSecurityVariantSelectionContractFlow_'),
+    qaWriteSpec_('orders.security-cart-quantity-limits-contract', 'Orders security: cart quantity and resource limits', 'orders', 'critical', 'Exercise unsafe qty values, line limits, duplicate aggregation, product limits, and total-order limits through both previews and submit.', 'All three RPCs must enforce the shared limits; exact boundaries pass and one unit over fails without creating an invalid order.', 'qaRunOrderSecurityCartQuantityLimitsContractFlow_'),
+    qaWriteSpec_('orders.security-server-variant-authority-workflow', 'Orders security: server-authoritative variant workflow', 'orders', 'critical', 'Submit a valid multi-group variant with forged client display/pricing fields through promotion, gift, shipping, persistence, and stock.', 'The persisted order and all calculations must use only the server-verified variant price, weight, stock, promotion, gift, and display text.', 'qaRunOrderSecurityServerVariantAuthorityWorkflow_'),
     qaWriteSpec_('orders.edge-empty-cart-rejected', 'Orders edge: empty cart rejected', 'orders', 'critical', 'Submit an otherwise valid checkout with items=[].', 'submitOrderRpc should reject the empty cart, create no order, and preserve stock.', 'qaRunOrderEdgeEmptyCartRejectedFlow_'),
     qaWriteSpec_('orders.edge-shipping-info-empty-rejected', 'Orders edge: empty shipping_info rejected', 'orders', 'critical', 'Submit a cart with a valid product but shipping_info=[].', 'submitOrderRpc should reject the payload, create no order, and preserve stock.', 'qaRunOrderEdgeShippingInfoEmptyRejectedFlow_'),
     qaWriteSpec_('orders.edge-client-pricing-missing-item-rejected', 'Orders edge: client pricing missing item', 'orders', 'critical', 'Submit two server cart items but include only one in client_pricing.items.', 'submitOrderRpc should reject with PRICE_CHANGED, include item_missing/subtotal/total diffs, and create no order.', 'qaRunOrderEdgeClientPricingMissingItemRejectedFlow_'),
@@ -672,6 +1095,7 @@ function qaIntegrationSpecs_() {
           'saveShippingRpc',
           'getActiveGiftCampaignsRpc',
           'previewGiftEligibilityRpc',
+          'previewPromotionEligibilityRpc',
           'validateSessionRpc',
           'logoutRpc',
           'productCreateRpc',
@@ -715,6 +1139,9 @@ function qaIntegrationSpecs_() {
           'qaPrepareConcurrentHeavyPromoGiftStockRaceRpc',
           'qaVerifyConcurrentHeavyPromoGiftStockRaceRpc',
           'qaCleanupConcurrentHeavyPromoGiftStockRaceRpc',
+          'qaPrepareConcurrentRepeatGiftMultipliedStockRaceRpc',
+          'qaVerifyConcurrentRepeatGiftMultipliedStockRaceRpc',
+          'qaCleanupConcurrentRepeatGiftMultipliedStockRaceRpc',
           'qaPrepareConcurrentHeavySplitIdempotencyRaceRpc',
           'qaVerifyConcurrentHeavySplitIdempotencyRaceRpc',
           'qaCleanupConcurrentHeavySplitIdempotencyRaceRpc',
@@ -1083,6 +1510,34 @@ function qaIntegrationSpecs_() {
     qaWriteSpec_('promotions.toggle-overlap-guard', 'Promotions: toggle overlap guard', 'promotions', 'critical', 'Create an active promo and a disabled overlapping promo, then try to enable the disabled one.', 'togglePromotionRpc should reject the overlapping activation.', 'qaRunPromotionToggleOverlapGuardFlow_'),
     qaWriteSpec_('promotions.update-overlap-guard', 'Promotions: update overlap guard', 'promotions', 'critical', 'Update a disabled promo so it overlaps an active promo.', 'updatePromotionRpc should reject the overlapping update.', 'qaRunPromotionUpdateOverlapGuardFlow_'),
     qaWriteSpec_('promotions.two-group-variant-canonical-order', 'Promotions: two-group variant canonical order', 'promotions', 'critical', 'Create a two-group variant promotion keyed Color=Black|Size=XL and submit selected_variants in reverse object order.', 'Promotion should apply, the order line should snapshot the canonical variant_key, and final price/discount should be correct.', 'qaRunPromotionTwoGroupVariantCanonicalOrderFlow_'),
+    qaWriteSpec_('promotions.conditional-min-subtotal', 'Promotions (conditional): min_subtotal below/exact/over', 'promotions', 'critical', 'Create a conditional min_subtotal promo (all-target) and preview+order carts below, exactly at, and over the threshold.', 'Discount applies only at/over the threshold; preview and order prices match.', 'qaRunConditionalMinSubtotalFlow_'),
+    qaWriteSpec_('promotions.conditional-required-products-all', 'Promotions (conditional): required_products ALL (buy A discount B)', 'promotions', 'critical', 'Condition product A (min_qty 2) unlocks a discount on target product B; test incomplete qty and duplicate cart lines.', 'B is discounted only when A qty>=2 (summed across duplicate lines); A is never discounted; preview==order.', 'qaRunConditionalRequiredProductsAllFlow_'),
+    qaWriteSpec_('promotions.conditional-required-products-any', 'Promotions (conditional): required_products ANY', 'promotions', 'critical', 'ANY-mode condition qualifies when either configured product is present.', 'Percent discount on target applies when at least one condition product is in cart; preview==order.', 'qaRunConditionalRequiredProductsAnyFlow_'),
+    qaWriteSpec_('promotions.conditional-missing-match-mode', 'Promotions (conditional): missing match_mode defaults to ALL', 'promotions', 'high', 'Create a required_products condition with no match_mode and read it back.', 'Stored match_mode normalizes to all; only both products together qualify.', 'qaRunConditionalMissingMatchModeFlow_'),
+    qaWriteSpec_('promotions.conditional-required-variants', 'Promotions (conditional): required_variants correct vs wrong variant', 'promotions', 'critical', 'Condition requires a specific variant of A to discount target T.', 'Only the correct variant qualifies; wrong variant is excluded; preview==order.', 'qaRunConditionalRequiredVariantsFlow_'),
+    qaWriteSpec_('promotions.conditional-duplicate-rejected', 'Promotions (conditional): duplicate conditions rejected', 'promotions', 'high', 'Submit conditional promos with duplicate product and duplicate product+variant_key conditions.', 'createPromotionRpc rejects both duplicate condition payloads.', 'qaRunConditionalDuplicateRejectedFlow_'),
+    qaWriteSpec_('promotions.conditional-inactive-not-applied', 'Promotions (conditional): disabled/scheduled/expired not applied', 'promotions', 'high', 'Create disabled, scheduled, and expired conditional promos whose condition is met.', 'None apply a discount and none appear eligible.', 'qaRunConditionalInactiveNotAppliedFlow_'),
+    qaWriteSpec_('promotions.conditional-priority-no-stack', 'Promotions (conditional): priority + no stacking + overlap exemption', 'promotions', 'critical', 'Direct product promo and a qualified conditional variant promo on the same line; conditional overlaps the direct target.', 'Conditional promo is accepted (overlap exempt), the bigger discount wins without stacking (best price), and falls back to direct when unqualified.', 'qaRunConditionalPriorityNoStackFlow_'),
+    qaWriteSpec_('promotions.conditional-legacy-and-zero-floor', 'Promotions (conditional): legacy direct + zero-price floor', 'promotions', 'high', 'A promo created without application_mode behaves as direct; a fixed discount over price floors at 0.', 'Legacy promo reads back as direct and still applies; final price floors at 0.', 'qaRunConditionalLegacyAndZeroFloorFlow_'),
+    qaWriteSpec_('promotions.conditional-order-snapshot-immutable', 'Promotions (conditional): immutable order snapshot', 'promotions', 'critical', 'Submit a qualifying conditional order then delete the promo.', 'The persisted order line keeps its discounted price and promotion snapshot.', 'qaRunConditionalOrderSnapshotImmutableFlow_'),
+    qaWriteSpec_('promotions.conditional-required-variants-any', 'Promotions (conditional): required_variants ANY', 'promotions', 'critical', 'ANY-mode required_variants condition with two variant entries (Size S and Size L) of the same product, discounting a separate target product.', 'Buying either variant alone qualifies; buying neither does not; preview==order.', 'qaRunConditionalRequiredVariantsAnyFlow_'),
+    qaWriteSpec_('promotions.conditional-two-qualified-competing', 'Promotions (conditional): two qualified conditional promos compete', 'promotions', 'critical', 'Two conditional promotions (product-level and variant-level) both qualified on the same line at once.', 'The conditional promo with the bigger discount wins via the best-price resolver; disabling it falls back to the other qualified conditional promo.', 'qaRunConditionalTwoQualifiedCompetingFlow_'),
+    qaWriteSpec_('promotions.conditional-required-variants-incomplete-key-rejected', 'Promotions (conditional): incomplete variant_key rejected', 'promotions', 'high', 'createPromotionRpc with a required_variants condition whose variant_key omits one of the variant groups on the product.', 'Promotion creation is rejected (ok:false).', 'qaRunConditionalRequiredVariantsIncompleteKeyRejectedFlow_'),
+    qaWriteSpec_('promotions.settings-validation-matrix', 'Promotions settings: invalid configuration matrix', 'promotions', 'critical', 'Try invalid application modes, condition types, empty conditions, missing product references, invalid variant keys, and an invalid start date.', 'Every invalid admin configuration is rejected and no promotion row is left behind.', 'qaRunPromotionSettingsValidationMatrixFlow_'),
+    qaWriteSpec_('promotions.settings-schedule-round-trip', 'Promotions settings: schedule and no-end round trip', 'promotions', 'critical', 'Update one promotion through scheduled, active no-end, expired, disabled, and re-enabled states.', 'Stored schedule fields and dynamic status follow every admin edit; inactive states never discount the product.', 'qaRunPromotionSettingsScheduleRoundTripFlow_'),
+    qaWriteSpec_('promotions.settings-mode-transition', 'Promotions settings: direct/conditional mode transition', 'promotions', 'critical', 'Edit a promotion direct -> conditional -> direct while carrying condition fields in the update payload.', 'Snapshot and preview behavior follow the selected mode, and direct mode strips stale condition data.', 'qaRunPromotionSettingsModeTransitionFlow_'),
+    qaWriteSpec_('promotions.conditional-min-subtotal-after-direct', 'Promotions: conditional subtotal uses direct-discount base', 'promotions', 'critical', 'A direct promotion changes a 1000-baht line to 800 before a conditional min-subtotal promotion is evaluated.', 'A threshold of 900 does not qualify; after editing it to 800 it qualifies but is outpriced by the bigger direct discount (applied:false, no stacking).', 'qaRunPromotionConditionalSubtotalAfterDirectFlow_'),
+    qaWriteSpec_('promotions.order-total-fixed', 'Promotions (order-total): fixed discount once per order', 'promotions', 'critical', 'Conditional min_subtotal promo with discount_scope=order_total (fixed). Below threshold near-miss; at/over threshold deducts a flat amount once without changing unit price.', 'Order discount deducts once (never × qty), per-line prices unchanged, preview==order, persisted order_discount matches.', 'qaRunOrderTotalFixedFlow_'),
+    qaWriteSpec_('promotions.order-total-percent', 'Promotions (order-total): percent discount once per order', 'promotions', 'critical', 'Order-total conditional promo with a percent discount on the item subtotal.', 'Percent is computed on the subtotal and deducted once; subtotal_after_order_discount and order total match; preview==order.', 'qaRunOrderTotalPercentFlow_'),
+    qaWriteSpec_('promotions.order-total-exceeds-subtotal', 'Promotions (order-total): discount clamped to subtotal', 'promotions', 'high', 'Order-total discount larger than the item subtotal.', 'The discount is clamped to the subtotal so the net item total floors at 0; order total equals shipping only.', 'qaRunOrderTotalExceedsSubtotalFlow_'),
+    qaWriteSpec_('promotions.order-total-disabled-expired', 'Promotions (order-total): disabled/expired not applied', 'promotions', 'high', 'A disabled and an expired order-total promo whose condition is met.', 'Neither applies an order discount nor appears eligible; preview==order.', 'qaRunOrderTotalDisabledExpiredFlow_'),
+    qaWriteSpec_('promotions.order-total-best-wins', 'Promotions (order-total): larger discount wins, no stacking', 'promotions', 'critical', 'Two qualified order-total promos in the same cart.', 'The larger discount wins and is applied once; the other is reported qualified-but-outpriced (applied:false); preview==order.', 'qaRunOrderTotalBestWinsFlow_'),
+    qaWriteSpec_('promotions.order-total-direct-rejected', 'Promotions (order-total): direct promo cannot be order-total', 'promotions', 'critical', 'createPromotionRpc/updatePromotionRpc with a direct promo attempting discount_scope=order_total.', 'Direct + order_total is rejected; a conditional order-total promo can be switched to direct only when scope is reset to item.', 'qaRunOrderTotalDirectRejectedFlow_'),
+    qaWriteSpec_('promotions.order-total-edit-reload', 'Promotions (order-total): create/edit/reload consistency', 'promotions', 'high', 'Create an item-scoped conditional promo, edit it to order-total, and reload it.', 'discount_scope persists as order_total, targeting is forced to whole-store, and the reloaded promo behaves as an order-total discount.', 'qaRunOrderTotalEditReloadFlow_'),
+    qaWriteSpec_('gifts.ignores-order-total-discount', 'Gifts: min_subtotal basis ignores order-total discount', 'gifts', 'critical', 'An order-total (conditional) discount and a gift min_subtotal rule in the same cart.', 'Gift eligibility uses the direct-only subtotal (unchanged by the order-total discount); the gift is attached and the order total still nets the discount.', 'qaRunGiftIgnoresOrderTotalDiscountFlow_'),
+    qaWriteSpec_('promotions.resolver-reverse-specificity', 'Promotions resolver: direct variant beats conditional product', 'promotions', 'critical', 'A direct variant promotion (-300) and a newer qualified conditional product promotion (-100) both match the same variant.', 'The bigger direct variant discount wins (best price); a sibling variant falls back to the conditional product promotion.', 'qaRunPromotionResolverReverseSpecificityFlow_'),
+    qaWriteSpec_('promotions.resolver-created-at-tiebreak', 'Promotions resolver: newest wins price tie', 'promotions', 'critical', 'Create two simultaneously-qualified conditional product promotions with equal discounts and equal specificity.', 'The newer promotion wins the tie; disabling it falls back to the older promotion at the same price.', 'qaRunPromotionResolverCreatedAtTiebreakFlow_'),
+    qaWriteSpec_('promotions.best-price-over-specificity', 'Promotions resolver: bigger discount beats higher specificity', 'promotions', 'critical', 'A direct variant promotion (-100) and a qualified conditional product promotion (-300) both match the same variant line.', 'The less-specific conditional promotion wins because it yields the lower final price; preview reports it applied and matches the order.', 'qaRunPromotionBestPriceOverSpecificityFlow_'),
     {
       id: 'shipping.public-config',
       title: 'โหลดค่าขนส่งสาธารณะได้',
@@ -1211,6 +1666,33 @@ function qaIntegrationSpecs_() {
       requiresAdminToken: true,
       run: function(ctx) { qaRequireRealWrite_(ctx); return qaRunShippingTrackingProviderReadbackFlow_(ctx); }
     },
+    qaWriteSpec_('fulfillment.allowed-unpaid', 'Fulfillment: เปลี่ยนบริษัทขนส่งจริงได้เมื่อ unpaid', 'shipping', 'critical',
+      'ออร์เดอร์สถานะ unpaid เปลี่ยนบริษัทขนส่งจริงได้ และยอดเงิน/ข้อมูลลูกค้าเลือกต้องไม่เปลี่ยน',
+      'ok=true; shipping_info/shipping_method_id/shipping_fee/subtotal/total คงเดิม; สถานะไม่เปลี่ยน; มี history shipping_carrier_changed', 'qaRunFulfillmentAllowedUnpaidFlow_'),
+    qaWriteSpec_('fulfillment.allowed-paid', 'Fulfillment: เปลี่ยนบริษัทขนส่งจริงได้เมื่อ paid', 'shipping', 'critical',
+      'ออร์เดอร์สถานะ paid เปลี่ยนบริษัทขนส่งจริงได้ (ต้องมีเหตุผล) และยอดเงินถูกล็อกไม่เปลี่ยน',
+      'ok=true; ยอดเงินคงเดิม; สถานะยังเป็น paid', 'qaRunFulfillmentAllowedPaidFlow_'),
+    qaWriteSpec_('fulfillment.allowed-approved', 'Fulfillment: เปลี่ยนบริษัทขนส่งจริงได้เมื่อ approved', 'shipping', 'critical',
+      'ออร์เดอร์สถานะ approved เปลี่ยนบริษัทขนส่งจริงได้ (ต้องมีเหตุผล) และยอดเงินคงเดิม',
+      'ok=true; ยอดเงินคงเดิม; สถานะยังเป็น approved', 'qaRunFulfillmentAllowedApprovedFlow_'),
+    qaWriteSpec_('fulfillment.rejected-shipped', 'Fulfillment: ปฏิเสธเมื่อ shipped', 'shipping', 'high',
+      'ออร์เดอร์ที่ถูก mark shipped แล้วต้องเปลี่ยนบริษัทขนส่งจริงไม่ได้', 'ok=false, error=STATUS_NOT_ALLOWED', 'qaRunFulfillmentRejectedShippedFlow_'),
+    qaWriteSpec_('fulfillment.rejected-delivered', 'Fulfillment: ปฏิเสธเมื่อ delivered/rejected/cancelled', 'shipping', 'high',
+      'ออร์เดอร์สถานะ delivered/rejected/cancelled ต้องเปลี่ยนบริษัทขนส่งจริงไม่ได้', 'ok=false, error=STATUS_NOT_ALLOWED ทุกกรณี', 'qaRunFulfillmentRejectedTerminalFlow_'),
+    qaWriteSpec_('fulfillment.inactive-company-rejected', 'Fulfillment: บริษัทที่ปิดใช้งานต้องถูกปฏิเสธ', 'shipping', 'high',
+      'เลือกบริษัทขนส่งที่ active=false เป็น fulfillment', 'ok=false, error=COMPANY_INVALID', 'qaRunFulfillmentInactiveCompanyFlow_'),
+    qaWriteSpec_('fulfillment.invalid-method-rejected', 'Fulfillment: method ที่ปิดใช้งาน/ข้ามบริษัทต้องถูกปฏิเสธ', 'shipping', 'high',
+      'method ที่ active=false หรือ method ของบริษัทอื่นต้องถูกปฏิเสธ', 'ok=false, error=METHOD_INVALID ทั้งสองกรณี', 'qaRunFulfillmentInvalidMethodFlow_'),
+    qaWriteSpec_('fulfillment.mark-shipped-uses-override', 'Fulfillment: mark shipped ใช้ carrier override และ resolve backend', 'shipping', 'critical',
+      'ตั้ง override แล้ว mark shipped — tracking_json ต้องใช้ carrier ของ override และ URL/provider ที่ backend resolve',
+      'tracking.carrier_id/tracking_url/provider ตรง override config; fulfillment_source=override', 'qaRunFulfillmentMarkShippedOverrideFlow_'),
+    qaWriteSpec_('fulfillment.mark-shipped-fallback-original', 'Fulfillment: ไม่มี override ใช้ carrier เดิม', 'shipping', 'high',
+      'ออร์เดอร์ที่ไม่มี override เมื่อ mark shipped ต้องใช้บริษัทที่ลูกค้าเลือก', 'tracking.carrier_id ตรงบริษัทเดิม; fulfillment_source=original', 'qaRunFulfillmentMarkShippedOriginalFlow_'),
+    qaWriteSpec_('fields.monetary-locked-after-paid', 'Fields: ยอดเงินถูกล็อกหลังชำระเงิน', 'order', 'critical',
+      'orderUpdateFieldsRpc ต้องแก้ shipping_fee/total/subtotal ไม่ได้เมื่อ paid และแก้ได้ + คำนวณ total ใหม่เมื่อ unpaid',
+      'unpaid: แก้ shipping_fee ได้ total=subtotal+fee; subtotal ถูกปฏิเสธเสมอ; paid: PRICING_LOCKED', 'qaRunFieldsMonetaryLockFlow_'),
+    qaWriteSpec_('fields.monetary-lock-persists-rollback', 'Fields: ล็อกยอดเงินคงอยู่แม้ย้อนกลับเป็น unpaid', 'order', 'critical',
+      'ออร์เดอร์ที่เคย paid แล้วย้อนกลับเป็น unpaid ยอดเงินต้องยังถูกล็อก', 'ok=false, error=PRICING_LOCKED', 'qaRunFieldsMonetaryLockPersistFlow_'),
     {
       id: 'gifts.public-campaigns',
       title: 'โหลดแคมเปญของแถมสาธารณะได้',
@@ -1510,6 +1992,34 @@ function qaIntegrationSpecs_() {
     qaWriteSpec_('gifts.multiple-rules-priority-order', 'Gifts: multiple rules priority order', 'gifts', 'high', 'Make one cart match two active gift rules.', 'Both gifts should attach, ordered by gift rule priority.', 'qaRunGiftMultipleRulesPriorityOrderFlow_'),
     qaWriteSpec_('gifts.same-gift-two-rules-stock-limited', 'Gifts: same gift two rules with limited stock', 'gifts', 'critical', 'Two active rules award the same gift item with stock=1.', 'Exactly one gift should attach and the other should be skipped with GIFT_OUT_OF_STOCK.', 'qaRunGiftSameGiftTwoRulesStockLimitedFlow_'),
     qaWriteSpec_('gifts.gift-qty-stock-boundary', 'Gifts: gift quantity stock boundary', 'gifts', 'critical', 'Create gift_qty=2 rules against stock=1 and stock=2.', 'Stock 1 should skip; stock 2 should attach and leave stock 0.', 'qaRunGiftQtyStockBoundaryFlow_'),
+    qaWriteSpec_('gifts.repeat-threshold-multiplier', 'Gifts: repeat gift per completed threshold', 'gifts', 'critical', 'Create per_threshold gift rules and buy multiples of the threshold (qty, min_subtotal, and multi-entry required_products), plus a once_per_order control.', 'per_threshold should grant gift_qty × completed thresholds (lowest multiplier for multi-entry, remainder ignored); once_per_order should still grant one set.', 'qaRunGiftRepeatThresholdFlow_'),
+    qaWriteSpec_('gifts.repeat-required-products-boundary', 'Gifts: repeat required-products boundary + remainder', 'gifts', 'critical', 'per_threshold required_products min_qty=2: buy 4 (exact) and buy 5 (remainder), checking gift qty and stock deduction.', 'Both orders grant exactly 2 sets; remainder is ignored; gift stock drops by 2 each time.', 'qaRunGiftRepeatRequiredProductsBoundaryFlow_'),
+    qaWriteSpec_('gifts.repeat-below-threshold', 'Gifts: repeat below threshold grants nothing', 'gifts', 'high', 'per_threshold required_products min_qty=3, buy only 2.', 'No gift line, not counted as skipped, gift stock unchanged.', 'qaRunGiftRepeatBelowThresholdFlow_'),
+    qaWriteSpec_('gifts.repeat-gift-qty-multiplier', 'Gifts: repeat multiplies gift_qty>1', 'gifts', 'critical', 'per_threshold gift_qty=3, min_qty=1, buy 4.', 'Grants 12 gift units and deducts 12 from stock.', 'qaRunGiftRepeatGiftQtyMultiplierFlow_'),
+    qaWriteSpec_('gifts.repeat-min-subtotal-multiplier', 'Gifts: repeat min_subtotal multiplier', 'gifts', 'critical', 'per_threshold min_subtotal=500, price 250, buy 5 (subtotal 1250).', 'Grants 2 sets (floor 1250/500); remainder ignored; stock drops by 2.', 'qaRunGiftRepeatMinSubtotalMultiplierFlow_'),
+    qaWriteSpec_('gifts.repeat-min-subtotal-after-discount', 'Gifts: repeat min_subtotal uses discounted subtotal', 'gifts', 'critical', 'per_threshold min_subtotal=500 with a -600 promotion on a 1000 product, buy 3 (discounted subtotal 1200).', 'Preview and order both grant 2 sets (not 6) because the discounted subtotal is used.', 'qaRunGiftRepeatMinSubtotalAfterDiscountFlow_'),
+    qaWriteSpec_('gifts.repeat-required-variants-multiplier', 'Gifts: repeat required-variants multiplier', 'gifts', 'critical', 'per_threshold required_variants Size=M min_qty=2, buy 6×M plus 3×L.', 'Only the matching variant counts: grants 3 sets.', 'qaRunGiftRepeatRequiredVariantsMultiplierFlow_'),
+    qaWriteSpec_('gifts.repeat-multi-products-lowest', 'Gifts: repeat multi required-products lowest multiplier', 'gifts', 'critical', 'per_threshold two required_products p1 min2/buy4 and p2 min3/buy12.', 'Uses the lowest per-entry multiplier min(2,4)=2.', 'qaRunGiftRepeatMultiProductsLowestFlow_'),
+    qaWriteSpec_('gifts.match-any-products-one-qualifies', 'Gifts: match ANY products, one qualifies', 'gifts', 'critical', 'any-mode required_products [A min2, B min3], once — buy A×2 only vs buy A×1 only.', 'A×2 alone grants 1 set; A×1 alone (no entry met) grants nothing.', 'qaRunGiftMatchAnyProductsOneQualifiesFlow_'),
+    qaWriteSpec_('gifts.match-any-repeat-sum', 'Gifts: match ANY + repeat sums thresholds', 'gifts', 'critical', 'any-mode per_threshold [A min2, B min3], buy A×6 (3 rounds) + B×3 (1 round).', 'Multiplier is the SUM 3+1=4 → 4 gift qty.', 'qaRunGiftMatchAnyRepeatSumFlow_'),
+    qaWriteSpec_('gifts.match-all-default-backward-compat', 'Gifts: missing match_mode defaults to ALL', 'gifts', 'high', 'required_products [A min1, B min1] with NO match_mode, buy A only.', 'Defaults to all → not eligible; stored match_mode normalized to all.', 'qaRunGiftMatchAllDefaultBackwardCompatFlow_'),
+    qaWriteSpec_('gifts.duplicate-products-rejected', 'Gifts: duplicate required_products rejected', 'gifts', 'high', 'createGiftRuleRpc with the same product_id twice in required_products.', 'Rule creation is rejected (ok:false).', 'qaRunGiftDuplicateProductsRejectedFlow_'),
+    qaWriteSpec_('gifts.duplicate-variants-rejected', 'Gifts: duplicate required_variants rejected', 'gifts', 'high', 'createGiftRuleRpc with the same product_id+variant_key twice in required_variants.', 'Rule creation is rejected (ok:false).', 'qaRunGiftDuplicateVariantsRejectedFlow_'),
+    qaWriteSpec_('gifts.repeat-multi-variants-lowest', 'Gifts: repeat multi required-variants lowest multiplier', 'gifts', 'critical', 'per_threshold two required_variants Size=M min2/buy4 and Size=L min2/buy6.', 'Uses the lowest per-entry multiplier min(2,3)=2.', 'qaRunGiftRepeatMultiVariantsLowestFlow_'),
+    qaWriteSpec_('gifts.repeat-duplicate-cart-lines', 'Gifts: repeat aggregates duplicate cart lines', 'gifts', 'high', 'per_threshold required_products min_qty=2 with two lines of the same product (2+4=6).', 'Duplicate lines aggregate to 6 → grants 3 sets.', 'qaRunGiftRepeatDuplicateLinesFlow_'),
+    qaWriteSpec_('gifts.repeat-preview-matches-order', 'Gifts: repeat preview matches submitted order', 'gifts', 'critical', 'per_threshold min_qty=1, preview qty 3 then submit qty 3.', 'Preview eligible gift qty equals the submitted order gift qty (3).', 'qaRunGiftRepeatPreviewMatchesOrderFlow_'),
+    qaWriteSpec_('gifts.repeat-invalid-mode-defaults-once', 'Gifts: invalid repeat_mode normalizes to once', 'gifts', 'high', 'Create a rule with repeat_mode="garbage_value", buy 3.', 'Stored mode is once_per_order and only 1 set is granted.', 'qaRunGiftRepeatInvalidModeDefaultsOnceFlow_'),
+    qaWriteSpec_('gifts.repeat-missing-mode-backward-compat', 'Gifts: missing repeat_mode backward compatible', 'gifts', 'high', 'Create a rule with NO repeat_mode field (legacy), buy 3.', 'Reads back as once_per_order and grants 1 set.', 'qaRunGiftRepeatMissingModeBackwardCompatFlow_'),
+    qaWriteSpec_('gifts.repeat-update-mode-round-trip', 'Gifts: repeat_mode edit round-trip', 'gifts', 'critical', 'Toggle a rule once_per_order → per_threshold → once_per_order via updateGiftRuleRpc, buying 3 each time.', 'Stored mode and awarded qty follow the edits: 1, 3, then 1.', 'qaRunGiftRepeatUpdateModeRoundTripFlow_'),
+    qaWriteSpec_('gifts.repeat-disabled-and-expired', 'Gifts: repeat disabled/expired grants nothing', 'gifts', 'high', 'per_threshold rules that are disabled or schedule-expired, buy 4.', 'Neither grants a gift and neither deducts stock.', 'qaRunGiftRepeatDisabledAndExpiredFlow_'),
+    qaWriteSpec_('gifts.repeat-insufficient-stock-all-or-nothing', 'Gifts: repeat insufficient stock is all-or-nothing', 'gifts', 'critical', 'per_threshold wants 5 gift units but stock is 3, buy 5.', 'Whole set is skipped with GIFT_OUT_OF_STOCK (requested_qty 5), no partial attach, stock stays 3.', 'qaRunGiftRepeatInsufficientStockAllOrNothingFlow_'),
+    qaWriteSpec_('gifts.repeat-unlimited-stock', 'Gifts: repeat with unlimited stock', 'gifts', 'high', 'per_threshold gift_stock=-1, buy 4.', 'Grants 4 sets and stock stays -1.', 'qaRunGiftRepeatUnlimitedStockFlow_'),
+    qaWriteSpec_('gifts.repeat-once-per-order-regression', 'Gifts: once_per_order regression with gift_qty>1', 'gifts', 'critical', 'once_per_order gift_qty=2, buy 5.', 'Grants exactly one set (2 units), never multiplied; stock drops by 2 only.', 'qaRunGiftRepeatOncePerOrderRegressionFlow_'),
+    qaWriteSpec_('gifts.repeat-multiple-rules-priority', 'Gifts: repeat multiple rules multiply independently', 'gifts', 'critical', 'Two per_threshold rules (gift_qty 1 and 2) on one cart bought 4×, different priorities.', 'Each multiplies independently (4 and 8) and gift lines follow priority order.', 'qaRunGiftRepeatMultipleRulesPriorityFlow_'),
+    qaWriteSpec_('gifts.match-any-required-variants', 'Gifts: match ANY required_variants (once + repeat sum)', 'gifts', 'critical', 'any-mode required_variants [Size=M min2, Size=L min3]: once_per_order buying only M qualifies / buying neither does not; per_threshold buying M×4 (2 rounds) + L×3 (1 round) sums to 3.', 'ANY-mode variant matching and its repeat-sum multiplier behave the same as the required_products ANY-mode tests.', 'qaRunGiftMatchAnyRequiredVariantsFlow_'),
+    qaWriteSpec_('gifts.required-variants-incomplete-key-rejected', 'Gifts: incomplete variant_key in required_variants rejected', 'gifts', 'high', 'createGiftRuleRpc with a required_variants condition whose variant_key omits one of the variant groups on the product.', 'Gift rule creation is rejected (ok:false).', 'qaRunGiftRequiredVariantsIncompleteKeyRejectedFlow_'),
+    qaWriteSpec_('orders.split-shipping-conditional-promo-and-repeat-gift', 'Orders: split shipping with cart-wide conditional promo + per_threshold gift', 'orders', 'critical', 'Two products pinned to different shipping methods (forces split); a conditional min_subtotal promo on the whole cart; a per_threshold gift rule on total quantity.', 'The promotion discount and the gift multiplier both reflect the whole-cart totals (not a smaller per-draft subtotal); the gift attaches to exactly one draft with no duplication across drafts.', 'qaRunOrderSplitShippingConditionalPromoAndRepeatGiftFlow_'),
+    qaWriteSpec_('orders.edge-duplicate-lines-combined-exceeds-stock', 'Orders edge: duplicate product lines whose combined qty exceeds stock', 'orders', 'critical', 'Submit the same product as two cart lines (qty 3 each) against stock=3, so each individual line is within stock but the combined qty (6) exceeds it.', 'Order should be rejected with STOCK_INSUFFICIENT and stock should remain unchanged at 3 (no oversell).', 'qaRunOrderEdgeDuplicateLinesCombinedExceedsStockFlow_'),
     qaWriteSpec_('gifts.stale-preview-rule-disabled-before-submit', 'Gifts: stale preview disabled before submit', 'gifts', 'high', 'Preview an eligible cart, then disable the rule before submit.', 'Submitted order should not attach the stale gift.', 'qaRunGiftStalePreviewRuleDisabledBeforeSubmitFlow_'),
     qaWriteSpec_('gifts.stale-preview-stock-depleted-before-submit', 'Gifts: stale preview stock depleted before submit', 'gifts', 'critical', 'Preview an eligible gift with stock=1, then deplete gift stock before submit.', 'The order should still be created, no active gift line should attach, gifts_skipped should include GIFT_OUT_OF_STOCK, and gift stock should not go negative.', 'qaRunGiftStalePreviewStockDepletedBeforeSubmitFlow_'),
     qaWriteSpec_('gifts.preview-near-miss-required-variant-details', 'Gifts: near-miss required variant details', 'gifts', 'critical', 'Create a required_variants gift rule and preview a cart with the wrong variant or insufficient quantity.', 'Preview should return eligible=[] and near[] details including product, variant_key, and missing quantity.', 'qaRunGiftPreviewNearMissRequiredVariantDetailsFlow_'),
@@ -1523,6 +2033,19 @@ function qaIntegrationSpecs_() {
     qaWriteSpec_('gifts.manual-update-missing-snapshot-rejected', 'Gifts: manual update missing snapshot rejected', 'gifts', 'medium', 'Try to update a gift snapshot id that is not in the order.', 'updateGiftLineQtyRpc should return ok=false.', 'qaRunGiftManualUpdateMissingSnapshotRejectedFlow_'),
     qaWriteSpec_('gifts.manual-update-removed-line-rejected', 'Gifts: manual update removed line rejected', 'gifts', 'high', 'Remove a manual gift line and then try to update its quantity.', 'Removed gift lines should not be mutable.', 'qaRunGiftManualUpdateRemovedLineRejectedFlow_'),
     qaWriteSpec_('gifts.manual-remove-delivered-no-stock-restore', 'Gifts: delivered remove does not restore stock', 'gifts', 'medium', 'Remove a gift line after marking the order delivered.', 'Stock should not be restored for delivered orders.', 'qaRunGiftManualRemoveDeliveredNoStockRestoreFlow_'),
+    qaWriteSpec_('gifts.min-subtotal-ignores-conditional-promotion', 'Gifts: min_subtotal base ignores conditional-promotion discount', 'gifts', 'critical', 'A conditional promotion discounts a product to 400; a gift rule requires min_subtotal 900 while the direct-only base is 1000.', 'Gift eligibility uses the subtotal after DIRECT discounts only (1000, eligible), not the final price after the conditional discount (400); the order keeps both the discounted price and the attached gift.', 'qaRunGiftMinSubtotalIgnoresConditionalPromotionFlow_'),
+    qaWriteSpec_('gifts.required-products-with-conditional-promotion', 'Gifts: required_products eligibility independent of a conditional promotion on the same product', 'gifts', 'high', 'A conditional promotion discounts product A; a gift rule requires buying A qty>=2.', 'Gift eligibility follows raw cart quantity regardless of the conditional discount; both the discounted price and the gift line persist on the order.', 'qaRunGiftRequiredProductsWithConditionalPromotionFlow_'),
+    qaWriteSpec_('gifts.settings-validation-matrix', 'Gifts settings: invalid rule configuration matrix', 'gifts', 'critical', 'Try missing gifts, invalid condition types, empty/invalid conditions, missing product references, and invalid variant keys.', 'Every invalid gift-rule configuration is rejected without leaving an active rule.', 'qaRunGiftSettingsValidationMatrixFlow_'),
+    qaWriteSpec_('gifts.settings-integer-quantity-validation', 'Gifts settings: quantities and stock must be integers', 'gifts', 'critical', 'Try fractional/zero gift_qty, fractional/zero min_qty, and fractional gift stock.', 'Invalid quantity settings are rejected so order gift lines and inventory can never become fractional.', 'qaRunGiftSettingsIntegerQuantityValidationFlow_'),
+    qaWriteSpec_('gifts.legacy-invalid-data-fail-closed', 'Gifts: invalid legacy data remains visible but cannot award', 'gifts', 'critical', 'Seed legacy gift/rule rows with fractional stock and min_qty, then read admin/public APIs, preview, and submit an order.', 'Admin APIs expose operational=false plus validation_errors; public campaigns, preview, and orders exclude the invalid records without rewriting their rows.', 'qaRunGiftLegacyInvalidDataFailClosedFlow_'),
+    qaWriteSpec_('gifts.settings-schedule-round-trip', 'Gifts settings: schedule, enabled, and no-end round trip', 'gifts', 'critical', 'Edit one gift rule through scheduled, active no-end, expired, disabled, and re-enabled states.', 'Rule status and preview eligibility follow every stored schedule/enabled setting.', 'qaRunGiftSettingsScheduleRoundTripFlow_'),
+    qaWriteSpec_('gifts.settings-condition-transition', 'Gifts settings: condition and match-mode transition', 'gifts', 'critical', 'Edit one rule from required_products ALL to ANY, then min_subtotal, then required_variants.', 'Stored condition data and preview eligibility follow the latest admin configuration without stale fields.', 'qaRunGiftSettingsConditionTransitionFlow_'),
+    qaWriteSpec_('gifts.repeat-duplicate-variant-lines', 'Gifts: repeat aggregates duplicate variant cart lines', 'gifts', 'critical', 'A required_variants per-threshold rule receives two cart lines for the same canonical variant.', 'Matching quantities aggregate across duplicate lines and award the correct multiplied gift quantity.', 'qaRunGiftRepeatDuplicateVariantLinesFlow_'),
+    qaWriteSpec_('gifts.repeat-same-gift-cumulative-stock', 'Gifts: repeated rules share cumulative gift stock', 'gifts', 'critical', 'Two per-threshold rules award four units each of the same gift while stock is five.', 'The higher-priority rule attaches four; the second is skipped atomically; stock ends at one.', 'qaRunGiftRepeatSameGiftCumulativeStockFlow_'),
+    qaWriteSpec_('gifts.repeat-reject-unreject-stock-lifecycle', 'Gifts: multiplied quantity reject/unreject stock lifecycle', 'gifts', 'critical', 'Submit an order with a multiplied auto-gift quantity, reject it, and approve it again.', 'Reject restores the full multiplied quantity and un-reject deducts the same full quantity exactly once.', 'qaRunGiftRepeatRejectUnrejectStockLifecycleFlow_'),
+    qaWriteSpec_('gifts.stale-preview-cart-reduced-before-submit', 'Gifts: stale preview after cart quantity is reduced', 'gifts', 'critical', 'Preview a per-threshold eligible cart, then submit a cart below the threshold.', 'Submit re-evaluates the actual cart, attaches no stale gift, reports no stock skip, and leaves stock unchanged.', 'qaRunGiftStalePreviewCartReducedFlow_'),
+    qaWriteSpec_('gifts.preview-insufficient-stock-contract', 'Gifts: preview and submit contract when grant exceeds stock', 'gifts', 'critical', 'Preview a rule that wants two gift units while only one is in stock, then submit.', 'Preview exposes the requested quantity and stock; submit skips the whole grant with requested/available quantities and does not decrement stock.', 'qaRunGiftPreviewInsufficientStockContractFlow_'),
+    qaWriteSpec_('gifts.public-campaign-settings-contract', 'Gifts settings: public campaign schedule and condition contract', 'gifts', 'high', 'Create active and scheduled gift campaigns with quantities and condition details.', 'Public campaign data exposes the correct status, schedule, quantity, condition summary/details, and gift stock without disabled campaigns.', 'qaRunGiftPublicCampaignSettingsContractFlow_'),
     {
       id: 'auth.invalid-session',
       title: 'Session ที่ไม่ถูกต้องต้องถูกปฏิเสธ',
@@ -2114,6 +2637,7 @@ function qaIntegrationSpecs_() {
     qaWriteSpec_('orders.multi-item-mixed-promotion-total', 'Orders: multi-item mixed promotion total', 'orders', 'critical', 'Submit a multi-item order where only one product has a promotion.', 'Totals should include one discounted line and one full-price line, with snapshots on the right line only.', 'qaRunOrderMultiItemMixedPromotionTotalFlow_'),
     qaWriteSpec_('orders.client-pricing-split-shipping-mismatch', 'Orders: client pricing split shipping mismatch', 'orders', 'critical', 'Send split shipping with deliberately stale client shipping_fee and total.', 'submitOrderRpc should reject with PRICE_CHANGED, diff should include shipping_fee and total, and no order should be created.', 'qaRunOrderClientPricingSplitShippingMismatchFlow_'),
     qaWriteSpec_('orders.client-pricing-promo-removed-before-submit', 'Orders: client pricing promo removed before submit', 'orders', 'critical', 'Build a client_pricing snapshot while a promotion is active, then remove the promotion before submit.', 'submitOrderRpc should reject with PRICE_CHANGED and item_price, item_promotion, subtotal, and total diffs without creating an order.', 'qaRunOrderClientPricingPromoRemovedBeforeSubmitFlow_'),
+    qaWriteSpec_('orders.client-pricing-conditional-promo-unqualified-before-submit', 'Orders: client pricing conditional promo unqualified before submit', 'orders', 'critical', 'Preview a cart that qualifies for a conditional required_products promo (client_pricing echoes the discounted price), then submit a smaller cart that no longer meets the condition.', 'submitOrderRpc should reject with PRICE_CHANGED (item_price/item_promotion/subtotal/total diffs) without creating an order.', 'qaRunOrderClientPricingConditionalPromoUnqualifiedBeforeSubmitFlow_'),
     qaWriteSpec_(
       'orders.e2e-weight-promo-gift-one-order',
       'Orders: E2E น้ำหนัก + โปรโมชั่น + ของแถมในออร์เดอร์เดียว',
@@ -2345,6 +2869,21 @@ function qaIntegrationSpecs_() {
     qaWriteSpec_('orders.multi-item-failure-rolls-back-gift-stock', 'Orders: multi-item failure rolls back gift stock', 'orders', 'critical', 'Submit a cart with one gift-eligible product and another product over stock.', 'The failed order should not be created and gift stock should not change.', 'qaRunOrderMultiItemFailureRollsBackGiftStockFlow_'),
     qaWriteSpec_('orders.zero-total-after-promotion', 'Orders: zero total after promotion', 'orders', 'high', 'Submit an order where promotion clamps product price to zero.', 'Order total should equal shipping fee and min-subtotal gift rules should see subtotal 0.', 'qaRunOrderZeroTotalAfterPromotionFlow_'),
     qaWriteSpec_('orders.full-lifecycle-slip-approve-ship-deliver-token', 'Orders: full lifecycle slip approve ship deliver token', 'orders', 'critical', 'Create a real order, upload slip, approve, mark shipped with tracking, deliver, and read it by token.', 'Final status should be delivered, status_history should contain unpaid -> paid -> approved -> shipped -> delivered, and token read should preserve tracking and product/gift lines.', 'qaRunOrderFullLifecycleSlipApproveShipDeliverTokenFlow_'),
+    qaWriteSpec_('orders.rules-promo-newly-qualified-stale-pricing', 'Orders rules: promotion becomes qualified after preview', 'orders', 'critical', 'Preview a cart before a conditional promotion qualifies, then increase the qualifying quantity while sending the stale client_pricing snapshot.', 'submitOrderRpc must recompute the new conditional discount, reject with PRICE_CHANGED, create no order, and preserve stock.', 'qaRunOrderRulesPromoNewlyQualifiedStalePricingFlow_'),
+    qaWriteSpec_('orders.rules-promo-expired-after-preview', 'Orders rules: promotion expires after preview', 'orders', 'critical', 'Preview an active conditional promotion, expire its schedule, then submit the stale discounted client_pricing snapshot.', 'The order must be rejected with PRICE_CHANGED including price/promotion/total diffs, with no stock change.', 'qaRunOrderRulesPromoExpiredAfterPreviewFlow_'),
+    qaWriteSpec_('orders.rules-gift-expired-after-preview', 'Orders rules: gift rule expires after preview', 'orders', 'critical', 'Preview a multiplied gift, expire the gift rule, then submit the same cart.', 'The order should still succeed but attach no stale gift, emit no stock warning, and preserve gift stock.', 'qaRunOrderRulesGiftExpiredAfterPreviewFlow_'),
+    qaWriteSpec_('orders.rules-gift-activated-after-preview', 'Orders rules: gift rule activates after preview', 'orders', 'critical', 'Preview while a gift rule is scheduled, activate it, then submit the unchanged cart.', 'submitOrderRpc must evaluate current rules and attach the newly active multiplied gift with the correct stock deduction.', 'qaRunOrderRulesGiftActivatedAfterPreviewFlow_'),
+    qaWriteSpec_('orders.rules-conditional-promo-snapshot-immutable', 'Orders rules: conditional promotion snapshot is immutable', 'orders', 'critical', 'Create an order using a conditional promotion, then change its discount and condition.', 'The persisted order line must retain its original price, promotion id, application mode, and condition type.', 'qaRunOrderRulesConditionalPromoSnapshotImmutableFlow_'),
+    qaWriteSpec_('orders.rules-gift-rule-snapshot-immutable', 'Orders rules: gift-rule snapshot is immutable', 'orders', 'critical', 'Create an order with a multiplied auto gift, then rename and delete the source gift rule.', 'The order gift line must retain the original rule id/name and multiplied quantity.', 'qaRunOrderRulesGiftRuleSnapshotImmutableFlow_'),
+    qaWriteSpec_('orders.rules-variant-promo-any-repeat-gift', 'Orders rules: variant promotion + ANY repeated gift', 'orders', 'critical', 'Submit duplicate M variant lines and an L line with a direct M promotion plus an ANY required_variants per-threshold gift rule.', 'Variant quantities must aggregate independently for promotion, stock, and ANY multipliers; the order should persist six gift units.', 'qaRunOrderRulesVariantPromoAnyRepeatGiftFlow_'),
+    qaWriteSpec_('orders.rules-multi-promo-multi-gift-contract', 'Orders rules: multi-promotion + multi-gift checkout contract', 'orders', 'critical', 'Submit one cart with a direct promotion, a conditional promotion, an ANY repeated-product gift, a repeated subtotal gift, and matching client_pricing.', 'Pricing snapshots, direct-only gift subtotal base, gift quantities, response data, persisted lines, totals, and stocks must all agree.', 'qaRunOrderRulesMultiPromoMultiGiftContractFlow_'),
+    qaWriteSpec_('orders.rules-mega-overlap-single-order-workflow', 'Orders rules: mega item/order-total promotion + gift overlap', 'orders', 'critical', 'Preview and submit one six-line order where eight item/order-total promotions compete and five gift rules qualify across subtotal, product ALL/ANY, and variant ALL/ANY conditions.', 'Exactly one order should persist with deterministic line-price and order-total winners, direct-only qualification subtotal, five correct gift grants, matching admin/token snapshots, exact net totals, and exact product/variant/gift stock deductions.', 'qaRunOrderRulesMegaOverlapSingleOrderWorkflow_'),
+    qaWriteSpec_('orders.rules-mega-promotion-update-recovery', 'Orders rules: mega promotion update stale-price recovery', 'orders', 'critical', 'Preview a cart with direct, conditional order-total, and gift rules; increase the order-total discount before submit; reject the stale snapshot, then refresh and complete the order before editing/deleting the live promotion.', 'The stale submit returns PRICE_CHANGED with order_discount/total diffs and no stock change; the refreshed submit persists immutable promotion/gift snapshots, survives source deletion, and keeps exact stock behavior across cancel/un-cancel.', 'qaRunOrderRulesMegaPromotionUpdateRecoveryFlow_'),
+    qaWriteSpec_('orders.rules-order-total-split-allocation', 'Orders rules: order-total discount split allocation', 'orders', 'critical', 'Submit a two-product checkout split across two shipping methods with one odd fixed order-total discount.', 'The discount is allocated proportionally across exactly two persisted orders, integer remainder is preserved, allocated discounts sum to the cart discount, per-order totals include their own shipping fee, and token reads match.', 'qaRunOrderRulesOrderTotalSplitAllocationFlow_'),
+    qaWriteSpec_('orders.rules-idempotent-multi-repeat-gifts', 'Orders rules: idempotency with multiple repeated gifts', 'orders', 'critical', 'Submit the same client_order_id twice where two per-threshold rules award different multiplied quantities.', 'Only the first submit may create an order or deduct product/gift stocks; the retry must return DUPLICATE_ORDER.', 'qaRunOrderRulesIdempotentMultiRepeatGiftsFlow_'),
+    qaWriteSpec_('orders.rules-cancel-same-gift-multi-rule-lifecycle', 'Orders rules: cancel lifecycle with same gift from multiple rules', 'orders', 'critical', 'Two repeated rules award separate lines of the same gift; cancel twice, then move the order back to paid.', 'Cancel restores the aggregated product/gift quantities exactly once and un-cancel atomically re-deducts them.', 'qaRunOrderRulesCancelSameGiftMultiRuleLifecycleFlow_'),
+    qaWriteSpec_('orders.rules-production-summary-multiplied-gifts', 'Orders rules: production summary counts multiplied gifts', 'orders', 'critical', 'Approve a discounted order containing a per-threshold gift quantity greater than one and read the production summary.', 'The summary must count product units and the full multiplied gift quantity from the persisted order.', 'qaRunOrderRulesProductionSummaryMultipliedGiftsFlow_'),
+    qaWriteSpec_('orders.rules-multiplied-gifts-monetary-neutral', 'Orders rules: multiplied gifts do not affect money or shipping weight', 'orders', 'critical', 'Submit a weighted order with a promotion and a large multiplied gift quantity.', 'Gift lines must not change subtotal, shipping weight bracket, or total; only product and gift stocks should be deducted.', 'qaRunOrderRulesMultipliedGiftsMonetaryNeutralFlow_'),
     {
       id: 'orders.variant-stock-race',
       title: 'ออร์เดอร์: ผู้ซื้อ 5 คนแข่งกันซื้อ variant stock 2',
@@ -2842,6 +3381,11 @@ function qaAssertOk_(res) {
   qaAssert_(res && res.ok === true, 'คาดว่าต้องได้ ok=true แต่ได้: ' + JSON.stringify(res || null), res || {});
 }
 
+function qaAssertRejected_(res, label) {
+  qaAssert_(res && res.ok === false, (label || 'Invalid payload') + ' must be rejected', res || {});
+  return { label: label || 'invalid', error: String((res && res.error) || '') };
+}
+
 function qaSkip_(reason, details) {
   return { __qaSkipped: true, reason: reason || 'Skipped', details: details || {} };
 }
@@ -2884,8 +3428,8 @@ function qaPublicListHasProduct_(productId) {
   return (res.items || []).some(function(p){ return String(p.id) === String(productId); });
 }
 
-function qaGetProductRecord_(productId) {
-  var res = qaCall_('productGetRpc', [productId]);
+function qaGetProductRecord_(productId, token) {
+  var res = qaCall_('productGetRpc', [productId, token]);
   qaAssertOk_(res);
   return res.record || {};
 }
@@ -2904,6 +3448,12 @@ function qaCreatePromotion_(token, productId, stamp, label, opts) {
     no_end_date: opts.no_end_date !== undefined ? opts.no_end_date : true,
     enabled: opts.enabled !== false
   };
+  // Conditional-promotion fields (optional). Omitting them keeps the promo unconditional.
+  if (opts.application_mode !== undefined) payload.application_mode = opts.application_mode;
+  if (opts.condition_type !== undefined) payload.condition_type = opts.condition_type;
+  if (opts.condition_json !== undefined) payload.condition_json = opts.condition_json;
+  // Discount scope (optional): 'order_total' for whole-order discounts (conditional only).
+  if (opts.discount_scope !== undefined) payload.discount_scope = opts.discount_scope;
   var res = qaCall_('createPromotionRpc', [token, payload]);
   qaAssertOk_(res);
   qaAssert_(!!res.promotion_id, 'createPromotionRpc ต้องคืน promotion_id', res);
@@ -3329,14 +3879,34 @@ function qaOrderCount_(token) {
   return Number(res.total || 0);
 }
 
-function qaAssertNoNewOrderAfterFailure_(token, beforeCount, response, orderIds, expectedError) {
+// Count only orders written from this exact QA payload. customer_notes is unique
+// per qaBuildOrderPayloadForProduct_ call and is stored plaintext in the order
+// sheet, so unrelated live orders cannot make a rejection testcase flaky.
+function qaOrderCountForPayload_(payload) {
+  var marker = String(payload && payload.customer_notes || '');
+  if (!marker) return null;
+  var sh = sheetOrders_();
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return 0;
+  var notes = sh.getRange(2, 14, lastRow - 1, 1).getValues();
+  var count = 0;
+  for (var i = 0; i < notes.length; i++) {
+    if (String(notes[i][0] || '') === marker) count += 1;
+  }
+  return count;
+}
+
+function qaAssertNoNewOrderAfterFailure_(token, beforeCount, response, orderIds, expectedError, payload) {
   qaAssert_(response && response.ok === false, 'submitOrderRpc should reject the payload', response);
   if (expectedError) qaAssert_(response.error === expectedError, 'Unexpected submitOrderRpc error code', { expected:expectedError, response:response });
   var afterCount = qaOrderCount_(token);
-  qaAssert_(afterCount === beforeCount && !(orderIds || []).length,
+  var payloadOrderCount = qaOrderCountForPayload_(payload);
+  var noPayloadOrders = payloadOrderCount === null ? afterCount === beforeCount : payloadOrderCount === 0;
+  qaAssert_(noPayloadOrders && !(orderIds || []).length,
     'Rejected submit must not create orders',
-    { before_count:beforeCount, after_count:afterCount, tracked_order_ids:orderIds || [], response:response });
-  return { before_count:beforeCount, after_count:afterCount };
+    { before_count:beforeCount, after_count:afterCount, payload_order_count:payloadOrderCount,
+      tracked_order_ids:orderIds || [], response:response });
+  return { before_count:beforeCount, after_count:afterCount, payload_order_count:payloadOrderCount };
 }
 
 function qaDiffKinds_(response) {
@@ -3447,18 +4017,18 @@ function qaRunProductDisabledHiddenFlow_(ctx) {
 }
 
 function qaRunProductScheduleFutureFlow_(ctx) {
-  return qaRunProductScheduleVisibilityFlow_(ctx, 'ScheduleFuture', qaFutureIso_(86400000), '', false);
+  return qaRunProductScheduleVisibilityFlow_(ctx, 'ScheduleFuture', qaFutureIso_(86400000), '', false, 'scheduled');
 }
 
 function qaRunProductScheduleActiveFlow_(ctx) {
-  return qaRunProductScheduleVisibilityFlow_(ctx, 'ScheduleActive', qaPastIso_(60000), '', true);
+  return qaRunProductScheduleVisibilityFlow_(ctx, 'ScheduleActive', qaPastIso_(60000), '', true, 'active');
 }
 
 function qaRunProductScheduleEndedFlow_(ctx) {
-  return qaRunProductScheduleVisibilityFlow_(ctx, 'ScheduleEnded', qaPastIso_(172800000), qaPastIso_(86400000), false);
+  return qaRunProductScheduleVisibilityFlow_(ctx, 'ScheduleEnded', qaPastIso_(172800000), qaPastIso_(86400000), false, 'ended');
 }
 
-function qaRunProductScheduleVisibilityFlow_(ctx, label, startsAt, endsAt, shouldBeVisible) {
+function qaRunProductScheduleVisibilityFlow_(ctx, label, startsAt, endsAt, shouldBeVisible, expectedSaleStatus) {
   var token = ctx.options.adminToken, steps = [], stamp = qaStamp_();
   var shipping = qaCreateTempShippingMethod_(token, stamp, label);
   var productId = '', caught = null, output = null;
@@ -3471,9 +4041,10 @@ function qaRunProductScheduleVisibilityFlow_(ctx, label, startsAt, endsAt, shoul
     });
     productId = product.id;
     qaStep_(steps, 'สร้างสินค้า scheduled', 'ok', { product_id:productId, starts_at:startsAt, ends_at:endsAt });
-    var record = qaGetProductRecord_(productId);
+    var record = qaGetProductRecord_(productId, token);
     var visible = qaPublicListHasProduct_(productId);
     qaAssert_(visible === shouldBeVisible, 'สถานะการแสดงสินค้า scheduled ไม่ตรงที่คาด', { visible:visible, shouldBeVisible:shouldBeVisible, record:record });
+    qaAssert_(record.sale_status === expectedSaleStatus, 'sale_status ของสินค้า scheduled ไม่ตรงที่คาด', { sale_status:record.sale_status, expectedSaleStatus:expectedSaleStatus, record:record });
     qaStep_(steps, 'ตรวจสถานะและ public list', 'ok', { sale_status:record.sale_status, visible:visible });
     output = { steps:steps, product_id:productId, sale_status:record.sale_status, visible:visible };
   } catch (err) { caught = err; qaStep_(steps, 'เกิดข้อผิดพลาด', 'failed', { error:String(err && err.message || err) }); }
@@ -3813,6 +4384,9 @@ function qaRunPromotionProductVariantOverlapRejectedFlow_(ctx) {
       enabled:true
     }]);
     qaAssert_(variantRes && variantRes.ok === false, 'โปรระดับ variant ที่ทับกับโปรระดับสินค้าต้องถูกปฏิเสธ', variantRes);
+    qaAssert_(variantRes.error === 'PROMO_OVERLAP' && variantRes.conflict
+      && String(variantRes.conflict.promotion_id) === String(productPromo.promotion_id),
+      'การปฏิเสธ overlap ต้องคืน error PROMO_OVERLAP พร้อมข้อมูลโปรที่ชนกัน', variantRes);
     qaStep_(steps, 'ตรวจการปฏิเสธโปร variant ที่ทับซ้อน', 'ok', { response:variantRes });
     output = { steps:steps, product_promo_id:productPromo.promotion_id, variant_response:variantRes };
   } catch (err) { caught = err; qaStep_(steps, 'เกิดข้อผิดพลาด', 'failed', { error:String(err && err.message || err) }); }
@@ -3832,6 +4406,9 @@ function qaRunPromotionOverlapRejectedFlow_(ctx) {
     qaStep_(steps, 'สร้างโปรแรก', 'ok', first);
     var second = qaCall_('createPromotionRpc', [fx.token, Object.assign({}, first.payload, { name:'QA Promo Overlap B ' + fx.stamp, discount_value:60 })]);
     qaAssert_(second && second.ok === false, 'โปรที่ทับซ้อนกันต้องถูกปฏิเสธ', second);
+    qaAssert_(second.error === 'PROMO_OVERLAP' && second.conflict
+      && String(second.conflict.promotion_id) === String(first.promotion_id),
+      'การปฏิเสธ overlap ต้องคืน error PROMO_OVERLAP พร้อมข้อมูลโปรที่ชนกัน', second);
     qaStep_(steps, 'ตรวจการปฏิเสธโปรทับซ้อน', 'ok', { response:second });
     output = { steps:steps, first:first.promotion_id, second_response:second };
   } catch (err) { caught = err; qaStep_(steps, 'เกิดข้อผิดพลาด', 'failed', { error:String(err && err.message || err) }); }
@@ -3882,7 +4459,23 @@ function qaRunPromotionFutureEndedStatusFlow_(ctx) {
     var e = (list.promotions || []).filter(function(p){ return p.promotion_id === ended.promotion_id; })[0];
     qaAssert_(f && f.status === 'scheduled' && e && e.status === 'expired', 'สถานะโปรโมชั่นอนาคต/หมดอายุไม่ถูกต้อง', { future:f, ended:e, expected_ended_status:'expired' });
     qaStep_(steps, 'ตรวจสถานะโปรโมชั่น', 'ok', { future:f, ended:e });
-    output = { steps:steps, future_status:f.status, ended_status:e.status };
+    var boundaryNow = Date.now();
+    var expectedBoundary = Date.parse(future.payload.starts_at);
+    var boundary = _nextDirectPromotionBoundaryMs_(boundaryNow, [
+      Object.assign({}, future.payload, { promotion_id:future.promotion_id, application_mode:'direct' }),
+      Object.assign({}, ended.payload, { promotion_id:ended.promotion_id, application_mode:'direct' }),
+      Object.assign({}, future.payload, { promotion_id:'conditional-ignored', application_mode:'conditional', starts_at:new Date(boundaryNow + 1000).toISOString() })
+    ]);
+    qaAssert_(boundary === expectedBoundary, 'Product snapshot boundary must follow the next direct promotion schedule', { boundary:boundary, expected:expectedBoundary });
+    var activeEndsAt = boundaryNow + 5000;
+    var endBoundary = _nextDirectPromotionBoundaryMs_(boundaryNow, [{
+      promotion_id:'active-ending', application_mode:'direct', enabled:true,
+      starts_at:new Date(boundaryNow - 1000).toISOString(),
+      ends_at:new Date(activeEndsAt).toISOString(), no_end_date:false
+    }]);
+    qaAssert_(endBoundary === activeEndsAt + 1, 'Product snapshot boundary must expire immediately after a direct promotion ends', { boundary:endBoundary, expected:activeEndsAt + 1 });
+    qaStep_(steps, 'ตรวจขอบเขตอายุ Product snapshot', 'ok', { start_boundary:boundary, end_boundary:endBoundary });
+    output = { steps:steps, future_status:f.status, ended_status:e.status, snapshot_boundary:boundary, snapshot_end_boundary:endBoundary };
   } catch (err) { caught = err; qaStep_(steps, 'เกิดข้อผิดพลาด', 'failed', { error:String(err && err.message || err) }); }
   var cleanup = qaCleanupPromosProductsShipping_(token, promos, productIds, shipping);
   qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
@@ -4028,7 +4621,7 @@ function qaRunShippingRemovedMethodCleanupFlow_(ctx) {
     var restore = qaCleanupTempShipping_(token, shipping);
     qaAssertOk_(restore);
     qaStep_(steps, 'restore shipping ให้ method ถูกลบ', 'ok', restore);
-    var rec = qaGetProductRecord_(productId);
+    var rec = qaGetProductRecord_(productId, token);
     qaAssert_((rec.allowed_shipping_ids || []).indexOf(shipping.method.id) < 0, 'allowed_shipping_ids ต้องไม่มี method ที่ถูกลบ', rec);
     qaStep_(steps, 'ตรวจสินค้าได้รับ cleanup method', 'ok', { allowed_shipping_ids:rec.allowed_shipping_ids, sale_status:rec.sale_status });
     output = { steps:steps, product_id:productId, allowed_shipping_ids:rec.allowed_shipping_ids };
@@ -4049,7 +4642,7 @@ function qaRunShippingNoValidMethodDeactivatesFlow_(ctx) {
     var product = qaCreateOrderQaProduct_(token, shipping, stamp, 'NoValidMethod', 5, { allowed_shipping_ids:[method.id] });
     productId = product.id;
     qaStep_(steps, 'สร้างสินค้าที่มีเฉพาะ method inactive', 'ok', { product_id:productId, method_id:method.id });
-    var rec = qaGetProductRecord_(productId);
+    var rec = qaGetProductRecord_(productId, token);
     qaAssert_(rec.sale_status !== 'active', 'สินค้าควรถูกปิดขายเมื่อไม่มี method active ที่ใช้ได้', rec);
     qaStep_(steps, 'ตรวจ sale_status', 'ok', { sale_status:rec.sale_status });
     output = { steps:steps, product_id:productId, sale_status:rec.sale_status };
@@ -4524,6 +5117,238 @@ function qaRunTrackingReadbackFlow_(ctx) {
   return output;
 }
 
+// ===== Fulfillment carrier override + monetary lock test helpers/flows =====
+
+// Build a shipping config with several companies/methods for override testing:
+//  company1 (active): methodA (checkout), methodB (active), methodInactive (active=false)
+//  company2 (active): methodC — carrier_id 'flash' + tracking_url_template (proves backend resolution)
+//  company3 (inactive): methodD
+function qaCreateFulfillmentShippingFixture_(token, stamp) {
+  var current = qaCall_('getShippingRpc');
+  qaAssertOk_(current);
+  var originalCompanies = (current.companies || []).map(function(c){ return JSON.parse(JSON.stringify(c)); });
+  var sfx = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+  var methodA = { id:'qa_ff_ma_'+sfx, name:'QA Method A', active:true, mode:'flat', flat_rate:30 };
+  var methodB = { id:'qa_ff_mb_'+sfx, name:'QA Method B', active:true, mode:'flat', flat_rate:50 };
+  var methodInactive = { id:'qa_ff_mx_'+sfx, name:'QA Method Inactive', active:false, mode:'flat', flat_rate:40 };
+  var company1 = { id:'qa_ff_c1_'+sfx, name:'QA Carrier One '+stamp, active:true, carrier_id:'other', tracking_url_template:'', tracking_provider:'', methods:[methodA, methodB, methodInactive] };
+  var methodC = { id:'qa_ff_mc_'+sfx, name:'QA Method C', active:true, mode:'flat', flat_rate:70 };
+  var company2 = { id:'qa_ff_c2_'+sfx, name:'QA Carrier Two '+stamp, active:true, carrier_id:'flash', tracking_url_template:'https://track.example.com/{T}', tracking_provider:'', methods:[methodC] };
+  var methodD = { id:'qa_ff_md_'+sfx, name:'QA Method D', active:true, mode:'flat', flat_rate:60 };
+  var company3 = { id:'qa_ff_c3_'+sfx, name:'QA Carrier Three '+stamp, active:false, carrier_id:'other', tracking_url_template:'', tracking_provider:'', methods:[methodD] };
+  var saved = qaCall_('saveShippingRpc', [token, originalCompanies.concat([company1, company2, company3])]);
+  qaAssertOk_(saved);
+  return {
+    original_companies: originalCompanies,
+    company: company1, method: methodA,   // compat shape for qaCreateOrderQaProduct_/qaBuildOrderPayloadForProduct_
+    company1: company1, company2: company2, company3: company3,
+    methodA: methodA, methodB: methodB, methodInactive: methodInactive, methodC: methodC, methodD: methodD
+  };
+}
+
+function qaSetupFulfillmentOrder_(ctx, label, stock) {
+  var token = ctx.options.adminToken;
+  var stamp = qaStamp_();
+  var ship = qaCreateFulfillmentShippingFixture_(token, stamp);
+  var product = qaCreateOrderQaProduct_(token, { company: ship.company, method: ship.method }, stamp, label, stock || 5, { price: 500 });
+  return { token:token, stamp:stamp, ship:ship, product:product, order_ids:[], shipping:ship };
+}
+
+function qaFulfillmentSubmit_(fx, label) {
+  var payload = qaBuildOrderPayloadForProduct_('qa-ff-'+label, fx.stamp, 'Buyer', fx.product.id, { company: fx.ship.company, method: fx.ship.method });
+  var res = qaSubmitAndTrack_(payload, fx.order_ids);
+  qaAssertOk_(res);
+  return qaOrderIdsFromSubmit_(res)[0];
+}
+
+function qaFulfillmentCleanup_(fx, caught, output) {
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunFulfillmentAllowed_(ctx, targetStatus) {
+  var fx = qaSetupFulfillmentOrder_(ctx, 'FfAllowed', 5);
+  var caught = null, output = null;
+  try {
+    var orderId = qaFulfillmentSubmit_(fx, 'allowed');
+    if (targetStatus === 'paid') {
+      qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'paid', 'QA paid']));
+    } else if (targetStatus === 'approved') {
+      qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'paid', 'QA paid']));
+      qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'approved', 'QA approved']));
+    }
+    var before = qaReadOrder_(fx.token, orderId);
+    var reason = (targetStatus === 'unpaid') ? '' : 'QA เปลี่ยนขนส่ง';
+    var res = qaCall_('orderUpdateFulfillmentShippingRpc', [fx.token, orderId, fx.ship.company2.id, fx.ship.methodC.id, reason]);
+    qaAssertOk_(res);
+    var after = res.record || qaReadOrder_(fx.token, orderId);
+    qaAssert_(after.status === targetStatus, 'สถานะต้องไม่เปลี่ยนหลังเปลี่ยนบริษัทขนส่ง', { expected:targetStatus, got:after.status });
+    var ff = after.fulfillment_shipping || {};
+    qaAssert_(ff.company_id === fx.ship.company2.id, 'fulfillment company_id ผิด', ff);
+    qaAssert_(ff.method_id === fx.ship.methodC.id, 'fulfillment method_id ผิด', ff);
+    qaAssert_(ff.carrier_id === 'flash', 'carrier_id ต้อง resolve จาก backend เป็น flash', ff);
+    qaAssert_(ff.tracking_url_template === 'https://track.example.com/{T}', 'tracking_url_template ต้อง resolve จาก backend', ff);
+    qaAssert_(Number(after.shipping_fee) === Number(before.shipping_fee), 'shipping_fee ต้องไม่เปลี่ยน', { before:before.shipping_fee, after:after.shipping_fee });
+    qaAssert_(Number(after.subtotal) === Number(before.subtotal), 'subtotal ต้องไม่เปลี่ยน', { before:before.subtotal, after:after.subtotal });
+    qaAssert_(Number(after.total) === Number(before.total), 'total ต้องไม่เปลี่ยน', { before:before.total, after:after.total });
+    qaAssert_(after.shipping_method_id === before.shipping_method_id, 'shipping_method_id ต้องไม่เปลี่ยน', { before:before.shipping_method_id, after:after.shipping_method_id });
+    qaAssert_(JSON.stringify(after.shipping_info) === JSON.stringify(before.shipping_info), 'shipping_info ต้องไม่เปลี่ยน', { before:before.shipping_info, after:after.shipping_info });
+    qaAssert_((after.status_history || []).some(function(h){ return h.status === 'shipping_carrier_changed'; }), 'ต้องมี history shipping_carrier_changed', after.status_history);
+    output = { order_id:orderId, status:after.status, fulfillment:ff };
+  } catch (err) { caught = err; }
+  return qaFulfillmentCleanup_(fx, caught, output || {});
+}
+function qaRunFulfillmentAllowedUnpaidFlow_(ctx) { return qaRunFulfillmentAllowed_(ctx, 'unpaid'); }
+function qaRunFulfillmentAllowedPaidFlow_(ctx) { return qaRunFulfillmentAllowed_(ctx, 'paid'); }
+function qaRunFulfillmentAllowedApprovedFlow_(ctx) { return qaRunFulfillmentAllowed_(ctx, 'approved'); }
+
+function qaRunFulfillmentRejectedShippedFlow_(ctx) {
+  var fx = qaSetupFulfillmentOrder_(ctx, 'FfRejShip', 5);
+  var caught = null, output = null;
+  try {
+    var orderId = qaFulfillmentSubmit_(fx, 'rejship');
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'paid', 'QA paid']));
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'approved', 'QA approved']));
+    qaAssertOk_(qaCall_('orderMarkShippedRpc', [fx.token, orderId, { tracking_number:'QAFF'+fx.stamp.replace(/[^0-9]/g,''), note:'QA' }]));
+    var res = qaCall_('orderUpdateFulfillmentShippingRpc', [fx.token, orderId, fx.ship.company2.id, fx.ship.methodC.id, 'QA']);
+    qaAssert_(res && res.ok === false && res.error === 'STATUS_NOT_ALLOWED', 'ออร์เดอร์ shipped ต้องเปลี่ยนบริษัทขนส่งไม่ได้', res);
+    output = { order_id:orderId, response:res };
+  } catch (err) { caught = err; }
+  return qaFulfillmentCleanup_(fx, caught, output || {});
+}
+
+function qaRunFulfillmentRejectedTerminalFlow_(ctx) {
+  var fx = qaSetupFulfillmentOrder_(ctx, 'FfRejTerm', 8);
+  var caught = null, output = null, results = {};
+  try {
+    ['delivered','rejected','cancelled'].forEach(function(st) {
+      var orderId = qaFulfillmentSubmit_(fx, 'term-'+st);
+      if (st === 'delivered') {
+        qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'paid', 'QA']));
+        qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'approved', 'QA']));
+        qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'delivered', 'QA']));
+      } else {
+        qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, st, 'QA']));
+      }
+      var res = qaCall_('orderUpdateFulfillmentShippingRpc', [fx.token, orderId, fx.ship.company2.id, fx.ship.methodC.id, 'QA']);
+      qaAssert_(res && res.ok === false && res.error === 'STATUS_NOT_ALLOWED', 'สถานะ ' + st + ' ต้องเปลี่ยนบริษัทขนส่งไม่ได้', res);
+      results[st] = res.error;
+    });
+    output = { results:results };
+  } catch (err) { caught = err; }
+  return qaFulfillmentCleanup_(fx, caught, output || {});
+}
+
+function qaRunFulfillmentInactiveCompanyFlow_(ctx) {
+  var fx = qaSetupFulfillmentOrder_(ctx, 'FfInactiveCo', 5);
+  var caught = null, output = null;
+  try {
+    var orderId = qaFulfillmentSubmit_(fx, 'inactco');
+    var res = qaCall_('orderUpdateFulfillmentShippingRpc', [fx.token, orderId, fx.ship.company3.id, fx.ship.methodD.id, '']);
+    qaAssert_(res && res.ok === false && res.error === 'COMPANY_INVALID', 'บริษัทที่ปิดใช้งานต้องถูกปฏิเสธ', res);
+    output = { order_id:orderId, response:res };
+  } catch (err) { caught = err; }
+  return qaFulfillmentCleanup_(fx, caught, output || {});
+}
+
+function qaRunFulfillmentInvalidMethodFlow_(ctx) {
+  var fx = qaSetupFulfillmentOrder_(ctx, 'FfInvalidMethod', 5);
+  var caught = null, output = null;
+  try {
+    var orderId = qaFulfillmentSubmit_(fx, 'invmethod');
+    var r1 = qaCall_('orderUpdateFulfillmentShippingRpc', [fx.token, orderId, fx.ship.company1.id, fx.ship.methodInactive.id, '']);
+    qaAssert_(r1 && r1.ok === false && r1.error === 'METHOD_INVALID', 'method ที่ปิดใช้งานต้องถูกปฏิเสธ', r1);
+    var r2 = qaCall_('orderUpdateFulfillmentShippingRpc', [fx.token, orderId, fx.ship.company1.id, fx.ship.methodC.id, '']);
+    qaAssert_(r2 && r2.ok === false && r2.error === 'METHOD_INVALID', 'method ของบริษัทอื่นต้องถูกปฏิเสธ', r2);
+    output = { order_id:orderId, inactive:r1.error, foreign:r2.error };
+  } catch (err) { caught = err; }
+  return qaFulfillmentCleanup_(fx, caught, output || {});
+}
+
+function qaRunFulfillmentMarkShippedOverrideFlow_(ctx) {
+  var fx = qaSetupFulfillmentOrder_(ctx, 'FfMarkOverride', 5);
+  var caught = null, output = null;
+  try {
+    var orderId = qaFulfillmentSubmit_(fx, 'markov');
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'paid', 'QA']));
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'approved', 'QA']));
+    qaAssertOk_(qaCall_('orderUpdateFulfillmentShippingRpc', [fx.token, orderId, fx.ship.company2.id, fx.ship.methodC.id, 'QA override']));
+    var tn = 'QAOVR' + fx.stamp.replace(/[^0-9]/g,'');
+    var ship = qaCall_('orderMarkShippedRpc', [fx.token, orderId, { tracking_number:tn, note:'QA' }]);
+    qaAssertOk_(ship);
+    var rec = ship.record || qaReadOrder_(fx.token, orderId);
+    var td = rec.tracking || {};
+    qaAssert_(td.carrier_id === 'flash', 'tracking carrier_id ต้องเป็นของ override (flash)', td);
+    qaAssert_(td.fulfillment_source === 'override', 'fulfillment_source ต้องเป็น override', td);
+    qaAssert_(td.tracking_url === 'https://track.example.com/' + encodeURIComponent(tn), 'tracking_url ต้อง resolve จาก template ฝั่ง backend', td);
+    output = { order_id:orderId, tracking:td };
+  } catch (err) { caught = err; }
+  return qaFulfillmentCleanup_(fx, caught, output || {});
+}
+
+function qaRunFulfillmentMarkShippedOriginalFlow_(ctx) {
+  var fx = qaSetupFulfillmentOrder_(ctx, 'FfMarkOrig', 5);
+  var caught = null, output = null;
+  try {
+    var orderId = qaFulfillmentSubmit_(fx, 'markorig');
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'paid', 'QA']));
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'approved', 'QA']));
+    var ship = qaCall_('orderMarkShippedRpc', [fx.token, orderId, { tracking_number:'QAORIG'+fx.stamp.replace(/[^0-9]/g,''), note:'QA' }]);
+    qaAssertOk_(ship);
+    var rec = ship.record || qaReadOrder_(fx.token, orderId);
+    var td = rec.tracking || {};
+    qaAssert_(td.carrier_id === 'other', 'ไม่มี override ต้องใช้ carrier เดิม (other)', td);
+    qaAssert_(td.fulfillment_source === 'original', 'fulfillment_source ต้องเป็น original', td);
+    qaAssert_(td.carrier_name === fx.ship.company1.name, 'carrier_name ต้องเป็นบริษัทที่ลูกค้าเลือก', td);
+    output = { order_id:orderId, tracking:td };
+  } catch (err) { caught = err; }
+  return qaFulfillmentCleanup_(fx, caught, output || {});
+}
+
+function qaRunFieldsMonetaryLockFlow_(ctx) {
+  var fx = qaSetupFulfillmentOrder_(ctx, 'FieldsLock', 5);
+  var caught = null, output = null;
+  try {
+    var orderId = qaFulfillmentSubmit_(fx, 'fieldslock');
+    var before = qaReadOrder_(fx.token, orderId);
+    // unpaid: shipping_fee editable; total recomputed by backend (client total ignored)
+    var newFee = Number(before.shipping_fee) + 15;
+    qaAssertOk_(qaCall_('orderUpdateFieldsRpc', [fx.token, orderId, { shipping_fee:newFee, total:999999 }]));
+    var mid = qaReadOrder_(fx.token, orderId);
+    qaAssert_(Number(mid.shipping_fee) === newFee, 'unpaid: shipping_fee ต้องอัปเดตได้', mid);
+    qaAssert_(Number(mid.total) === Number(mid.subtotal) + newFee, 'total ต้องคำนวณจาก backend (ไม่เชื่อ client total)', mid);
+    // subtotal never editable
+    var subRes = qaCall_('orderUpdateFieldsRpc', [fx.token, orderId, { subtotal:1 }]);
+    qaAssert_(subRes && subRes.ok === false && subRes.error === 'SUBTOTAL_IMMUTABLE', 'subtotal ต้องถูกปฏิเสธเสมอ', subRes);
+    // move to paid → monetary lock
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'paid', 'QA']));
+    var lockedFee = qaCall_('orderUpdateFieldsRpc', [fx.token, orderId, { shipping_fee:5 }]);
+    qaAssert_(lockedFee && lockedFee.ok === false && lockedFee.error === 'PRICING_LOCKED', 'paid: shipping_fee ต้องถูกล็อก', lockedFee);
+    var lockedTotal = qaCall_('orderUpdateFieldsRpc', [fx.token, orderId, { total:5 }]);
+    qaAssert_(lockedTotal && lockedTotal.ok === false && lockedTotal.error === 'PRICING_LOCKED', 'paid: total ต้องถูกล็อก', lockedTotal);
+    var after = qaReadOrder_(fx.token, orderId);
+    qaAssert_(Number(after.shipping_fee) === newFee, 'shipping_fee ต้องไม่เปลี่ยนหลังถูกล็อก', after);
+    output = { order_id:orderId, shipping_fee:after.shipping_fee, total:after.total };
+  } catch (err) { caught = err; }
+  return qaFulfillmentCleanup_(fx, caught, output || {});
+}
+
+function qaRunFieldsMonetaryLockPersistFlow_(ctx) {
+  var fx = qaSetupFulfillmentOrder_(ctx, 'FieldsLockPersist', 5);
+  var caught = null, output = null;
+  try {
+    var orderId = qaFulfillmentSubmit_(fx, 'lockpersist');
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'paid', 'QA paid']));
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'unpaid', 'QA rollback']));
+    var res = qaCall_('orderUpdateFieldsRpc', [fx.token, orderId, { shipping_fee:12345 }]);
+    qaAssert_(res && res.ok === false && res.error === 'PRICING_LOCKED', 'ยอดเงินต้องยังถูกล็อกแม้ย้อนกลับเป็น unpaid', res);
+    output = { order_id:orderId, response:res };
+  } catch (err) { caught = err; }
+  return qaFulfillmentCleanup_(fx, caught, output || {});
+}
+
 function qaRunOrderDeleteCleanupFlow_(ctx) {
   var fx = qaCreateOrderFixture_(ctx, 'DeleteCleanup', 5);
   var caught = null, output = null;
@@ -4615,6 +5440,1069 @@ function qaRunPromotionSnapshotImmutabilityFlow_(ctx) {
     try { qaCall_('deletePromotionRpc', [fx.token, promoId]); } catch(_) {}
   }
   if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+/* ===================== Conditional promotion flows ===================== */
+// Shared helpers for behavior-based conditional-promotion tests. Every flow drives the
+// real public preview RPC and the real submitOrderRpc, then asserts the persisted order,
+// so preview and order can never silently diverge.
+function qaCartItem_(productId, qty, sel) { return { product_id: String(productId), qty: qty, selected_variants: sel || {} }; }
+function qaPreviewPromo_(cartItems) {
+  var r = qaCall_('previewPromotionEligibilityRpc', [{ items: cartItems }]);
+  qaAssertOk_(r);
+  return r;
+}
+function qaPromoPreviewLine_(preview, productId, variantKey) {
+  var lines = preview.lines || [];
+  for (var i = 0; i < lines.length; i++) {
+    if (String(lines[i].product_id) === String(productId) && String(lines[i].variant_key || '') === String(variantKey || '')) return lines[i];
+  }
+  return null;
+}
+function qaPromoEligibleHas_(preview, promoId) {
+  return (preview.eligible || []).some(function(e){ return String(e.promotion_id) === String(promoId); });
+}
+function qaPromoNearHas_(preview, promoId) {
+  return (preview.near || []).some(function(e){ return String(e.promotion_id) === String(promoId); });
+}
+// Submit an order for `cartItems`, read it back, and assert every product line's
+// unit_final_price/promotion matches the preview for the same cart. Returns { order_id, record }.
+function qaSubmitAndAssertMatchesPreview_(fx, buyer, cartItems, preview) {
+  var payload = qaBuildOrderPayloadForProduct_('qa-cond-promo', fx.stamp, buyer, cartItems[0].product_id, fx.shipping, { items: cartItems });
+  var res = qaSubmitAndTrack_(payload, fx.order_ids);
+  qaAssertOk_(res);
+  var orderId = qaOrderIdsFromSubmit_(res)[0];
+  var record = qaReadOrder_(fx.token, orderId);
+  var lineSubtotal = 0;
+  cartItems.forEach(function(ci){
+    var pv = qaPromoPreviewLine_(preview, ci.product_id, qaVariantKeyOf_(ci.selected_variants));
+    var line = qaFindProductLineByVariantKey_(record, ci.product_id, qaVariantKeyOf_(ci.selected_variants));
+    qaAssert_(!!line, 'ไม่พบรายการสินค้าในออร์เดอร์', { product_id: ci.product_id, record: record });
+    qaAssert_(!!pv, 'ไม่พบรายการสินค้าใน preview', { product_id: ci.product_id, preview: preview });
+    qaAssert_(Number(line.unit_final_price) === Number(pv.unit_final_price),
+      'ราคาต่อหน่วยในออร์เดอร์ไม่ตรงกับ preview (preview!=order)', { order_line: line, preview_line: pv });
+    var lPromo = line.promotion ? String(line.promotion.promotion_id) : null;
+    var pPromo = pv.promotion ? String(pv.promotion.promotion_id) : null;
+    qaAssert_(lPromo === pPromo, 'promotion_id ในออร์เดอร์ไม่ตรงกับ preview', { order_line: line, preview_line: pv });
+    lineSubtotal += Number(line.subtotal);
+  });
+  // Whole-order (order-total) discount, if the preview reported one. total nets it before shipping.
+  var previewOrderDiscount = (preview && preview.order_discount) ? Number(preview.order_discount.amount || 0) : 0;
+  var orderRecordDiscount = (record.order_discount && Number(record.order_discount.amount)) || 0;
+  qaAssert_(orderRecordDiscount === previewOrderDiscount,
+    'ส่วนลดท้ายบิลในออร์เดอร์ไม่ตรงกับ preview', { record_discount: orderRecordDiscount, preview_discount: previewOrderDiscount });
+  if (record.total !== undefined && record.shipping_fee !== undefined) {
+    qaAssert_(Number(record.total) === Math.max(0, lineSubtotal - previewOrderDiscount) + Number(record.shipping_fee || 0),
+      'ยอดรวมออร์เดอร์ไม่เท่ากับ (ผลรวมรายการ - ส่วนลดท้ายบิล) + ค่าส่ง',
+      { record: record, line_subtotal: lineSubtotal, order_discount: previewOrderDiscount });
+  }
+  return { order_id: orderId, record: record, line_subtotal: lineSubtotal, order_discount: previewOrderDiscount };
+}
+// Fetch a specific eligible-promo entry from a preview (for order-total assertions).
+function qaPromoEligibleEntry_(preview, promoId) {
+  return (preview.eligible || []).filter(function(e){ return String(e.promotion_id) === String(promoId); })[0] || null;
+}
+// Canonical variant_key from a selected_variants object (mirror backend buildVariantKey_).
+function qaVariantKeyOf_(sel) {
+  if (!sel || typeof sel !== 'object') return '';
+  return Object.keys(sel).sort().map(function(k){ return k + '=' + String(sel[k] || ''); }).join('|');
+}
+
+// min_subtotal: below / exact / over thresholds; discount applies to whole cart when met.
+function qaRunConditionalMinSubtotalFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'CondMinSub', 20, { price: 1000 });
+  var steps = [], promos = [], caught = null, output = null;
+  try {
+    var promo = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'MinSub', {
+      discount_type: 'fixed', discount_value: 100, target_type: 'all', target: [],
+      application_mode: 'conditional', condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 2000, calculation_base: 'after_discount_before_shipping' }
+    });
+    promos.push(promo.promotion_id);
+    qaStep_(steps, 'สร้างโปรเงื่อนไข min_subtotal', 'ok', promo);
+
+    // Below threshold (1 x 1000 = 1000 < 2000): not eligible, no discount.
+    var below = qaPreviewPromo_([qaCartItem_(fx.product.id, 1, {})]);
+    qaAssert_(qaPromoNearHas_(below, promo.promotion_id), 'ยอดต่ำกว่าเกณฑ์ควรอยู่ในรายการใกล้ได้รับ', below);
+    qaAssert_(Number(qaPromoPreviewLine_(below, fx.product.id, '').unit_final_price) === 1000, 'ยอดต่ำกว่าเกณฑ์ต้องไม่ลดราคา', below);
+    qaSubmitAndAssertMatchesPreview_(fx, 'Below', [qaCartItem_(fx.product.id, 1, {})], below);
+
+    // Exact threshold (2 x 1000 = 2000): eligible, each unit -100 -> 900.
+    var exact = qaPreviewPromo_([qaCartItem_(fx.product.id, 2, {})]);
+    qaAssert_(qaPromoEligibleHas_(exact, promo.promotion_id), 'ยอดครบเกณฑ์พอดีต้องได้รับส่วนลด', exact);
+    qaAssert_(Number(qaPromoPreviewLine_(exact, fx.product.id, '').unit_final_price) === 900, 'ราคาหลังลดต้องเป็น 900', exact);
+    qaSubmitAndAssertMatchesPreview_(fx, 'Exact', [qaCartItem_(fx.product.id, 2, {})], exact);
+
+    // Over threshold (3 x 1000 = 3000): eligible, still -100 each.
+    var over = qaPreviewPromo_([qaCartItem_(fx.product.id, 3, {})]);
+    qaAssert_(qaPromoEligibleHas_(over, promo.promotion_id), 'ยอดเกินเกณฑ์ต้องได้รับส่วนลด', over);
+    qaAssert_(Number(qaPromoPreviewLine_(over, fx.product.id, '').unit_final_price) === 900, 'ยอดเกินเกณฑ์ราคาหลังลดต้องเป็น 900', over);
+
+    output = { steps: steps, promotion_id: promo.promotion_id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  (promos).forEach(function(pid){ try { qaCall_('deletePromotionRpc', [fx.token, pid]); } catch(_){} });
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+/* ========================================================================
+ * Order-total (whole-order) discount scope — conditional promos only.
+ * The discount is deducted ONCE from the item subtotal (never × qty) and
+ * ignores product/variant targeting. Preview and order must agree.
+ * ===================================================================== */
+
+// Order-total FIXED discount: qualifies on min_subtotal, deducts a flat amount once.
+// Also verifies per-line prices are unchanged (order-total never touches unit price) and
+// the below-threshold near-miss case.
+function qaRunOrderTotalFixedFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'OrdTotFixed', 20, { price: 250 });
+  var steps = [], promos = [], caught = null, output = null;
+  try {
+    var promo = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'OrdTotFixed', {
+      discount_type: 'fixed', discount_value: 60, target_type: 'all', target: [],
+      application_mode: 'conditional', discount_scope: 'order_total',
+      condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 400, calculation_base: 'after_discount_before_shipping' }
+    });
+    promos.push(promo.promotion_id);
+    qaStep_(steps, 'สร้างโปรลดท้ายบิลแบบบาท (fixed)', 'ok', promo);
+
+    // Below threshold: 1 × 250 = 250 < 400 → near-miss, no order discount.
+    var below = qaPreviewPromo_([qaCartItem_(fx.product.id, 1, {})]);
+    qaAssert_(qaPromoNearHas_(below, promo.promotion_id), 'ยอดต่ำกว่าเกณฑ์ควรอยู่ในรายการใกล้ได้รับ', below);
+    qaAssert_(!below.order_discount, 'ยอดต่ำกว่าเกณฑ์ต้องไม่มีส่วนลดท้ายบิล', below);
+    qaAssert_(Number(qaPromoPreviewLine_(below, fx.product.id, '').unit_final_price) === 250, 'ราคาต่อชิ้นต้องไม่เปลี่ยน', below);
+
+    // At/over threshold: 2 × 250 = 500 ≥ 400 → order discount 60, net subtotal 440,
+    // per-line price still 250 (order-total never changes unit price).
+    var ok = qaPreviewPromo_([qaCartItem_(fx.product.id, 2, {})]);
+    qaAssert_(qaPromoEligibleHas_(ok, promo.promotion_id), 'ยอดครบเกณฑ์ต้องได้รับส่วนลดท้ายบิล', ok);
+    qaAssert_(!!ok.order_discount && Number(ok.order_discount.amount) === 60, 'ส่วนลดท้ายบิลต้องเป็น 60', ok);
+    qaAssert_(Number(ok.subtotal) === 500, 'ยอดสินค้าต้องเป็น 500', ok);
+    qaAssert_(Number(ok.subtotal_after_order_discount) === 440, 'ยอดหลังหักส่วนลดท้ายบิลต้องเป็น 440', ok);
+    qaAssert_(Number(qaPromoPreviewLine_(ok, fx.product.id, '').unit_final_price) === 250, 'ลดท้ายบิลต้องไม่เปลี่ยนราคาต่อชิ้น', ok);
+    var entry = qaPromoEligibleEntry_(ok, promo.promotion_id);
+    qaAssert_(entry && entry.applied === true && Number(entry.order_discount_amount) === 60, 'รายการ eligible ต้อง applied=true และ order_discount_amount=60', entry);
+
+    // Submit: order total = 500 − 60 + shipping; persisted order_discount = 60.
+    qaSubmitAndAssertMatchesPreview_(fx, 'OrdTotFixed', [qaCartItem_(fx.product.id, 2, {})], ok);
+    qaStep_(steps, 'ตรวจ preview + order ลดท้ายบิล fixed', 'ok', { order_discount: ok.order_discount });
+
+    output = { steps: steps, promotion_id: promo.promotion_id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  promos.forEach(function(pid){ try { qaCall_('deletePromotionRpc', [fx.token, pid]); } catch(_){} });
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Order-total PERCENT discount: percent of the item subtotal, deducted once.
+function qaRunOrderTotalPercentFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'OrdTotPct', 20, { price: 250 });
+  var steps = [], promos = [], caught = null, output = null;
+  try {
+    var promo = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'OrdTotPct', {
+      discount_type: 'percent', discount_value: 10, target_type: 'all', target: [],
+      application_mode: 'conditional', discount_scope: 'order_total',
+      condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 400, calculation_base: 'after_discount_before_shipping' }
+    });
+    promos.push(promo.promotion_id);
+    // 2 × 250 = 500 ≥ 400 → 10% of 500 = 50, net 450.
+    var ok = qaPreviewPromo_([qaCartItem_(fx.product.id, 2, {})]);
+    qaAssert_(!!ok.order_discount && Number(ok.order_discount.amount) === 50, 'ส่วนลดท้ายบิล 10% ของ 500 ต้องเป็น 50', ok);
+    qaAssert_(Number(ok.subtotal_after_order_discount) === 450, 'ยอดหลังหักต้องเป็น 450', ok);
+    qaSubmitAndAssertMatchesPreview_(fx, 'OrdTotPct', [qaCartItem_(fx.product.id, 2, {})], ok);
+    qaStep_(steps, 'ตรวจ preview + order ลดท้ายบิล percent', 'ok', { order_discount: ok.order_discount });
+    output = { steps: steps, promotion_id: promo.promotion_id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  promos.forEach(function(pid){ try { qaCall_('deletePromotionRpc', [fx.token, pid]); } catch(_){} });
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Order-total discount greater than the subtotal is clamped so the net subtotal floors at 0.
+function qaRunOrderTotalExceedsSubtotalFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'OrdTotClamp', 20, { price: 250 });
+  var steps = [], promos = [], caught = null, output = null;
+  try {
+    var promo = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'OrdTotClamp', {
+      discount_type: 'fixed', discount_value: 9999, target_type: 'all', target: [],
+      application_mode: 'conditional', discount_scope: 'order_total',
+      condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 100, calculation_base: 'after_discount_before_shipping' }
+    });
+    promos.push(promo.promotion_id);
+    // 1 × 250 = 250 ≥ 100 → discount clamped to 250, net 0.
+    var ok = qaPreviewPromo_([qaCartItem_(fx.product.id, 1, {})]);
+    qaAssert_(!!ok.order_discount && Number(ok.order_discount.amount) === 250, 'ส่วนลดท้ายบิลต้องถูก clamp เท่ากับยอดสินค้า (250)', ok);
+    qaAssert_(Number(ok.subtotal_after_order_discount) === 0, 'ยอดหลังหักต้องเป็น 0 (ไม่ติดลบ)', ok);
+    var sub = qaSubmitAndAssertMatchesPreview_(fx, 'OrdTotClamp', [qaCartItem_(fx.product.id, 1, {})], ok);
+    qaAssert_(Number(sub.record.total) === Number(sub.record.shipping_fee || 0), 'ยอดรวมต้องเท่ากับค่าส่งเท่านั้น (สินค้าเป็น 0)', sub.record);
+    qaStep_(steps, 'ตรวจ clamp ส่วนลด > ยอดสินค้า', 'ok', { order_discount: ok.order_discount });
+    output = { steps: steps, promotion_id: promo.promotion_id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  promos.forEach(function(pid){ try { qaCall_('deletePromotionRpc', [fx.token, pid]); } catch(_){} });
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Disabled and expired order-total promos never apply (no order_discount, not eligible).
+function qaRunOrderTotalDisabledExpiredFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'OrdTotOff', 20, { price: 250 });
+  var steps = [], promos = [], caught = null, output = null;
+  try {
+    var disabled = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'OrdTotDisabled', {
+      discount_type: 'fixed', discount_value: 60, target_type: 'all', target: [],
+      application_mode: 'conditional', discount_scope: 'order_total', enabled: false,
+      condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 100, calculation_base: 'after_discount_before_shipping' }
+    });
+    promos.push(disabled.promotion_id);
+    var expired = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'OrdTotExpired', {
+      discount_type: 'fixed', discount_value: 60, target_type: 'all', target: [],
+      application_mode: 'conditional', discount_scope: 'order_total',
+      starts_at: qaPastIso_(7200000), ends_at: qaPastIso_(3600000), no_end_date: false,
+      condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 100, calculation_base: 'after_discount_before_shipping' }
+    });
+    promos.push(expired.promotion_id);
+
+    var prev = qaPreviewPromo_([qaCartItem_(fx.product.id, 2, {})]);
+    qaAssert_(!prev.order_discount, 'โปรที่ปิด/หมดอายุต้องไม่ให้ส่วนลดท้ายบิล', prev);
+    qaAssert_(!qaPromoEligibleHas_(prev, disabled.promotion_id), 'โปรที่ปิดต้องไม่อยู่ใน eligible', prev);
+    qaAssert_(!qaPromoEligibleHas_(prev, expired.promotion_id), 'โปรที่หมดอายุต้องไม่อยู่ใน eligible', prev);
+    qaSubmitAndAssertMatchesPreview_(fx, 'OrdTotOff', [qaCartItem_(fx.product.id, 2, {})], prev);
+    qaStep_(steps, 'ตรวจโปรลดท้ายบิลที่ปิด/หมดอายุไม่ทำงาน', 'ok', { disabled: disabled.promotion_id, expired: expired.promotion_id });
+    output = { steps: steps };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  promos.forEach(function(pid){ try { qaCall_('deletePromotionRpc', [fx.token, pid]); } catch(_){} });
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Two qualified order-total promos → the larger discount wins (once), the other is reported
+// qualified-but-outpriced (applied:false). Conditional promos are exempt from overlap guard.
+function qaRunOrderTotalBestWinsFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'OrdTotBest', 20, { price: 250 });
+  var steps = [], promos = [], caught = null, output = null;
+  try {
+    var big = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'OrdTotBig', {
+      discount_type: 'fixed', discount_value: 100, target_type: 'all', target: [],
+      application_mode: 'conditional', discount_scope: 'order_total',
+      condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 100, calculation_base: 'after_discount_before_shipping' }
+    });
+    promos.push(big.promotion_id);
+    var small = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'OrdTotSmall', {
+      discount_type: 'fixed', discount_value: 50, target_type: 'all', target: [],
+      application_mode: 'conditional', discount_scope: 'order_total',
+      condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 100, calculation_base: 'after_discount_before_shipping' }
+    });
+    promos.push(small.promotion_id);
+
+    // 2 × 250 = 500 ≥ 100 → both qualify; winner is the 100-baht promo.
+    var ok = qaPreviewPromo_([qaCartItem_(fx.product.id, 2, {})]);
+    qaAssert_(!!ok.order_discount && Number(ok.order_discount.amount) === 100, 'ส่วนลดที่มากกว่า (100) ต้องชนะ', ok);
+    qaAssert_(String(ok.order_discount.promotion.promotion_id) === String(big.promotion_id), 'โปรที่ชนะต้องเป็นตัวที่ลดมากกว่า', ok);
+    var eBig = qaPromoEligibleEntry_(ok, big.promotion_id);
+    var eSmall = qaPromoEligibleEntry_(ok, small.promotion_id);
+    qaAssert_(eBig && eBig.applied === true, 'โปรที่ชนะต้อง applied=true', eBig);
+    qaAssert_(eSmall && eSmall.applied === false, 'โปรที่แพ้ราคาต้อง applied=false (qualified but outpriced)', eSmall);
+    qaSubmitAndAssertMatchesPreview_(fx, 'OrdTotBest', [qaCartItem_(fx.product.id, 2, {})], ok);
+    qaStep_(steps, 'ตรวจโปรลดท้ายบิลสองตัว เลือกตัวที่คุ้มสุด', 'ok', { winner: big.promotion_id });
+    output = { steps: steps };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  promos.forEach(function(pid){ try { qaCall_('deletePromotionRpc', [fx.token, pid]); } catch(_){} });
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// A DIRECT promo can never be order-total: createPromotionRpc must reject it. A conditional
+// order-total promo can be switched to direct only when the scope is also reset to item.
+function qaRunOrderTotalDirectRejectedFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'OrdTotDirectRej', 5, { price: 250 });
+  var steps = [], promos = [], caught = null, output = null;
+  try {
+    // Direct + order_total → rejected (application_mode omitted defaults to direct).
+    var badPayload = {
+      name: 'QA OrdTot DirectReject ' + fx.stamp, description: 'x',
+      discount_type: 'fixed', discount_value: 60, target_type: 'all', target: [],
+      starts_at: qaPastIso_(60000), no_end_date: true, enabled: true,
+      discount_scope: 'order_total'
+    };
+    var rej = qaCall_('createPromotionRpc', [fx.token, badPayload]);
+    qaAssert_(rej && rej.ok === false, 'โปรแบบ direct + ลดท้ายบิล ต้องถูกปฏิเสธ', rej);
+    qaStep_(steps, 'ปฏิเสธ direct + order_total', 'ok', rej);
+
+    // Explicit direct + order_total → also rejected.
+    badPayload.application_mode = 'direct';
+    var rej2 = qaCall_('createPromotionRpc', [fx.token, badPayload]);
+    qaAssert_(rej2 && rej2.ok === false, 'ระบุ application_mode=direct + order_total ต้องถูกปฏิเสธ', rej2);
+
+    // Valid conditional order-total can be created, then switched to direct with scope reset.
+    var good = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'OrdTotSwitch', {
+      discount_type: 'fixed', discount_value: 60, target_type: 'all', target: [],
+      application_mode: 'conditional', discount_scope: 'order_total',
+      condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 100, calculation_base: 'after_discount_before_shipping' }
+    });
+    promos.push(good.promotion_id);
+    var switched = qaCall_('updatePromotionRpc', [fx.token, good.promotion_id, { application_mode: 'direct', discount_scope: 'item' }]);
+    qaAssertOk_(switched);
+    var reread = qaCall_('getPromotionRpc', [fx.token, good.promotion_id]);
+    qaAssertOk_(reread);
+    qaAssert_(reread.promotion.discount_scope === 'item', 'สลับเป็น direct แล้ว scope ต้องเป็น item', reread);
+    qaStep_(steps, 'สลับ conditional order-total → direct item สำเร็จ', 'ok', reread.promotion);
+    output = { steps: steps };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  promos.forEach(function(pid){ try { qaCall_('deletePromotionRpc', [fx.token, pid]); } catch(_){} });
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Create item-scope, edit to order-total, reload: discount_scope persists and targeting is
+// cleared to whole-store. Verifies create/edit/persisted-reload consistency.
+function qaRunOrderTotalEditReloadFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'OrdTotReload', 5, { price: 250 });
+  var steps = [], promos = [], caught = null, output = null;
+  try {
+    // Start as an item-scoped conditional promo targeting the product.
+    var promo = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'OrdTotReload', {
+      discount_type: 'fixed', discount_value: 30, target_type: 'product', target: [{ product_id: fx.product.id }],
+      application_mode: 'conditional', discount_scope: 'item',
+      condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 100, calculation_base: 'after_discount_before_shipping' }
+    });
+    promos.push(promo.promotion_id);
+    var r1 = qaCall_('getPromotionRpc', [fx.token, promo.promotion_id]);
+    qaAssertOk_(r1);
+    qaAssert_(r1.promotion.discount_scope === 'item', 'เริ่มต้น scope ต้องเป็น item', r1);
+
+    // Switch to order-total; backend forces target_type=all, target=[].
+    var upd = qaCall_('updatePromotionRpc', [fx.token, promo.promotion_id, { discount_scope: 'order_total' }]);
+    qaAssertOk_(upd);
+    var r2 = qaCall_('getPromotionRpc', [fx.token, promo.promotion_id]);
+    qaAssertOk_(r2);
+    qaAssert_(r2.promotion.discount_scope === 'order_total', 'หลังแก้ scope ต้องเป็น order_total', r2);
+    qaAssert_(r2.promotion.target_type === 'all', 'ลดท้ายบิลต้องบังคับ target_type=all', r2);
+    qaAssert_((r2.promotion.target || []).length === 0, 'ลดท้ายบิลต้องล้าง target', r2);
+
+    // Confirm it now behaves as an order-total discount in preview.
+    var prev = qaPreviewPromo_([qaCartItem_(fx.product.id, 1, {})]);
+    qaAssert_(!!prev.order_discount && Number(prev.order_discount.amount) === 30, 'หลัง reload ต้องทำงานเป็นส่วนลดท้ายบิล 30', prev);
+    qaStep_(steps, 'ตรวจ create/edit/reload ของ scope order-total', 'ok', r2.promotion);
+    output = { steps: steps };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  promos.forEach(function(pid){ try { qaCall_('deletePromotionRpc', [fx.token, pid]); } catch(_){} });
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Regression: an order-total (conditional) discount must NOT change the gift min_subtotal
+// basis (subtotal_after_direct). Gift eligibility stays independent of the whole-order discount.
+function qaRunGiftIgnoresOrderTotalDiscountFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'GiftOrdTot');
+  var steps = [], caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'GiftOrdTot', 10, { price: 1000 });
+    fx.product_ids.push(product.id);
+
+    // Order-total promo: qualifies at subtotal >= 500, deducts 600 from the whole order.
+    var promo = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'GiftOrdTot', {
+      discount_type: 'fixed', discount_value: 600, target_type: 'all', target: [],
+      application_mode: 'conditional', discount_scope: 'order_total',
+      condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 500, calculation_base: 'after_discount_before_shipping' }
+    });
+    fx.promotion_ids.push(promo.promotion_id);
+
+    // Gift rule min_subtotal 900. Direct-only base for qty=1 is 1000 → eligible, even though
+    // the order-total discount would bring the paid subtotal to 400.
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'GiftOrdTot', { stock: 5 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'GiftOrdTot', gift.gift_id, {
+      condition_type: 'min_subtotal', condition_json: { min_subtotal: 900 }
+    });
+    fx.rule_ids.push(rule.rule_id);
+
+    // Promo preview: order discount applies (600), per-line price unchanged (1000).
+    var promoPrev = qaCall_('previewPromotionEligibilityRpc', [{ items: [qaCartItem_(product.id, 1, {})] }]);
+    qaAssertOk_(promoPrev);
+    qaAssert_(!!promoPrev.order_discount && Number(promoPrev.order_discount.amount) === 600, 'ส่วนลดท้ายบิลต้องเป็น 600', promoPrev);
+    qaAssert_(Number(qaPromoPreviewLine_(promoPrev, product.id, '').unit_final_price) === 1000, 'ลดท้ายบิลต้องไม่เปลี่ยนราคาต่อชิ้น', promoPrev);
+
+    // Gift preview: basis stays 1000 (direct-only), gift still eligible.
+    var giftPrev = qaCall_('previewGiftEligibilityRpc', [{ items: [{ product_id: product.id, qty: 1, selected_variants: {} }] }]);
+    qaAssertOk_(giftPrev);
+    qaAssert_(Number(giftPrev.subtotal_after_promo) === 1000, 'ฐานของแถมต้องไม่ถูกลดด้วยส่วนลดท้ายบิล (คงเป็น 1000)', giftPrev);
+    qaAssert_(qaHasEligibleRule_(giftPrev, rule.rule_id), 'ของแถมต้องยังผ่านเงื่อนไขแม้มีส่วนลดท้ายบิล', giftPrev);
+
+    // Submit: order total nets the 600 discount and the gift is still attached.
+    var payload = qaBuildOrderPayloadForProduct_('qa-gift-ordtot', fx.stamp, 'Buyer', product.id, fx.shipping, {
+      items: [{ product_id: product.id, qty: 1, selected_variants: {} }]
+    });
+    var res = qaSubmitAndTrack_(payload, fx.order_ids);
+    qaAssertOk_(res);
+    var record = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]);
+    qaAssert_((record.order_discount && Number(record.order_discount.amount)) === 600, 'ออร์เดอร์ต้องบันทึกส่วนลดท้ายบิล 600', record);
+    qaAssert_(Number(record.total) === (1000 - 600) + Number(record.shipping_fee || 0), 'ยอดรวมต้อง = (1000-600)+ค่าส่ง', record);
+    qaAssert_(qaActiveGiftLines_(record, gift.gift_id).length === 1, 'ของแถมต้องยังถูกแนบในออร์เดอร์', record.items);
+    qaStep_(steps, 'ตรวจ gift ไม่ถูกกระทบด้วยส่วนลดท้ายบิล', 'ok', { order_discount: record.order_discount });
+    output = { steps: steps, order_id: record.order_id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// required_products, match_mode 'all': buy A (condition) unlocks a discount on B (target).
+// Condition product differs from discount target. Also verifies incomplete qty + duplicate
+// cart lines summing.
+function qaRunConditionalRequiredProductsAllFlow_(ctx) {
+  var token = ctx.options.adminToken, stamp = qaStamp_(), steps = [], promos = [], productIds = [], orderIds = [];
+  var shipping = qaCreateTempShippingMethod_(token, stamp, 'CondReqProd');
+  var caught = null, output = null;
+  var fx = { token: token, stamp: stamp, shipping: shipping, order_ids: orderIds };
+  try {
+    var A = qaCreateOrderQaProduct_(token, shipping, stamp, 'CondBuyA', 20, { price: 500 });   // condition product
+    var B = qaCreateOrderQaProduct_(token, shipping, stamp, 'CondGetB', 20, { price: 1000 });  // discount target
+    productIds = [A.id, B.id];
+    qaStep_(steps, 'สร้างสินค้า A(เงื่อนไข) B(เป้าหมาย)', 'ok', { A: A.id, B: B.id });
+    var promo = qaCreatePromotion_(token, B.id, stamp, 'ReqProdAll', {
+      discount_type: 'fixed', discount_value: 300, target_type: 'product', target: [{ product_id: B.id }],
+      application_mode: 'conditional', condition_type: 'required_products',
+      condition_json: { match_mode: 'all', required_products: [{ product_id: A.id, min_qty: 2 }] }
+    });
+    promos.push(promo.promotion_id);
+
+    // Only B, no A: not eligible, B not discounted.
+    var noA = qaPreviewPromo_([qaCartItem_(B.id, 1, {})]);
+    qaAssert_(Number(qaPromoPreviewLine_(noA, B.id, '').unit_final_price) === 1000, 'ยังไม่ซื้อ A ต้องไม่ลดราคา B', noA);
+    qaAssert_(qaPromoNearHas_(noA, promo.promotion_id), 'ควรแสดงเป็นใกล้ได้รับส่วนลด', noA);
+
+    // A qty 1 (need 2) + B: incomplete condition -> not eligible.
+    var incomplete = qaPreviewPromo_([qaCartItem_(A.id, 1, {}), qaCartItem_(B.id, 1, {})]);
+    qaAssert_(Number(qaPromoPreviewLine_(incomplete, B.id, '').unit_final_price) === 1000, 'ซื้อ A ไม่ครบจำนวนต้องไม่ลดราคา B', incomplete);
+
+    // A qty 2 + B: eligible, B -300 -> 700. A stays 500.
+    var okCart = [qaCartItem_(A.id, 2, {}), qaCartItem_(B.id, 1, {})];
+    var okPrev = qaPreviewPromo_(okCart);
+    qaAssert_(qaPromoEligibleHas_(okPrev, promo.promotion_id), 'ซื้อ A ครบต้องปลดล็อกส่วนลด B', okPrev);
+    qaAssert_(Number(qaPromoPreviewLine_(okPrev, B.id, '').unit_final_price) === 700, 'B ต้องลดเหลือ 700', okPrev);
+    qaAssert_(Number(qaPromoPreviewLine_(okPrev, A.id, '').unit_final_price) === 500, 'A(เงื่อนไข) ต้องไม่ถูกลดราคา', okPrev);
+    qaSubmitAndAssertMatchesPreview_(fx, 'ReqOk', okCart, okPrev);
+
+    // Duplicate cart lines summing: two A lines qty 1 each (=2) + B -> eligible.
+    var dupCart = [qaCartItem_(A.id, 1, {}), qaCartItem_(A.id, 1, {}), qaCartItem_(B.id, 1, {})];
+    var dupPrev = qaPreviewPromo_(dupCart);
+    qaAssert_(qaPromoEligibleHas_(dupPrev, promo.promotion_id), 'รายการ A ซ้ำต้องนับรวมกัน', dupPrev);
+    qaAssert_(Number(qaPromoPreviewLine_(dupPrev, B.id, '').unit_final_price) === 700, 'B ต้องลดเหลือ 700 (นับ A ซ้ำ)', dupPrev);
+
+    output = { steps: steps, promotion_id: promo.promotion_id, product_a: A.id, product_b: B.id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupOrdersProductsShipping_(token, orderIds, productIds, shipping);
+  (promos).forEach(function(pid){ try { qaCall_('deletePromotionRpc', [token, pid]); } catch(_){} });
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// required_products, match_mode 'any': satisfying either condition product qualifies.
+function qaRunConditionalRequiredProductsAnyFlow_(ctx) {
+  var token = ctx.options.adminToken, stamp = qaStamp_(), steps = [], promos = [], productIds = [], orderIds = [];
+  var shipping = qaCreateTempShippingMethod_(token, stamp, 'CondReqAny');
+  var caught = null, output = null;
+  var fx = { token: token, stamp: stamp, shipping: shipping, order_ids: orderIds };
+  try {
+    var A1 = qaCreateOrderQaProduct_(token, shipping, stamp, 'AnyA1', 20, { price: 500 });
+    var A2 = qaCreateOrderQaProduct_(token, shipping, stamp, 'AnyA2', 20, { price: 500 });
+    var T  = qaCreateOrderQaProduct_(token, shipping, stamp, 'AnyTarget', 20, { price: 1000 });
+    productIds = [A1.id, A2.id, T.id];
+    var promo = qaCreatePromotion_(token, T.id, stamp, 'ReqProdAny', {
+      discount_type: 'percent', discount_value: 10, target_type: 'product', target: [{ product_id: T.id }],
+      application_mode: 'conditional', condition_type: 'required_products',
+      condition_json: { match_mode: 'any', required_products: [{ product_id: A1.id, min_qty: 1 }, { product_id: A2.id, min_qty: 1 }] }
+    });
+    promos.push(promo.promotion_id);
+
+    // Neither A1 nor A2: not eligible.
+    var none = qaPreviewPromo_([qaCartItem_(T.id, 1, {})]);
+    qaAssert_(Number(qaPromoPreviewLine_(none, T.id, '').unit_final_price) === 1000, 'ไม่มีสินค้าเงื่อนไขต้องไม่ลดราคา', none);
+
+    // Only A2 present: ANY qualifies, T -10% -> 900.
+    var withA2 = [qaCartItem_(A2.id, 1, {}), qaCartItem_(T.id, 1, {})];
+    var prev = qaPreviewPromo_(withA2);
+    qaAssert_(qaPromoEligibleHas_(prev, promo.promotion_id), 'ANY: มี A2 อย่างเดียวต้องผ่านเงื่อนไข', prev);
+    qaAssert_(Number(qaPromoPreviewLine_(prev, T.id, '').unit_final_price) === 900, 'T ต้องลด 10% เหลือ 900', prev);
+    qaSubmitAndAssertMatchesPreview_(fx, 'AnyOk', withA2, prev);
+
+    output = { steps: steps, promotion_id: promo.promotion_id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupOrdersProductsShipping_(token, orderIds, productIds, shipping);
+  (promos).forEach(function(pid){ try { qaCall_('deletePromotionRpc', [token, pid]); } catch(_){} });
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Missing match_mode must normalize to 'all' (create then read back + eligibility check).
+function qaRunConditionalMissingMatchModeFlow_(ctx) {
+  var token = ctx.options.adminToken, stamp = qaStamp_(), steps = [], promos = [], productIds = [];
+  var shipping = qaCreateTempShippingMethod_(token, stamp, 'CondNoMM');
+  var caught = null, output = null;
+  try {
+    var A = qaCreateOrderQaProduct_(token, shipping, stamp, 'NoMMA', 20, { price: 500 });
+    var B = qaCreateOrderQaProduct_(token, shipping, stamp, 'NoMMB', 20, { price: 500 });
+    var T = qaCreateOrderQaProduct_(token, shipping, stamp, 'NoMMT', 20, { price: 1000 });
+    productIds = [A.id, B.id, T.id];
+    // Note: condition_json omits match_mode entirely.
+    var promo = qaCreatePromotion_(token, T.id, stamp, 'NoMM', {
+      discount_type: 'fixed', discount_value: 100, target_type: 'product', target: [{ product_id: T.id }],
+      application_mode: 'conditional', condition_type: 'required_products',
+      condition_json: { required_products: [{ product_id: A.id, min_qty: 1 }, { product_id: B.id, min_qty: 1 }] }
+    });
+    promos.push(promo.promotion_id);
+    var got = qaCall_('getPromotionRpc', [token, promo.promotion_id]);
+    qaAssertOk_(got);
+    qaAssert_(got.promotion && got.promotion.condition_json && got.promotion.condition_json.match_mode === 'all',
+      'match_mode ที่ขาดต้อง normalize เป็น all', got);
+    qaStep_(steps, 'ตรวจ normalize match_mode=all', 'ok', got.promotion.condition_json);
+
+    // Only A present (all requires A AND B): not eligible.
+    var onlyA = qaPreviewPromo_([qaCartItem_(A.id, 1, {}), qaCartItem_(T.id, 1, {})]);
+    qaAssert_(Number(qaPromoPreviewLine_(onlyA, T.id, '').unit_final_price) === 1000, 'ALL: มีแค่ A ต้องไม่ลดราคา', onlyA);
+    // Both A and B present: eligible.
+    var both = qaPreviewPromo_([qaCartItem_(A.id, 1, {}), qaCartItem_(B.id, 1, {}), qaCartItem_(T.id, 1, {})]);
+    qaAssert_(Number(qaPromoPreviewLine_(both, T.id, '').unit_final_price) === 900, 'ALL: มีทั้ง A และ B ต้องลดราคา', both);
+
+    output = { steps: steps, promotion_id: promo.promotion_id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupPromosProductsShipping_(token, promos, productIds, shipping);
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// required_variants: correct variant qualifies; wrong variant excluded.
+function qaRunConditionalRequiredVariantsFlow_(ctx) {
+  var variants = [{ name: 'Size', options: [{ label: 'S', price: 500 }, { label: 'L', price: 800 }] }];
+  var token = ctx.options.adminToken, stamp = qaStamp_(), steps = [], promos = [], productIds = [], orderIds = [];
+  var shipping = qaCreateTempShippingMethod_(token, stamp, 'CondReqVar');
+  var caught = null, output = null;
+  var fx = { token: token, stamp: stamp, shipping: shipping, order_ids: orderIds };
+  try {
+    var A = qaCreateOrderQaProduct_(token, shipping, stamp, 'VarCondA', 20, { price: 500, variants: variants });
+    var T = qaCreateOrderQaProduct_(token, shipping, stamp, 'VarTarget', 20, { price: 1000 });
+    productIds = [A.id, T.id];
+    var vkL = 'Size=L';
+    var promo = qaCreatePromotion_(token, T.id, stamp, 'ReqVar', {
+      discount_type: 'fixed', discount_value: 200, target_type: 'product', target: [{ product_id: T.id }],
+      application_mode: 'conditional', condition_type: 'required_variants',
+      condition_json: { match_mode: 'all', required_variants: [{ product_id: A.id, variant_key: vkL, min_qty: 1 }] }
+    });
+    promos.push(promo.promotion_id);
+
+    // Wrong variant (S): not eligible.
+    var wrong = qaPreviewPromo_([qaCartItem_(A.id, 1, { Size: 'S' }), qaCartItem_(T.id, 1, {})]);
+    qaAssert_(Number(qaPromoPreviewLine_(wrong, T.id, '').unit_final_price) === 1000, 'variant ผิดต้องไม่ปลดล็อกส่วนลด', wrong);
+    // Correct variant (L): eligible, T -200 -> 800.
+    var rightCart = [qaCartItem_(A.id, 1, { Size: 'L' }), qaCartItem_(T.id, 1, {})];
+    var right = qaPreviewPromo_(rightCart);
+    qaAssert_(qaPromoEligibleHas_(right, promo.promotion_id), 'variant ถูกต้องต้องปลดล็อกส่วนลด', right);
+    qaAssert_(Number(qaPromoPreviewLine_(right, T.id, '').unit_final_price) === 800, 'T ต้องลดเหลือ 800', right);
+    qaSubmitAndAssertMatchesPreview_(fx, 'VarOk', rightCart, right);
+
+    output = { steps: steps, promotion_id: promo.promotion_id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupOrdersProductsShipping_(token, orderIds, productIds, shipping);
+  (promos).forEach(function(pid){ try { qaCall_('deletePromotionRpc', [token, pid]); } catch(_){} });
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Duplicate conditions must be rejected by createPromotionRpc (products + variants).
+function qaRunConditionalDuplicateRejectedFlow_(ctx) {
+  var token = ctx.options.adminToken, stamp = qaStamp_(), steps = [], productIds = [];
+  var shipping = qaCreateTempShippingMethod_(token, stamp, 'CondDup');
+  var caught = null, output = null;
+  try {
+    var A = qaCreateOrderQaProduct_(token, shipping, stamp, 'DupA', 5, { price: 500, variants: [{ name:'Size', options:[{label:'S', price:500}] }] });
+    productIds = [A.id];
+    var dupProd = qaCall_('createPromotionRpc', [token, {
+      name: 'QA Dup Prod ' + stamp, discount_type:'fixed', discount_value:100,
+      target_type:'all', target:[], starts_at: qaPastIso_(60000), no_end_date:true, enabled:true,
+      application_mode:'conditional', condition_type:'required_products',
+      condition_json:{ match_mode:'all', required_products:[{ product_id:A.id, min_qty:1 }, { product_id:A.id, min_qty:2 }] }
+    }]);
+    qaAssert_(dupProd && dupProd.ok === false, 'สินค้าเงื่อนไขซ้ำต้องถูกปฏิเสธ', dupProd);
+    qaStep_(steps, 'ปฏิเสธสินค้าเงื่อนไขซ้ำ', 'ok', dupProd);
+
+    var dupVar = qaCall_('createPromotionRpc', [token, {
+      name: 'QA Dup Var ' + stamp, discount_type:'fixed', discount_value:100,
+      target_type:'all', target:[], starts_at: qaPastIso_(60000), no_end_date:true, enabled:true,
+      application_mode:'conditional', condition_type:'required_variants',
+      condition_json:{ match_mode:'all', required_variants:[{ product_id:A.id, variant_key:'Size=S', min_qty:1 }, { product_id:A.id, variant_key:'Size=S', min_qty:2 }] }
+    }]);
+    qaAssert_(dupVar && dupVar.ok === false, 'ตัวเลือกเงื่อนไขซ้ำต้องถูกปฏิเสธ', dupVar);
+    qaStep_(steps, 'ปฏิเสธตัวเลือกเงื่อนไขซ้ำ', 'ok', dupVar);
+    output = { steps: steps, dup_prod: dupProd, dup_var: dupVar };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupProductAndShipping_(token, productIds[0], shipping);
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Disabled / scheduled / expired conditional promos must not apply even when the
+// condition is met.
+function qaRunConditionalInactiveNotAppliedFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'CondInactive', 20, { price: 1000 });
+  var steps = [], promos = [], caught = null, output = null;
+  try {
+    var cj = { min_subtotal: 500, calculation_base: 'after_discount_before_shipping' };
+    var disabled = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'Disabled', {
+      discount_type:'fixed', discount_value:100, target_type:'all', target:[], enabled:false,
+      application_mode:'conditional', condition_type:'min_subtotal', condition_json: cj });
+    var scheduled = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'Scheduled', {
+      discount_type:'fixed', discount_value:100, target_type:'all', target:[],
+      starts_at: qaFutureIso_(3600000), no_end_date:true,
+      application_mode:'conditional', condition_type:'min_subtotal', condition_json: cj });
+    var expired = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'Expired', {
+      discount_type:'fixed', discount_value:100, target_type:'all', target:[],
+      starts_at: qaPastIso_(7200000), ends_at: qaPastIso_(3600000), no_end_date:false,
+      application_mode:'conditional', condition_type:'min_subtotal', condition_json: cj });
+    promos.push(disabled.promotion_id, scheduled.promotion_id, expired.promotion_id);
+
+    // Condition (>=500) is easily met, but none of these should apply.
+    var prev = qaPreviewPromo_([qaCartItem_(fx.product.id, 1, {})]);
+    qaAssert_(Number(qaPromoPreviewLine_(prev, fx.product.id, '').unit_final_price) === 1000,
+      'โปรที่ปิด/ยังไม่เริ่ม/หมดอายุต้องไม่ลดราคา', prev);
+    qaAssert_(!qaPromoEligibleHas_(prev, disabled.promotion_id) && !qaPromoEligibleHas_(prev, scheduled.promotion_id) && !qaPromoEligibleHas_(prev, expired.promotion_id),
+      'โปรที่ไม่ active ต้องไม่อยู่ในรายการได้รับส่วนลด', prev);
+    qaStep_(steps, 'ตรวจโปรที่ไม่ active ไม่ถูกใช้', 'ok', prev);
+    output = { steps: steps };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupPromosProductsShipping_(fx.token, promos, [fx.product.id], fx.shipping);
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Priority/no-stacking: a direct product promo (-100) and a qualified conditional variant
+// promo (-300) on the same line -> the bigger discount wins (best-price policy), NOT stacked.
+// Also proves conditional promos are exempt from the overlap guard (both created on the
+// same product/time).
+function qaRunConditionalPriorityNoStackFlow_(ctx) {
+  var variants = [{ name: 'Size', options: [{ label: 'S', price: 1000 }, { label: 'L', price: 1000 }] }];
+  var token = ctx.options.adminToken, stamp = qaStamp_(), steps = [], promos = [], productIds = [], orderIds = [];
+  var shipping = qaCreateTempShippingMethod_(token, stamp, 'CondPrio');
+  var caught = null, output = null;
+  var fx = { token: token, stamp: stamp, shipping: shipping, order_ids: orderIds };
+  try {
+    var P = qaCreateOrderQaProduct_(token, shipping, stamp, 'PrioP', 20, { price: 1000, variants: variants });
+    productIds = [P.id];
+    // Direct product-level promo: -100 on the whole product.
+    var direct = qaCreatePromotion_(token, P.id, stamp, 'DirectProd', {
+      discount_type:'fixed', discount_value:100, target_type:'product', target:[{ product_id:P.id }] });
+    promos.push(direct.promotion_id);
+    // Conditional variant-level promo on Size=L: -300, condition = buy >=1 of Size=L.
+    // Overlaps the direct promo's target — must be ACCEPTED because it is conditional.
+    var cond = qaCreatePromotion_(token, P.id, stamp, 'CondVar', {
+      discount_type:'fixed', discount_value:300, target_type:'variant', target:[{ product_id:P.id, variant_key:'Size=L' }],
+      application_mode:'conditional', condition_type:'required_variants',
+      condition_json:{ match_mode:'all', required_variants:[{ product_id:P.id, variant_key:'Size=L', min_qty:1 }] } });
+    qaAssert_(!!cond.promotion_id, 'โปรเงื่อนไขที่ทับ target โปรตรงต้องสร้างได้ (ยกเว้น overlap guard)', cond);
+    promos.push(cond.promotion_id);
+    qaStep_(steps, 'สร้างโปรตรง + โปรเงื่อนไขบนสินค้าเดียวกัน', 'ok', { direct: direct.promotion_id, cond: cond.promotion_id });
+
+    // Cart Size=L: conditional variant promo qualifies and gives the lower price -> -300 -> 700
+    // (NOT stacked with direct -100; would be 600 if stacked).
+    var cartL = [qaCartItem_(P.id, 1, { Size: 'L' })];
+    var prevL = qaPreviewPromo_(cartL);
+    var lineL = qaPromoPreviewLine_(prevL, P.id, 'Size=L');
+    qaAssert_(Number(lineL.unit_final_price) === 700, 'variant เงื่อนไขต้องชนะโดยไม่ซ้อนกับโปรตรง (คาด 700)', prevL);
+    qaAssert_(lineL.promotion && String(lineL.promotion.promotion_id) === String(cond.promotion_id), 'ต้องใช้โปรเงื่อนไข variant', prevL);
+    qaSubmitAndAssertMatchesPreview_(fx, 'PrioL', cartL, prevL);
+
+    // Cart Size=S: conditional (needs L) does NOT qualify -> falls back to direct -100 -> 900.
+    var prevS = qaPreviewPromo_([qaCartItem_(P.id, 1, { Size: 'S' })]);
+    var lineS = qaPromoPreviewLine_(prevS, P.id, 'Size=S');
+    qaAssert_(Number(lineS.unit_final_price) === 900, 'Size=S ต้องใช้โปรตรง -100 -> 900', prevS);
+    qaAssert_(lineS.promotion && String(lineS.promotion.promotion_id) === String(direct.promotion_id), 'Size=S ต้องใช้โปรตรง', prevS);
+
+    output = { steps: steps, direct: direct.promotion_id, cond: cond.promotion_id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupOrdersProductsShipping_(token, orderIds, productIds, shipping);
+  (promos).forEach(function(pid){ try { qaCall_('deletePromotionRpc', [token, pid]); } catch(_){} });
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Legacy/direct regression + zero-floor: a legacy unconditional promo still applies, and a
+// fixed discount larger than the price floors the unit price at 0.
+function qaRunConditionalLegacyAndZeroFloorFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'CondLegacy', 20, { price: 400 });
+  var steps = [], promos = [], caught = null, output = null;
+  try {
+    // Direct promo created WITHOUT any application_mode/condition — must behave as before.
+    var legacy = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'Legacy', { discount_type:'fixed', discount_value:500, target_type:'product', target:[{ product_id: fx.product.id }] });
+    promos.push(legacy.promotion_id);
+    var got = qaCall_('getPromotionRpc', [fx.token, legacy.promotion_id]);
+    qaAssertOk_(got);
+    qaAssert_(got.promotion.application_mode === 'direct', 'โปรที่ไม่ระบุโหมดต้องเป็น direct', got.promotion);
+    var rec = qaGetProductRecord_(fx.product.id);
+    qaAssert_(Number(rec.final_price) === 0 && Number(rec.discount_amount) === 400, 'ส่วนลดเกินราคาต้อง floor ที่ 0', rec);
+    qaStep_(steps, 'legacy direct + zero floor', 'ok', { promotion: got.promotion, record: rec });
+
+    // Order applies it too (direct discount baked into snapshot).
+    var prev = qaPreviewPromo_([qaCartItem_(fx.product.id, 1, {})]);
+    qaAssert_(Number(qaPromoPreviewLine_(prev, fx.product.id, '').unit_final_price) === 0, 'ราคาหลังลดต้องเป็น 0', prev);
+    output = { steps: steps, promotion_id: legacy.promotion_id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupPromosProductsShipping_(fx.token, promos, [fx.product.id], fx.shipping);
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Immutable order snapshot: submit a qualifying conditional order, then delete the promo;
+// the persisted order line keeps its discounted price + promotion snapshot.
+function qaRunConditionalOrderSnapshotImmutableFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'CondSnap', 20, { price: 1000 });
+  var steps = [], promoId = '', caught = null, output = null;
+  try {
+    var promo = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'CondSnap', {
+      discount_type:'fixed', discount_value:150, target_type:'all', target:[],
+      application_mode:'conditional', condition_type:'min_subtotal',
+      condition_json:{ min_subtotal: 1000, calculation_base:'after_discount_before_shipping' } });
+    promoId = promo.promotion_id;
+    var cart = [qaCartItem_(fx.product.id, 1, {})];
+    var prev = qaPreviewPromo_(cart);
+    qaAssert_(Number(qaPromoPreviewLine_(prev, fx.product.id, '').unit_final_price) === 850, 'เงื่อนไขครบต้องลดเหลือ 850', prev);
+    var submitted = qaSubmitAndAssertMatchesPreview_(fx, 'SnapBuyer', cart, prev);
+
+    // Delete the promotion; the order snapshot must not change.
+    qaAssertOk_(qaCall_('deletePromotionRpc', [fx.token, promoId]));
+    promoId = '';
+    var record = qaReadOrder_(fx.token, submitted.order_id);
+    var line = qaFindProductLine_(record, fx.product.id);
+    qaAssert_(line && line.promotion && String(line.promotion.promotion_id) === String(promo.promotion_id), 'ออร์เดอร์ต้องเก็บ snapshot โปรเงื่อนไขไว้', line);
+    qaAssert_(Number(line.unit_final_price) === 850, 'ราคาในออร์เดอร์ต้องไม่เปลี่ยนหลังลบโปร', line);
+    qaStep_(steps, 'ตรวจ snapshot ไม่เปลี่ยนหลังลบโปร', 'ok', line);
+    output = { steps: steps, order_id: submitted.order_id, promotion_id: promo.promotion_id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  if (promoId) { try { qaCall_('deletePromotionRpc', [fx.token, promoId]); } catch(_){} }
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// required_variants, match_mode 'any': satisfying either listed variant of the condition
+// product qualifies. Two entries on the same product (Size=S, Size=L); target a separate
+// product T so the condition product's own price is never touched by the discount.
+function qaRunConditionalRequiredVariantsAnyFlow_(ctx) {
+  var variants = [{ name: 'Size', options: [{ label: 'S', price: 500 }, { label: 'L', price: 500 }] }];
+  var token = ctx.options.adminToken, stamp = qaStamp_(), steps = [], promos = [], productIds = [], orderIds = [];
+  var shipping = qaCreateTempShippingMethod_(token, stamp, 'CondReqVarAny');
+  var caught = null, output = null;
+  var fx = { token: token, stamp: stamp, shipping: shipping, order_ids: orderIds };
+  try {
+    var A = qaCreateOrderQaProduct_(token, shipping, stamp, 'VarAnyA', 20, { price: 500, variants: variants });
+    var T = qaCreateOrderQaProduct_(token, shipping, stamp, 'VarAnyTarget', 20, { price: 1000 });
+    productIds = [A.id, T.id];
+    var promo = qaCreatePromotion_(token, T.id, stamp, 'ReqVarAny', {
+      discount_type: 'fixed', discount_value: 200, target_type: 'product', target: [{ product_id: T.id }],
+      application_mode: 'conditional', condition_type: 'required_variants',
+      condition_json: { match_mode: 'any', required_variants: [
+        { product_id: A.id, variant_key: 'Size=S', min_qty: 1 },
+        { product_id: A.id, variant_key: 'Size=L', min_qty: 1 }
+      ] }
+    });
+    promos.push(promo.promotion_id);
+
+    // Neither variant present: not eligible.
+    var none = qaPreviewPromo_([qaCartItem_(T.id, 1, {})]);
+    qaAssert_(Number(qaPromoPreviewLine_(none, T.id, '').unit_final_price) === 1000, 'ไม่มี variant เงื่อนไขต้องไม่ลดราคา', none);
+
+    // Only Size=S present: ANY qualifies, T -200 -> 800.
+    var withS = [qaCartItem_(A.id, 1, { Size: 'S' }), qaCartItem_(T.id, 1, {})];
+    var prevS = qaPreviewPromo_(withS);
+    qaAssert_(qaPromoEligibleHas_(prevS, promo.promotion_id), 'ANY: มี Size=S อย่างเดียวต้องผ่านเงื่อนไข', prevS);
+    qaAssert_(Number(qaPromoPreviewLine_(prevS, T.id, '').unit_final_price) === 800, 'T ต้องลดเหลือ 800 เมื่อมี Size=S', prevS);
+    qaSubmitAndAssertMatchesPreview_(fx, 'AnyVarS', withS, prevS);
+
+    // Only Size=L present: ANY also qualifies, T -200 -> 800.
+    var withL = [qaCartItem_(A.id, 1, { Size: 'L' }), qaCartItem_(T.id, 1, {})];
+    var prevL = qaPreviewPromo_(withL);
+    qaAssert_(qaPromoEligibleHas_(prevL, promo.promotion_id), 'ANY: มี Size=L อย่างเดียวต้องผ่านเงื่อนไข', prevL);
+    qaAssert_(Number(qaPromoPreviewLine_(prevL, T.id, '').unit_final_price) === 800, 'T ต้องลดเหลือ 800 เมื่อมี Size=L', prevL);
+
+    output = { steps: steps, promotion_id: promo.promotion_id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupOrdersProductsShipping_(token, orderIds, productIds, shipping);
+  (promos).forEach(function(pid){ try { qaCall_('deletePromotionRpc', [token, pid]); } catch(_){} });
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Two simultaneously-qualified conditional promotions targeting overlapping scopes on the
+// same product (product-level -100 and variant-level -300). Both are trivially satisfiable
+// at once — unlike promotions.conditional-priority-no-stack, which pits a conditional promo
+// against a DIRECT one, this exercises the best-price resolver
+// (resolveBestPromotionForLine_) between two CONDITIONAL promotions. Conditional promos are
+// exempt from the overlap guard, so both can be created targeting the same product.
+function qaRunConditionalTwoQualifiedCompetingFlow_(ctx) {
+  var variants = [{ name: 'Size', options: [{ label: 'S', price: 1000 }, { label: 'L', price: 1000 }] }];
+  var token = ctx.options.adminToken, stamp = qaStamp_(), steps = [], promos = [], productIds = [], orderIds = [];
+  var shipping = qaCreateTempShippingMethod_(token, stamp, 'CondTwoQual');
+  var caught = null, output = null;
+  var fx = { token: token, stamp: stamp, shipping: shipping, order_ids: orderIds };
+  try {
+    var P = qaCreateOrderQaProduct_(token, shipping, stamp, 'TwoQualP', 20, { price: 1000, variants: variants });
+    productIds = [P.id];
+    // Product-level conditional promo, trivially qualified (min_subtotal 100).
+    var prodPromo = qaCreatePromotion_(token, P.id, stamp, 'TwoQualProd', {
+      discount_type: 'fixed', discount_value: 100, target_type: 'product', target: [{ product_id: P.id }],
+      application_mode: 'conditional', condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 100, calculation_base: 'after_discount_before_shipping' } });
+    promos.push(prodPromo.promotion_id);
+    // Variant-level conditional promo on the same product (Size=L), also trivially qualified
+    // (min_subtotal 50) and overlapping the product-level promo's target/time window — allowed
+    // because both are conditional.
+    var varPromo = qaCreatePromotion_(token, P.id, stamp, 'TwoQualVar', {
+      discount_type: 'fixed', discount_value: 300, target_type: 'variant', target: [{ product_id: P.id, variant_key: 'Size=L' }],
+      application_mode: 'conditional', condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 50, calculation_base: 'after_discount_before_shipping' } });
+    qaAssert_(!!varPromo.promotion_id, 'โปรเงื่อนไข variant ที่ทับ target โปรเงื่อนไข product ต้องสร้างได้', varPromo);
+    promos.push(varPromo.promotion_id);
+    qaStep_(steps, 'สร้างโปรเงื่อนไข product + variant บนสินค้าเดียวกัน (ทั้งคู่ผ่านเงื่อนไข)', 'ok', { prodPromo: prodPromo.promotion_id, varPromo: varPromo.promotion_id });
+
+    // Both promos are qualified for Size=L; the bigger discount must win: -300 -> 700.
+    var cart = [qaCartItem_(P.id, 1, { Size: 'L' })];
+    var prev = qaPreviewPromo_(cart);
+    var line = qaPromoPreviewLine_(prev, P.id, 'Size=L');
+    qaAssert_(Number(line.unit_final_price) === 700, 'โปรที่ลดมากกว่า (variant -300) ต้องชนะระหว่างโปรเงื่อนไขสองตัว (คาด 700)', prev);
+    qaAssert_(line.promotion && String(line.promotion.promotion_id) === String(varPromo.promotion_id), 'ต้องใช้โปรเงื่อนไข variant ที่ให้ราคาต่ำสุด', prev);
+    qaSubmitAndAssertMatchesPreview_(fx, 'TwoQualWin', cart, prev);
+
+    // Disable the variant promo; the product-level conditional promo must now win: -100 -> 900.
+    qaAssertOk_(qaCall_('togglePromotionRpc', [token, varPromo.promotion_id, false]));
+    var prev2 = qaPreviewPromo_(cart);
+    var line2 = qaPromoPreviewLine_(prev2, P.id, 'Size=L');
+    qaAssert_(Number(line2.unit_final_price) === 900, 'หลังปิดโปร variant ต้องใช้โปรเงื่อนไข product แทน (คาด 900)', prev2);
+    qaAssert_(line2.promotion && String(line2.promotion.promotion_id) === String(prodPromo.promotion_id), 'ต้องใช้โปรเงื่อนไข product หลังปิดโปร variant', prev2);
+
+    output = { steps: steps, product_promo: prodPromo.promotion_id, variant_promo: varPromo.promotion_id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupOrdersProductsShipping_(token, orderIds, productIds, shipping);
+  (promos).forEach(function(pid){ try { qaCall_('deletePromotionRpc', [token, pid]); } catch(_){} });
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// A required_variants condition entry whose variant_key omits one of a multi-group
+// product's variant groups is not a real enumerable variant_key and must be rejected at
+// create time, not silently accepted as an always-false/always-true condition.
+function qaRunConditionalRequiredVariantsIncompleteKeyRejectedFlow_(ctx) {
+  var token = ctx.options.adminToken, stamp = qaStamp_(), steps = [], productIds = [];
+  var shipping = qaCreateTempShippingMethod_(token, stamp, 'CondIncompleteKey');
+  var caught = null, output = null;
+  try {
+    var A = qaCreateOrderQaProduct_(token, shipping, stamp, 'IncompleteKeyA', 5, {
+      price: 500,
+      variants: [
+        { name: 'Color', options: [{ label: 'Red', price: 500 }, { label: 'Blue', price: 500 }] },
+        { name: 'Size', options: [{ label: 'S', price: 500 }, { label: 'L', price: 500 }] }
+      ]
+    });
+    productIds = [A.id];
+    var res = qaCall_('createPromotionRpc', [token, {
+      name: 'QA Incomplete Key ' + stamp, discount_type: 'fixed', discount_value: 100,
+      target_type: 'all', target: [], starts_at: qaPastIso_(60000), no_end_date: true, enabled: true,
+      application_mode: 'conditional', condition_type: 'required_variants',
+      // Missing the 'Size=' portion of the canonical key — not a real enumerable variant_key.
+      condition_json: { match_mode: 'all', required_variants: [{ product_id: A.id, variant_key: 'Color=Red', min_qty: 1 }] }
+    }]);
+    qaAssert_(res && res.ok === false, 'variant_key ที่ไม่ครบทุกกลุ่มต้องถูกปฏิเสธ', res);
+    qaStep_(steps, 'ปฏิเสธ variant_key ที่ไม่ครบทุกกลุ่ม', 'ok', res);
+    output = { steps: steps, rejected: res };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupProductAndShipping_(token, productIds[0], shipping);
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+/* ===== Gift × conditional-promotion interaction ===== */
+// Gift min_subtotal is defined to use the subtotal AFTER DIRECT discounts only —
+// conditional-promotion discounts are deliberately excluded from that base (see
+// resolveCartPromotions_ / previewGiftEligibilityRpc). This is easy to regress silently
+// if someone later wires gifts to the final (conditional-inclusive) price, so it needs a
+// real behavior-based test, not just a design comment.
+function qaRunGiftMinSubtotalIgnoresConditionalPromotionFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'GiftCondPromo');
+  var steps = [], caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'GiftCondPromo', 10, { price: 1000 });
+    fx.product_ids.push(product.id);
+
+    // Conditional promo: qualifies once subtotal >= 500 (always true for qty>=1 @ 1000),
+    // discounts the whole cart by 600 -> final unit price 400.
+    var promo = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'GiftCondPromo', {
+      discount_type: 'fixed', discount_value: 600, target_type: 'all', target: [],
+      application_mode: 'conditional', condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 500, calculation_base: 'after_discount_before_shipping' }
+    });
+    fx.promotion_ids.push(promo.promotion_id);
+
+    // Gift rule: min_subtotal 900. Direct-only base for qty=1 is 1000 (no direct promo
+    // exists) -> should be eligible, even though the FINAL price after the conditional
+    // discount is only 400 (which would be < 900 if gifts used the final price instead).
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'GiftCondPromo', { stock: 5 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'GiftCondPromo', gift.gift_id, {
+      condition_type: 'min_subtotal', condition_json: { min_subtotal: 900 }
+    });
+    fx.rule_ids.push(rule.rule_id);
+    qaStep_(steps, 'สร้าง conditional promo + gift rule min_subtotal', 'ok', { promotion_id: promo.promotion_id, rule_id: rule.rule_id });
+
+    // Confirm the conditional promo itself is qualified and discounts to 400.
+    var promoPrev = qaCall_('previewPromotionEligibilityRpc', [{ items: [qaCartItem_(product.id, 1, {})] }]);
+    qaAssertOk_(promoPrev);
+    var promoLine = qaPromoPreviewLine_(promoPrev, product.id, '');
+    qaAssert_(Number(promoLine.unit_final_price) === 400, 'โปรเงื่อนไขต้องลดราคาเหลือ 400', promoPrev);
+
+    // Gift preview: subtotal_after_promo must be the DIRECT-only base (1000), not 400,
+    // and the gift rule must be eligible.
+    var giftPrev = qaCall_('previewGiftEligibilityRpc', [{ items: [{ product_id: product.id, qty: 1, selected_variants: {} }] }]);
+    qaAssertOk_(giftPrev);
+    qaAssert_(Number(giftPrev.subtotal_after_promo) === 1000, 'ฐานคำนวณของแถมต้องเป็นยอดหลัง direct discount เท่านั้น (1000) ไม่ใช่ราคาหลังลด conditional (400)', giftPrev);
+    qaAssert_(qaHasEligibleRule_(giftPrev, rule.rule_id), 'กฎของแถมควรผ่านเงื่อนไขแม้ราคาสุทธิหลังโปรเงื่อนไขจะต่ำกว่า min_subtotal', giftPrev);
+    qaStep_(steps, 'ตรวจ gift preview ใช้ฐาน direct-only', 'ok', { promo_final: promoLine.unit_final_price, gift_subtotal_after_promo: giftPrev.subtotal_after_promo });
+
+    // Submit: order total must reflect the conditional discount (400), and the gift line
+    // must still be attached (eligibility already decided independent of that discount).
+    var payload = qaBuildOrderPayloadForProduct_('qa-gift-cond-promo', fx.stamp, 'Buyer', product.id, fx.shipping, {
+      items: [{ product_id: product.id, qty: 1, selected_variants: {} }]
+    });
+    var res = qaSubmitAndTrack_(payload, fx.order_ids);
+    qaAssertOk_(res);
+    var record = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]);
+    var line = qaFindProductLine_(record, product.id);
+    qaAssert_(!!line && Number(line.unit_final_price) === 400, 'ราคาสินค้าในออร์เดอร์ต้องลดตามโปรเงื่อนไข', line);
+    var giftLines = qaActiveGiftLines_(record, gift.gift_id);
+    qaAssert_(giftLines.length === 1, 'ของแถมต้องถูกแนบแม้ราคาสุทธิหลังลดจะต่ำกว่า min_subtotal ของกฎของแถม', record.items);
+    qaStep_(steps, 'ตรวจออร์เดอร์: ราคาสินค้าลดตามโปร + ของแถมยังแนบอยู่', 'ok', { product_final: line.unit_final_price, gift_count: giftLines.length });
+
+    output = { steps: steps, promotion_id: promo.promotion_id, rule_id: rule.rule_id, order_id: record.order_id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// A conditional promotion excluded from a product does not block gift required_products
+// eligibility on that same product — the gift condition is evaluated on raw cart quantities,
+// independent of which promotion (if any) ultimately wins the line's price.
+function qaRunGiftRequiredProductsWithConditionalPromotionFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'GiftReqProdCondPromo');
+  var steps = [], caught = null, output = null;
+  try {
+    var A = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'GiftReqProdA', 10, { price: 500 });
+    fx.product_ids.push(A.id);
+
+    // Conditional promo on A: needs subtotal>=100 (trivially met), discounts A by 100.
+    var promo = qaCreatePromotion_(fx.token, A.id, fx.stamp, 'GiftReqProdCondPromo', {
+      discount_type: 'fixed', discount_value: 100, target_type: 'product', target: [{ product_id: A.id }],
+      application_mode: 'conditional', condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 100, calculation_base: 'after_discount_before_shipping' }
+    });
+    fx.promotion_ids.push(promo.promotion_id);
+
+    // Gift rule requires buying A qty>=2.
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'GiftReqProdCondPromo', { stock: 5 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'GiftReqProdCondPromo', gift.gift_id, {
+      condition_type: 'required_products', condition_json: { required_products: [{ product_id: A.id, min_qty: 2 }] }
+    });
+    fx.rule_ids.push(rule.rule_id);
+
+    // qty 1: gift not eligible (condition unmet), even though the conditional promo applies.
+    var one = qaCall_('previewGiftEligibilityRpc', [{ items: [{ product_id: A.id, qty: 1, selected_variants: {} }] }]);
+    qaAssertOk_(one);
+    qaAssert_(!qaHasEligibleRule_(one, rule.rule_id), 'ซื้อ A ไม่ครบ 2 ต้องไม่ได้ของแถม แม้โปรเงื่อนไขจะ apply', one);
+
+    // qty 2: gift eligible; product price still reflects the conditional discount.
+    var cart2 = [{ product_id: A.id, qty: 2, selected_variants: {} }];
+    var two = qaCall_('previewGiftEligibilityRpc', [{ items: cart2 }]);
+    qaAssertOk_(two);
+    qaAssert_(qaHasEligibleRule_(two, rule.rule_id), 'ซื้อ A ครบ 2 ต้องได้ของแถม', two);
+    var promoPrev = qaCall_('previewPromotionEligibilityRpc', [{ items: cart2 }]);
+    qaAssertOk_(promoPrev);
+    qaAssert_(Number(qaPromoPreviewLine_(promoPrev, A.id, '').unit_final_price) === 400, 'A ต้องยังคงลดราคาตามโปรเงื่อนไข (400)', promoPrev);
+
+    var payload = qaBuildOrderPayloadForProduct_('qa-gift-reqprod-condpromo', fx.stamp, 'Buyer', A.id, fx.shipping, { items: cart2 });
+    var res = qaSubmitAndTrack_(payload, fx.order_ids);
+    qaAssertOk_(res);
+    var record = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]);
+    var line = qaFindProductLine_(record, A.id);
+    qaAssert_(!!line && Number(line.unit_final_price) === 400, 'ราคาสินค้าในออร์เดอร์ต้องลดตามโปรเงื่อนไข', line);
+    qaAssert_(qaActiveGiftLines_(record, gift.gift_id).length === 1, 'ของแถมต้องถูกแนบเมื่อซื้อ A ครบ 2', record.items);
+    qaStep_(steps, 'ตรวจ gift required_products ทำงานถูกต้องร่วมกับโปรเงื่อนไข', 'ok', { product_final: line.unit_final_price });
+
+    output = { steps: steps, promotion_id: promo.promotion_id, rule_id: rule.rule_id };
+  } catch (err) { caught = err; qaStep_(steps, 'error', 'failed', { error: String(err && err.message || err) }); }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  qaStep_(steps, 'cleanup', cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps: steps, cleanup: cleanup }); throw caught; }
   output.cleanup = cleanup;
   return output;
 }
@@ -4854,6 +6742,113 @@ function qaVerifyConcurrentHeavyPromoGiftStockRaceRpc(token, fixture, submission
 }
 
 function qaCleanupConcurrentHeavyPromoGiftStockRaceRpc(token, fixture, submissions) {
+  if (!token) return { ok:false, error:'AUTH_REQUIRED' };
+  fixture = fixture || {};
+  return qaCleanupCommerceFixture_({
+    token:token,
+    order_ids:qaSubmittedOrderIdsFromEntries_(submissions || []),
+    promotion_ids:[fixture.promotion_id],
+    rule_ids:[fixture.rule_id],
+    gift_ids:[fixture.gift_id],
+    product_ids:[fixture.product_id],
+    shipping:fixture.shipping_fixture
+  });
+}
+
+function qaPrepareConcurrentRepeatGiftMultipliedStockRaceRpc(options) {
+  var ctx = qaCreateContext_(options || {});
+  qaRequireRealWrite_(ctx);
+  var token = ctx.options.adminToken;
+  var stamp = qaStamp_();
+  var shipping = qaCreateTempShippingMethod_(token, stamp, 'RepeatGiftMultipliedRace', { flat_rate:20 });
+  var product = qaCreateOrderQaProduct_(token, shipping, stamp, 'RepeatGiftMultipliedRace', 6, { price:1000 });
+  var promo = qaCreatePromotion_(token, product.id, stamp, 'RepeatGiftMultipliedRace', { discount_type:'fixed', discount_value:100 });
+  var gift = qaCreateGiftItem_(token, stamp, 'RepeatGiftMultipliedRace', { stock:4 });
+  var rule = qaCreateGiftRule_(token, stamp, 'RepeatGiftMultipliedRace', gift.gift_id, {
+    condition_type:'required_products',
+    condition_json:{ required_products:[{ product_id:product.id, min_qty:1 }] },
+    gift_qty:1,
+    repeat_mode:'per_threshold',
+    priority:9998
+  });
+  var buyers = ['A','B','C','D','E','F','G','H'];
+  return {
+    ok:true,
+    product_id:product.id,
+    promotion_id:promo.promotion_id,
+    gift_id:gift.gift_id,
+    rule_id:rule.rule_id,
+    shipping_fixture:shipping,
+    expected_success_count:3,
+    expected_stock_insufficient_count:5,
+    expected_gift_attached_orders:2,
+    expected_gift_attached_units:4,
+    expected_gift_skipped_count:1,
+    expected_total:1820,
+    jobs:buyers.map(function(buyer) {
+      return {
+        buyer:buyer,
+        delayMs:0,
+        payload:qaBuildOrderPayloadForProduct_('qa-repeat-gift-multiplied-race', stamp, buyer, product.id, shipping, { qty:2 })
+      };
+    })
+  };
+}
+
+function qaVerifyConcurrentRepeatGiftMultipliedStockRaceRpc(token, fixture, submissions) {
+  if (!token) return { ok:false, error:'AUTH_REQUIRED' };
+  fixture = fixture || {};
+  submissions = submissions || [];
+  var success = submissions.filter(function(e){ return e && e.ok; });
+  var stockFails = submissions.filter(function(e){ return e && !e.ok && e.response && e.response.error === 'STOCK_INSUFFICIENT'; });
+  var otherFailures = submissions.filter(function(e){ return e && !e.ok && !(e.response && e.response.error === 'STOCK_INSUFFICIENT'); });
+  var orderIds = qaSubmittedOrderIdsFromEntries_(success);
+  var records = orderIds.map(function(orderId) {
+    var record = qaReadOrder_(token, orderId);
+    var giftLines = qaActiveGiftLines_(record, fixture.gift_id);
+    var giftUnits = giftLines.reduce(function(sum, line){ return sum + Number(line.gift_qty || 0); }, 0);
+    return { order_id:orderId, total:Number(record.total || 0), gift_lines:giftLines.length, gift_units:giftUnits };
+  });
+  var attached = records.filter(function(r){ return r.gift_units > 0; });
+  var attachedUnits = attached.reduce(function(sum, r){ return sum + r.gift_units; }, 0);
+  var skipped = success.filter(function(e) {
+    return (e.response.gifts_skipped || []).some(function(g) {
+      return String(g.gift_id) === String(fixture.gift_id)
+        && g.code === 'GIFT_OUT_OF_STOCK'
+        && Number(g.requested_qty) === 2;
+    });
+  });
+  var totalsOk = records.every(function(r){ return Number(r.total) === Number(fixture.expected_total) && (r.gift_units === 0 || r.gift_units === 2); });
+  var productStock = qaGetProductStock_(fixture.product_id);
+  var giftStock = qaGetGiftStock_(fixture.gift_id);
+  var passed = success.length === Number(fixture.expected_success_count || 3)
+    && stockFails.length === Number(fixture.expected_stock_insufficient_count || 5)
+    && otherFailures.length === 0
+    && orderIds.length === Number(fixture.expected_success_count || 3)
+    && attached.length === Number(fixture.expected_gift_attached_orders || 2)
+    && attachedUnits === Number(fixture.expected_gift_attached_units || 4)
+    && skipped.length === Number(fixture.expected_gift_skipped_count || 1)
+    && productStock === 0
+    && giftStock === 0
+    && totalsOk;
+  return {
+    ok:true,
+    success_count:success.length,
+    stock_insufficient_count:stockFails.length,
+    other_failure_count:otherFailures.length,
+    order_ids:orderIds,
+    records:records,
+    gift_attached_orders:attached.length,
+    gift_attached_units:attachedUnits,
+    gift_skipped_count:skipped.length,
+    final_product_stock:productStock,
+    final_gift_stock:giftStock,
+    totals_ok:totalsOk,
+    passed:passed
+  };
+}
+
+function qaCleanupConcurrentRepeatGiftMultipliedStockRaceRpc(token, fixture, submissions) {
   if (!token) return { ok:false, error:'AUTH_REQUIRED' };
   fixture = fixture || {};
   return qaCleanupCommerceFixture_({
@@ -5251,10 +7246,13 @@ function qaRunGiftRequiredProductsMinQtyFlow_(ctx) {
 }
 
 function qaRunGiftMinSubtotalFlow_(ctx) {
+  var endsAt = new Date(Date.now() + 86400000).toISOString();
   var fx = qaCreateGiftEligibilityFixture_(ctx, 'MinSubtotal', {
     condition_type: 'min_subtotal',
     min_subtotal: 1000,
-    product_price: 600
+    product_price: 600,
+    ends_at: endsAt,
+    no_end_date: false
   });
   var caught = null, output = null;
   try {
@@ -5263,6 +7261,12 @@ function qaRunGiftMinSubtotalFlow_(ctx) {
     qaAssertOk_(low); qaAssertOk_(high);
     qaAssert_(!qaHasEligibleRule_(low, fx.rule_id), 'ยอด 600 ต้องยังไม่ eligible', low);
     qaAssert_(qaHasEligibleRule_(high, fx.rule_id), 'ยอด 1200 ต้อง eligible', high);
+    var nearEntry = (low.near || []).filter(function(e){ return String(e.rule_id) === String(fx.rule_id); })[0];
+    var eligibleEntry = (high.eligible || []).filter(function(e){ return String(e.rule_id) === String(fx.rule_id); })[0];
+    qaAssert_(nearEntry && nearEntry.starts_at && nearEntry.ends_at === endsAt && nearEntry.no_end_date === false,
+      'Gift near preview must expose its active schedule', nearEntry);
+    qaAssert_(eligibleEntry && eligibleEntry.starts_at && eligibleEntry.ends_at === endsAt && eligibleEntry.no_end_date === false,
+      'Gift eligible preview must expose its active schedule', eligibleEntry);
     output = { low_subtotal: low.subtotal_after_promo, high_subtotal: high.subtotal_after_promo };
   } catch (err) { caught = err; }
   var cleanup = qaCleanupGiftFixture_(fx);
@@ -5285,6 +7289,832 @@ function qaRunGiftOncePerOrderFlow_(ctx) {
     output = { order_id: orderId, gift_line_count: gifts.length, gift_qty: gifts[0].gift_qty };
   } catch (err) { caught = err; }
   var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// per_threshold repeat mode: gift_qty is multiplied by the number of complete
+// times the cart clears the threshold; the default once_per_order still fires once.
+function qaRunGiftRepeatThresholdFlow_(ctx) {
+  var fxSingle = qaCreateGiftEligibilityFixture_(ctx, 'RepeatSingle', { min_qty: 1, gift_qty: 1, gift_stock: 10, repeat_mode: 'per_threshold' });
+  var fxRatio  = qaCreateGiftEligibilityFixture_(ctx, 'RepeatRatio',  { min_qty: 3, gift_qty: 1, gift_stock: 10, repeat_mode: 'per_threshold' });
+  var fxOnce   = qaCreateGiftEligibilityFixture_(ctx, 'RepeatControl', { min_qty: 1, gift_qty: 1, gift_stock: 10, repeat_mode: 'once_per_order' });
+  // Keep this global subtotal rule disabled while the earlier orders run;
+  // otherwise those carts consume its gift stock before the subtotal case starts.
+  var fxSub    = qaCreateGiftEligibilityFixture_(ctx, 'RepeatSubtotal', { condition_type: 'min_subtotal', min_subtotal: 500, product_price: 500, gift_qty: 1, gift_stock: 10, repeat_mode: 'per_threshold', rule_enabled: false });
+  var fxMulti  = qaCreateCommerceFixture_(ctx, 'GiftRepeatMulti');
+  var caught = null, output = null;
+  try {
+    // Verify that the fixture still has its clean price before creating orders.
+    // An unrelated all-target promotion is staging contamination, not a gift defect.
+    var promoPreflight = qaPreviewPromo_([qaCartItem_(fxSub.product.id, 3, {})]);
+    var promoLine = qaPromoPreviewLine_(promoPreflight, fxSub.product.id, '');
+    var preflightUnit = promoLine ? Number(promoLine.unit_final_price) : NaN;
+    var preflightSubtotal = preflightUnit * 3;
+    if (!promoLine || promoLine.promotion || preflightUnit !== 500 || preflightSubtotal !== 1500) {
+      var earlyCleanup = {
+        multi: qaCleanupCommerceFixture_(fxMulti), subtotal: qaCleanupGiftFixture_(fxSub),
+        control: qaCleanupGiftFixture_(fxOnce), ratio: qaCleanupGiftFixture_(fxRatio),
+        single: qaCleanupGiftFixture_(fxSingle)
+      };
+      return qaSkip_('External promotion changes the clean subtotal fixture', {
+        promotion_id: promoLine && promoLine.promotion && promoLine.promotion.promotion_id || '',
+        unit_price: preflightUnit,
+        subtotal: preflightSubtotal,
+        promotion_preview: promoPreflight,
+        cleanup: earlyCleanup
+      });
+    }
+    // Case 1: min_qty=1, buy 3 → 3 sets.
+    var r1 = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-gift-rep1', fxSingle.stamp, 'Buyer', fxSingle.product.id, fxSingle.shipping, { qty: 3 }), fxSingle.order_ids);
+    qaAssertOk_(r1);
+    var g1 = qaActiveGiftLines_(qaReadOrder_(fxSingle.token, qaOrderIdsFromSubmit_(r1)[0]), fxSingle.gift_id);
+    qaAssert_(g1.length === 1 && Number(g1[0].gift_qty || 0) === 3, 'per_threshold min_qty=1 ซื้อ 3 ต้องได้ของแถม 3 ชุด', g1);
+
+    // Case 2: min_qty=3, buy 6 → 2 sets (remainder ignored).
+    var r2 = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-gift-rep2', fxRatio.stamp, 'Buyer', fxRatio.product.id, fxRatio.shipping, { qty: 6 }), fxRatio.order_ids);
+    qaAssertOk_(r2);
+    var g2 = qaActiveGiftLines_(qaReadOrder_(fxRatio.token, qaOrderIdsFromSubmit_(r2)[0]), fxRatio.gift_id);
+    qaAssert_(g2.length === 1 && Number(g2[0].gift_qty || 0) === 2, 'per_threshold min_qty=3 ซื้อ 6 ต้องได้ของแถม 2 ชุด', g2);
+
+    // Case 3 (control): once_per_order min_qty=1, buy 3 → still 1 set.
+    var r3 = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-gift-rep3', fxOnce.stamp, 'Buyer', fxOnce.product.id, fxOnce.shipping, { qty: 3 }), fxOnce.order_ids);
+    qaAssertOk_(r3);
+    var g3 = qaActiveGiftLines_(qaReadOrder_(fxOnce.token, qaOrderIdsFromSubmit_(r3)[0]), fxOnce.gift_id);
+    qaAssert_(g3.length === 1 && Number(g3[0].gift_qty || 0) === 1, 'once_per_order ต้องได้ของแถม 1 ชุดเสมอ', g3);
+
+    // Case 4: min_subtotal=500 with price 500 × qty 3 = 1500 → 3 sets.
+    qaAssertOk_(qaCall_('toggleGiftRuleRpc', [fxSub.token, fxSub.rule_id, true]));
+    var giftPreflight = qaPreviewGiftFixture_(fxSub, 3);
+    qaAssertOk_(giftPreflight);
+    var giftEligible = (giftPreflight.eligible || []).filter(function(entry){ return String(entry.rule_id) === String(fxSub.rule_id); })[0];
+    qaAssert_(giftEligible && Number(giftEligible.gift && giftEligible.gift.qty) === 3,
+      'Gift preview must award three units before order submission', {
+        promotion_preview:promoPreflight, gift_preview:giftPreflight,
+        unit_price:preflightUnit, subtotal:preflightSubtotal, stock:qaGetGiftStock_(fxSub.gift_id)
+      });
+    var r4 = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-gift-rep4', fxSub.stamp, 'Buyer', fxSub.product.id, fxSub.shipping, { qty: 3 }), fxSub.order_ids);
+    qaAssertOk_(r4);
+    var order4 = qaReadOrder_(fxSub.token, qaOrderIdsFromSubmit_(r4)[0]);
+    var g4 = qaActiveGiftLines_(order4, fxSub.gift_id);
+    qaAssert_(g4.length === 1 && Number(g4[0].gift_qty || 0) === 3, 'per_threshold min_subtotal 500 ยอด 1500 ต้องได้ของแถม 3 ชุด', {
+      promotion_preview:promoPreflight, gift_preview:giftPreflight,
+      order:order4, order_lines:order4 && order4.items || [], awarded_lines:g4,
+      gift_stock:qaGetGiftStock_(fxSub.gift_id)
+    });
+    qaAssertOk_(qaCall_('toggleGiftRuleRpc', [fxSub.token, fxSub.rule_id, false]));
+
+    // Case 5: multi-entry required_products uses the LOWEST completed multiplier.
+    // p1 min_qty=2 buy 4 → 2; p2 min_qty=2 buy 6 → 3; min = 2.
+    var mp1 = qaCreateOrderQaProduct_(fxMulti.token, fxMulti.shipping, fxMulti.stamp, 'RepMultiA', 20, { price: 100 });
+    var mp2 = qaCreateOrderQaProduct_(fxMulti.token, fxMulti.shipping, fxMulti.stamp, 'RepMultiB', 20, { price: 100 });
+    fxMulti.product_ids.push(mp1.id, mp2.id);
+    var mGift = qaCreateGiftItem_(fxMulti.token, fxMulti.stamp, 'RepMulti', { stock: 10 });
+    fxMulti.gift_ids.push(mGift.gift_id);
+    var mRule = qaCreateGiftRule_(fxMulti.token, fxMulti.stamp, 'RepMulti', mGift.gift_id, {
+      condition_type: 'required_products',
+      condition_json: { required_products: [{ product_id: mp1.id, min_qty: 2 }, { product_id: mp2.id, min_qty: 2 }] },
+      gift_qty: 1,
+      repeat_mode: 'per_threshold'
+    });
+    fxMulti.rule_ids.push(mRule.rule_id);
+    var r5 = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-gift-rep5', fxMulti.stamp, 'Buyer', mp1.id, fxMulti.shipping, {
+      items: [{ product_id: mp1.id, qty: 4, selected_variants: {} }, { product_id: mp2.id, qty: 6, selected_variants: {} }]
+    }), fxMulti.order_ids);
+    qaAssertOk_(r5);
+    var g5 = qaActiveGiftLines_(qaReadOrder_(fxMulti.token, qaOrderIdsFromSubmit_(r5)[0]), mGift.gift_id);
+    qaAssert_(g5.length === 1 && Number(g5[0].gift_qty || 0) === 2, 'multi-entry required_products ต้องใช้ตัวคูณต่ำสุด (min=2)', g5);
+
+    output = {
+      single_qty: g1[0].gift_qty, ratio_qty: g2[0].gift_qty, control_qty: g3[0].gift_qty,
+      subtotal_qty: g4[0].gift_qty, multi_qty: g5[0].gift_qty
+    };
+  } catch (err) { caught = err; }
+  // Fixtures are nested snapshots of the global shipping config, so restore them
+  // in reverse creation order. Forward cleanup removes methods still used by later
+  // fixtures and leaves temporary methods behind after the final restore.
+  var cleanup = {
+    multi: qaCleanupCommerceFixture_(fxMulti), subtotal: qaCleanupGiftFixture_(fxSub),
+    control: qaCleanupGiftFixture_(fxOnce), ratio: qaCleanupGiftFixture_(fxRatio),
+    single: qaCleanupGiftFixture_(fxSingle)
+  };
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+/* ============================================================================
+ * per_threshold repeat-mode coverage — focused, isolated specs.
+ * Each verifies awarded gift quantity AND (where relevant) final gift stock.
+ * The multiplier = number of complete times the cart clears the threshold;
+ * remainders are ignored; multi-entry rules use the lowest per-entry multiplier;
+ * 'once_per_order' (default/blank/invalid) always grants exactly one set.
+ * ==========================================================================*/
+
+// required_products: exact boundary and ignored remainder, with stock deduction.
+// min_qty=2 → buy 4 gives 2 sets; buy 5 still gives 2 (remainder ignored).
+function qaRunGiftRepeatRequiredProductsBoundaryFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'RepeatBoundary', { min_qty: 2, gift_qty: 1, gift_stock: 10, product_stock: 20, repeat_mode: 'per_threshold' });
+  var caught = null, output = null;
+  try {
+    var exact = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-bnd-exact', fx.stamp, 'Exact', fx.product.id, fx.shipping, { qty: 4 }), fx.order_ids);
+    qaAssertOk_(exact);
+    var gExact = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(exact)[0]), fx.gift_id);
+    qaAssert_(gExact.length === 1 && Number(gExact[0].gift_qty || 0) === 2, 'min_qty=2 ซื้อ 4 ต้องได้ 2 ชุด (พอดี)', gExact);
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 8, 'สต็อกของแถมต้องลดลง 2 หลังคำสั่งซื้อแรก', { stock: qaGetGiftStock_(fx.gift_id) });
+
+    var remainder = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-bnd-rem', fx.stamp, 'Remainder', fx.product.id, fx.shipping, { qty: 5 }), fx.order_ids);
+    qaAssertOk_(remainder);
+    var gRem = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(remainder)[0]), fx.gift_id);
+    qaAssert_(gRem.length === 1 && Number(gRem[0].gift_qty || 0) === 2, 'min_qty=2 ซื้อ 5 ต้องได้ 2 ชุด (เศษถูกละไว้)', gRem);
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 6, 'สต็อกของแถมต้องลดลงอีก 2 (รวม 4)', { stock: qaGetGiftStock_(fx.gift_id) });
+    output = { exact_qty: gExact[0].gift_qty, remainder_qty: gRem[0].gift_qty, final_stock: qaGetGiftStock_(fx.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// required_products below threshold → not eligible, no gift, stock untouched.
+function qaRunGiftRepeatBelowThresholdFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'RepeatBelow', { min_qty: 3, gift_qty: 1, gift_stock: 5, product_stock: 10, repeat_mode: 'per_threshold' });
+  var caught = null, output = null;
+  try {
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-below', fx.stamp, 'Buyer', fx.product.id, fx.shipping, { qty: 2 }), fx.order_ids);
+    qaAssertOk_(res);
+    var order = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]);
+    qaAssert_(qaActiveGiftLines_(order, fx.gift_id).length === 0, 'ซื้อไม่ครบขั้นต่ำต้องไม่ได้ของแถม', order.items);
+    qaAssert_(!(res.gifts_skipped || []).some(function(s){ return String(s.gift_id) === String(fx.gift_id); }), 'ไม่ครบขั้นต่ำไม่ควรถูกนับเป็น skipped', res);
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 5, 'สต็อกของแถมต้องไม่ถูกหักเมื่อไม่ eligible', { stock: qaGetGiftStock_(fx.gift_id) });
+    output = { gift_lines: 0, final_stock: qaGetGiftStock_(fx.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// gift_qty > 1 combined with the threshold multiplier: gift_qty=3, min_qty=1,
+// buy 4 → 4 thresholds × 3 = 12; stock 20 → 8.
+function qaRunGiftRepeatGiftQtyMultiplierFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'RepeatGiftQty', { min_qty: 1, gift_qty: 3, gift_stock: 20, product_stock: 10, repeat_mode: 'per_threshold' });
+  var caught = null, output = null;
+  try {
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-giftqty', fx.stamp, 'Buyer', fx.product.id, fx.shipping, { qty: 4 }), fx.order_ids);
+    qaAssertOk_(res);
+    var g = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]), fx.gift_id);
+    qaAssert_(g.length === 1 && Number(g[0].gift_qty || 0) === 12, 'gift_qty=3 × 4 thresholds ต้องได้ 12 ชิ้น', g);
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 8, 'สต็อกของแถมต้องลดลง 12', { stock: qaGetGiftStock_(fx.gift_id) });
+    output = { gift_qty: g[0].gift_qty, final_stock: qaGetGiftStock_(fx.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// min_subtotal multiplier with an ignored remainder.
+// price 250, min_subtotal 500, buy 5 → subtotal 1250 → floor(1250/500)=2 sets.
+function qaRunGiftRepeatMinSubtotalMultiplierFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'RepeatSubtotal', { condition_type: 'min_subtotal', min_subtotal: 500, product_price: 250, gift_qty: 1, gift_stock: 5, product_stock: 10, repeat_mode: 'per_threshold' });
+  var caught = null, output = null;
+  try {
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-sub', fx.stamp, 'Buyer', fx.product.id, fx.shipping, { qty: 5 }), fx.order_ids);
+    qaAssertOk_(res);
+    var g = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]), fx.gift_id);
+    qaAssert_(g.length === 1 && Number(g[0].gift_qty || 0) === 2, 'ยอด 1250 / ขั้นต่ำ 500 ต้องได้ 2 ชุด (เศษ 250 ถูกละไว้)', g);
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 3, 'สต็อกของแถมต้องลดลง 2', { stock: qaGetGiftStock_(fx.gift_id) });
+    output = { gift_qty: g[0].gift_qty, final_stock: qaGetGiftStock_(fx.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// min_subtotal multiplier must use the DISCOUNTED subtotal (after promotion),
+// verified through both preview and the submitted order for consistency.
+// price 1000, promo −600 → unit 400; min_subtotal 500; buy 3 → 1200 → 2 sets.
+// (Undiscounted 3000 would wrongly yield 6.)
+function qaRunGiftRepeatMinSubtotalAfterDiscountFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'RepeatSubDiscount', { condition_type: 'min_subtotal', min_subtotal: 500, product_price: 1000, gift_qty: 1, gift_stock: 10, product_stock: 10, repeat_mode: 'per_threshold' });
+  fx.promotion_ids = [];
+  var caught = null, output = null;
+  try {
+    var promo = qaCreatePromotion_(fx.token, fx.product.id, fx.stamp, 'RepeatSubDiscount', { discount_value: 600 });
+    fx.promotion_ids.push(promo.promotion_id);
+    var preview = qaPreviewGiftFixture_(fx, 3);
+    qaAssertOk_(preview);
+    qaAssert_(Number(preview.subtotal_after_promo) === 1200, 'ยอดหลังหักโปรโมชั่นต้องเป็น 1200', preview);
+    var elig = (preview.eligible || []).filter(function(e){ return String(e.rule_id) === String(fx.rule_id); })[0];
+    qaAssert_(elig && Number(elig.gift.qty) === 2, 'ตัวอย่าง (preview) ต้องแสดงของแถม 2 ชุดจากยอดหลังหักส่วนลด', preview);
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-sub-disc', fx.stamp, 'Buyer', fx.product.id, fx.shipping, { qty: 3 }), fx.order_ids);
+    qaAssertOk_(res);
+    var g = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]), fx.gift_id);
+    qaAssert_(g.length === 1 && Number(g[0].gift_qty || 0) === 2, 'คำสั่งซื้อจริงต้องได้ของแถม 2 ชุด (คิดจากยอดหลังหักส่วนลด)', g);
+    output = { preview_qty: elig.gift.qty, order_qty: g[0].gift_qty, subtotal_after_promo: preview.subtotal_after_promo };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_({ token: fx.token, order_ids: fx.order_ids, promotion_ids: fx.promotion_ids, rule_ids: [fx.rule_id], gift_ids: [fx.gift_id], product_ids: [fx.product.id], shipping: fx.shipping });
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// required_variants multiplier: only the matching variant counts toward the
+// threshold. Size=M min_qty=2, buy 6×M (→3 sets) plus 3×L (ignored).
+function qaRunGiftRepeatRequiredVariantsMultiplierFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'RepeatVariant');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'RepeatVariant', -1, {
+      price: 100,
+      variants: [{ name: 'Size', type: 'text', options: [{ label: 'M', price: 100, weight_grams: 100, stock: 10 }, { label: 'L', price: 100, weight_grams: 100, stock: 10 }] }]
+    });
+    fx.product_ids.push(product.id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'RepeatVariant', { stock: 10 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'RepeatVariant', gift.gift_id, {
+      condition_type: 'required_variants',
+      condition_json: { required_variants: [{ product_id: product.id, variant_key: 'Size=M', min_qty: 2 }] },
+      gift_qty: 1, repeat_mode: 'per_threshold'
+    });
+    fx.rule_ids.push(rule.rule_id);
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-variant', fx.stamp, 'Buyer', product.id, fx.shipping, {
+      items: [{ product_id: product.id, qty: 6, selected_variants: { Size: 'M' } }, { product_id: product.id, qty: 3, selected_variants: { Size: 'L' } }]
+    }), fx.order_ids);
+    qaAssertOk_(res);
+    var g = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]), gift.gift_id);
+    qaAssert_(g.length === 1 && Number(g[0].gift_qty || 0) === 3, 'Size=M min 2 ซื้อ 6 ต้องได้ 3 ชุด (variant L ไม่นับ)', g);
+    output = { gift_qty: g[0].gift_qty };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Multiple required_products entries → lowest completed multiplier wins.
+// p1 min2 buy4 (→2), p2 min3 buy12 (→4); result = min(2,4) = 2.
+function qaRunGiftRepeatMultiProductsLowestFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'RepeatMultiProducts');
+  var caught = null, output = null;
+  try {
+    var p1 = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'RepMultiP1', 20, { price: 100 });
+    var p2 = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'RepMultiP2', 20, { price: 100 });
+    fx.product_ids.push(p1.id, p2.id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'RepeatMultiProducts', { stock: 10 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'RepeatMultiProducts', gift.gift_id, {
+      condition_type: 'required_products',
+      condition_json: { required_products: [{ product_id: p1.id, min_qty: 2 }, { product_id: p2.id, min_qty: 3 }] },
+      gift_qty: 1, repeat_mode: 'per_threshold'
+    });
+    fx.rule_ids.push(rule.rule_id);
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-multi-prod', fx.stamp, 'Buyer', p1.id, fx.shipping, {
+      items: [{ product_id: p1.id, qty: 4, selected_variants: {} }, { product_id: p2.id, qty: 12, selected_variants: {} }]
+    }), fx.order_ids);
+    qaAssertOk_(res);
+    var g = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]), gift.gift_id);
+    qaAssert_(g.length === 1 && Number(g[0].gift_qty || 0) === 2, 'หลายสินค้า: ต้องใช้ตัวคูณต่ำสุด min(2,4)=2', g);
+    output = { gift_qty: g[0].gift_qty };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// match_mode 'any': satisfying at least one listed entry qualifies (once mode → 1 set).
+// [A min2, B min3] any-mode; buy A×2 only → eligible; buy A×1 only → not eligible.
+function qaRunGiftMatchAnyProductsOneQualifiesFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'MatchAnyProducts');
+  var caught = null, output = null;
+  try {
+    var pA = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MatchAnyA', 20, { price: 100 });
+    var pB = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MatchAnyB', 20, { price: 100 });
+    fx.product_ids.push(pA.id, pB.id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'MatchAnyProducts', { stock: 10 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'MatchAnyProducts', gift.gift_id, {
+      condition_type: 'required_products',
+      condition_json: { match_mode: 'any', required_products: [{ product_id: pA.id, min_qty: 2 }, { product_id: pB.id, min_qty: 3 }] },
+      gift_qty: 1, repeat_mode: 'once_per_order'
+    });
+    fx.rule_ids.push(rule.rule_id);
+    // Buy only A×2 (B absent) → A qualifies → eligible, 1 set.
+    var okRes = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-any-ok', fx.stamp, 'One', pA.id, fx.shipping, { qty: 2 }), fx.order_ids);
+    qaAssertOk_(okRes);
+    var gOk = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(okRes)[0]), gift.gift_id);
+    qaAssert_(gOk.length === 1 && Number(gOk[0].gift_qty || 0) === 1, 'any-mode: ซื้อ A×2 อย่างเดียวต้องได้ของแถม 1 ชุด', gOk);
+    // Buy only A×1 → no entry qualifies → not eligible.
+    var noRes = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-any-no', fx.stamp, 'None', pA.id, fx.shipping, { qty: 1 }), fx.order_ids);
+    qaAssertOk_(noRes);
+    var gNo = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(noRes)[0]), gift.gift_id);
+    qaAssert_(gNo.length === 0, 'any-mode: ซื้อ A×1 (ไม่ครบ) ต้องไม่ได้ของแถม', gNo);
+    output = { ok_qty: gOk[0].gift_qty, none_lines: gNo.length };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// match_mode 'any' + per_threshold: multiplier = SUM of completed rounds across qualifying entries.
+// [A min2, B min3]; buy A×6 (3 rounds) + B×3 (1 round) → 3+1 = 4 sets.
+function qaRunGiftMatchAnyRepeatSumFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'MatchAnySum');
+  var caught = null, output = null;
+  try {
+    var pA = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MatchSumA', 30, { price: 100 });
+    var pB = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MatchSumB', 30, { price: 100 });
+    fx.product_ids.push(pA.id, pB.id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'MatchAnySum', { stock: 20 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'MatchAnySum', gift.gift_id, {
+      condition_type: 'required_products',
+      condition_json: { match_mode: 'any', required_products: [{ product_id: pA.id, min_qty: 2 }, { product_id: pB.id, min_qty: 3 }] },
+      gift_qty: 1, repeat_mode: 'per_threshold'
+    });
+    fx.rule_ids.push(rule.rule_id);
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-any-sum', fx.stamp, 'Buyer', pA.id, fx.shipping, {
+      items: [{ product_id: pA.id, qty: 6, selected_variants: {} }, { product_id: pB.id, qty: 3, selected_variants: {} }]
+    }), fx.order_ids);
+    qaAssertOk_(res);
+    var g = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]), gift.gift_id);
+    qaAssert_(g.length === 1 && Number(g[0].gift_qty || 0) === 4, 'any-mode per_threshold: A(3 รอบ)+B(1 รอบ) = 4 ชุด', g);
+    output = { gift_qty: g[0].gift_qty };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Backward compat: a rule with NO match_mode defaults to 'all' (every entry required).
+// [A min1, B min1] no match_mode; buy A only → not eligible (B missing).
+function qaRunGiftMatchAllDefaultBackwardCompatFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'MatchAllDefault');
+  var caught = null, output = null;
+  try {
+    var pA = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MatchAllA', 20, { price: 100 });
+    var pB = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MatchAllB', 20, { price: 100 });
+    fx.product_ids.push(pA.id, pB.id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'MatchAllDefault', { stock: 10 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'MatchAllDefault', gift.gift_id, {
+      condition_type: 'required_products',
+      // NOTE: no match_mode → must default to 'all'
+      condition_json: { required_products: [{ product_id: pA.id, min_qty: 1 }, { product_id: pB.id, min_qty: 1 }] },
+      gift_qty: 1, repeat_mode: 'once_per_order'
+    });
+    fx.rule_ids.push(rule.rule_id);
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-all-default', fx.stamp, 'Buyer', pA.id, fx.shipping, { qty: 1 }), fx.order_ids);
+    qaAssertOk_(res);
+    var g = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]), gift.gift_id);
+    qaAssert_(g.length === 0, 'ไม่มี match_mode ต้อง default = all: ซื้อ A อย่างเดียวต้องไม่ได้ของแถม', g);
+    var stored = qaFindGiftRule_(fx.token, rule.rule_id);
+    qaAssert_(stored && (stored.condition_json || {}).match_mode === 'all', 'match_mode ควรถูก normalize เป็น all', stored);
+    output = { gift_lines: 0, stored_mode: (stored.condition_json || {}).match_mode };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// match_mode 'any' on required_variants (mirrors the required_products ANY-mode tests, which
+// never exercise variant matching): once_per_order — buying only one listed variant qualifies,
+// buying it below its own min_qty does not; per_threshold — completed rounds from every
+// qualifying variant entry are SUMMED (not just the lowest), same as the products case.
+function qaRunGiftMatchAnyRequiredVariantsFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'MatchAnyVariant');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MatchAnyVariant', -1, {
+      price: 100,
+      variants: [{ name: 'Size', type: 'text', options: [
+        { label: 'M', price: 100, weight_grams: 100, stock: 20 },
+        { label: 'L', price: 100, weight_grams: 100, stock: 20 }
+      ] }]
+    });
+    fx.product_ids.push(product.id);
+    var cond = { match_mode: 'any', required_variants: [
+      { product_id: product.id, variant_key: 'Size=M', min_qty: 2 },
+      { product_id: product.id, variant_key: 'Size=L', min_qty: 3 }
+    ] };
+
+    // Case A (once_per_order): Size=M x2 alone qualifies (1 set); Size=M x1 alone does not.
+    var giftOnce = qaCreateGiftItem_(fx.token, fx.stamp, 'MatchAnyVariantOnce', { stock: 10 });
+    fx.gift_ids.push(giftOnce.gift_id);
+    var ruleOnce = qaCreateGiftRule_(fx.token, fx.stamp, 'MatchAnyVariantOnce', giftOnce.gift_id, {
+      condition_type: 'required_variants', condition_json: cond, gift_qty: 1, repeat_mode: 'once_per_order'
+    });
+    fx.rule_ids.push(ruleOnce.rule_id);
+    var okRes = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-any-var-ok', fx.stamp, 'One', product.id, fx.shipping, {
+      items: [{ product_id: product.id, qty: 2, selected_variants: { Size: 'M' } }]
+    }), fx.order_ids);
+    qaAssertOk_(okRes);
+    var gOk = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(okRes)[0]), giftOnce.gift_id);
+    qaAssert_(gOk.length === 1 && Number(gOk[0].gift_qty || 0) === 1, 'any-mode variant: ซื้อ Size=M x2 อย่างเดียวต้องได้ของแถม 1 ชุด', gOk);
+
+    var noRes = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-any-var-no', fx.stamp, 'None', product.id, fx.shipping, {
+      items: [{ product_id: product.id, qty: 1, selected_variants: { Size: 'M' } }]
+    }), fx.order_ids);
+    qaAssertOk_(noRes);
+    var gNo = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(noRes)[0]), giftOnce.gift_id);
+    qaAssert_(gNo.length === 0, 'any-mode variant: ซื้อ Size=M x1 (ไม่ครบ) ต้องไม่ได้ของแถม', gNo);
+
+    // Case B (per_threshold): M x4 (2 rounds) + L x3 (1 round) sums to 3.
+    var giftRepeat = qaCreateGiftItem_(fx.token, fx.stamp, 'MatchAnyVariantRepeat', { stock: 20 });
+    fx.gift_ids.push(giftRepeat.gift_id);
+    var ruleRepeat = qaCreateGiftRule_(fx.token, fx.stamp, 'MatchAnyVariantRepeat', giftRepeat.gift_id, {
+      condition_type: 'required_variants', condition_json: cond, gift_qty: 1, repeat_mode: 'per_threshold'
+    });
+    fx.rule_ids.push(ruleRepeat.rule_id);
+    var sumRes = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-any-var-sum', fx.stamp, 'Buyer', product.id, fx.shipping, {
+      items: [
+        { product_id: product.id, qty: 4, selected_variants: { Size: 'M' } },
+        { product_id: product.id, qty: 3, selected_variants: { Size: 'L' } }
+      ]
+    }), fx.order_ids);
+    qaAssertOk_(sumRes);
+    var gSum = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(sumRes)[0]), giftRepeat.gift_id);
+    qaAssert_(gSum.length === 1 && Number(gSum[0].gift_qty || 0) === 3, 'any-mode per_threshold variant: M(2 รอบ)+L(1 รอบ) = 3 ชุด', gSum);
+
+    output = { ok_qty: gOk[0].gift_qty, none_lines: gNo.length, sum_qty: gSum[0].gift_qty };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Duplicate conditions must be rejected at create time.
+function qaRunGiftDuplicateProductsRejectedFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'DupProducts');
+  var caught = null, output = null;
+  try {
+    var pA = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'DupA', 10, { price: 100 });
+    fx.product_ids.push(pA.id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'DupProducts', { stock: 5 });
+    fx.gift_ids.push(gift.gift_id);
+    var res = qaCall_('createGiftRuleRpc', [fx.token, {
+      name: 'QA Dup Products ' + fx.stamp,
+      gift_id: gift.gift_id,
+      condition_type: 'required_products',
+      condition_json: { required_products: [{ product_id: pA.id, min_qty: 1 }, { product_id: pA.id, min_qty: 2 }] },
+      gift_qty: 1, no_end_date: true, enabled: true, priority: 9000
+    }]);
+    if (res && res.rule_id) fx.rule_ids.push(res.rule_id); // track for cleanup if it wrongly succeeded
+    qaAssert_(res && res.ok === false, 'สินค้าซ้ำในเงื่อนไขต้องถูกปฏิเสธ', res);
+    output = { rejected: true, error: res.error };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunGiftDuplicateVariantsRejectedFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'DupVariants');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'DupVar', -1, {
+      price: 100,
+      variants: [{ name: 'Size', type: 'text', options: [{ label: 'M', price: 100, weight_grams: 100, stock: 5 }, { label: 'L', price: 100, weight_grams: 100, stock: 5 }] }]
+    });
+    fx.product_ids.push(product.id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'DupVariants', { stock: 5 });
+    fx.gift_ids.push(gift.gift_id);
+    var res = qaCall_('createGiftRuleRpc', [fx.token, {
+      name: 'QA Dup Variants ' + fx.stamp,
+      gift_id: gift.gift_id,
+      condition_type: 'required_variants',
+      condition_json: { required_variants: [{ product_id: product.id, variant_key: 'Size=M', min_qty: 1 }, { product_id: product.id, variant_key: 'Size=M', min_qty: 2 }] },
+      gift_qty: 1, no_end_date: true, enabled: true, priority: 9000
+    }]);
+    if (res && res.rule_id) fx.rule_ids.push(res.rule_id);
+    qaAssert_(res && res.ok === false, 'รุ่น/ตัวเลือกซ้ำในเงื่อนไขต้องถูกปฏิเสธ', res);
+    output = { rejected: true, error: res.error };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// A required_variants condition entry whose variant_key omits one of a multi-group
+// product's variant groups is not a real enumerable variant_key and must be rejected at
+// create time (mirrors promotions.conditional-required-variants-incomplete-key-rejected).
+function qaRunGiftRequiredVariantsIncompleteKeyRejectedFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'GiftIncompleteKey');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'GiftIncompleteKey', 5, {
+      price: 500,
+      variants: [
+        { name: 'Color', type: 'text', options: [{ label: 'Red', price: 500, weight_grams: 100, stock: 5 }, { label: 'Blue', price: 500, weight_grams: 100, stock: 5 }] },
+        { name: 'Size', type: 'text', options: [{ label: 'S', price: 500, weight_grams: 100, stock: 5 }, { label: 'L', price: 500, weight_grams: 100, stock: 5 }] }
+      ]
+    });
+    fx.product_ids.push(product.id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'GiftIncompleteKey', { stock: 5 });
+    fx.gift_ids.push(gift.gift_id);
+    var res = qaCall_('createGiftRuleRpc', [fx.token, {
+      name: 'QA Incomplete Key ' + fx.stamp,
+      gift_id: gift.gift_id,
+      condition_type: 'required_variants',
+      // Missing the 'Size=' portion of the canonical key — not a real enumerable variant_key.
+      condition_json: { required_variants: [{ product_id: product.id, variant_key: 'Color=Red', min_qty: 1 }] },
+      gift_qty: 1, no_end_date: true, enabled: true, priority: 9000
+    }]);
+    if (res && res.rule_id) fx.rule_ids.push(res.rule_id);
+    qaAssert_(res && res.ok === false, 'variant_key ที่ไม่ครบทุกกลุ่มต้องถูกปฏิเสธ', res);
+    output = { rejected: true, error: res.error };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Multiple required_variants entries → lowest completed multiplier wins.
+// Size=M min2 buy4 (→2), Size=L min2 buy6 (→3); result = min(2,3) = 2.
+function qaRunGiftRepeatMultiVariantsLowestFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'RepeatMultiVariants');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'RepeatMultiVariants', -1, {
+      price: 100,
+      variants: [{ name: 'Size', type: 'text', options: [{ label: 'M', price: 100, weight_grams: 100, stock: 10 }, { label: 'L', price: 100, weight_grams: 100, stock: 10 }] }]
+    });
+    fx.product_ids.push(product.id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'RepeatMultiVariants', { stock: 10 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'RepeatMultiVariants', gift.gift_id, {
+      condition_type: 'required_variants',
+      condition_json: { required_variants: [{ product_id: product.id, variant_key: 'Size=M', min_qty: 2 }, { product_id: product.id, variant_key: 'Size=L', min_qty: 2 }] },
+      gift_qty: 1, repeat_mode: 'per_threshold'
+    });
+    fx.rule_ids.push(rule.rule_id);
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-multi-var', fx.stamp, 'Buyer', product.id, fx.shipping, {
+      items: [{ product_id: product.id, qty: 4, selected_variants: { Size: 'M' } }, { product_id: product.id, qty: 6, selected_variants: { Size: 'L' } }]
+    }), fx.order_ids);
+    qaAssertOk_(res);
+    var g = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]), gift.gift_id);
+    qaAssert_(g.length === 1 && Number(g[0].gift_qty || 0) === 2, 'หลาย variant: ต้องใช้ตัวคูณต่ำสุด min(2,3)=2', g);
+    output = { gift_qty: g[0].gift_qty };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Duplicate cart lines for the same product aggregate before the multiplier.
+// min_qty=2, lines qty2 + qty4 = 6 → 3 sets.
+function qaRunGiftRepeatDuplicateLinesFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'RepeatDuplicate', { min_qty: 2, gift_qty: 1, gift_stock: 5, product_stock: 10, repeat_mode: 'per_threshold' });
+  var caught = null, output = null;
+  try {
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-dup', fx.stamp, 'Buyer', fx.product.id, fx.shipping, {
+      items: [{ product_id: fx.product.id, qty: 2, selected_variants: {} }, { product_id: fx.product.id, qty: 4, selected_variants: {} }]
+    }), fx.order_ids);
+    qaAssertOk_(res);
+    var g = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]), fx.gift_id);
+    qaAssert_(g.length === 1 && Number(g[0].gift_qty || 0) === 3, 'บรรทัดซ้ำ (2+4=6) / ขั้นต่ำ 2 ต้องได้ 3 ชุด', g);
+    output = { gift_qty: g[0].gift_qty };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Preview and the submitted order must report the same multiplied gift quantity.
+function qaRunGiftRepeatPreviewMatchesOrderFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'RepeatPreviewMatch', { min_qty: 1, gift_qty: 1, gift_stock: 10, product_stock: 10, repeat_mode: 'per_threshold' });
+  var caught = null, output = null;
+  try {
+    var preview = qaPreviewGiftFixture_(fx, 3);
+    qaAssertOk_(preview);
+    var elig = (preview.eligible || []).filter(function(e){ return String(e.rule_id) === String(fx.rule_id); })[0];
+    qaAssert_(elig && Number(elig.gift.qty) === 3, 'ตัวอย่าง (preview) ต้องแสดงของแถม 3 ชุด', preview);
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-preview', fx.stamp, 'Buyer', fx.product.id, fx.shipping, { qty: 3 }), fx.order_ids);
+    qaAssertOk_(res);
+    var g = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]), fx.gift_id);
+    qaAssert_(g.length === 1 && Number(g[0].gift_qty || 0) === Number(elig.gift.qty), 'จำนวนของแถมในคำสั่งซื้อต้องตรงกับ preview', { preview: elig.gift.qty, order: g[0] && g[0].gift_qty });
+    output = { preview_qty: elig.gift.qty, order_qty: g[0].gift_qty };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Invalid repeat_mode value is normalized to once_per_order (stored + behavior).
+function qaRunGiftRepeatInvalidModeDefaultsOnceFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'RepeatInvalidMode', { min_qty: 1, gift_qty: 1, gift_stock: 10, product_stock: 10, repeat_mode: 'garbage_value' });
+  var caught = null, output = null;
+  try {
+    var stored = qaFindGiftRule_(fx.token, fx.rule_id);
+    qaAssert_(stored && stored.repeat_mode === 'once_per_order', 'repeat_mode ที่ไม่ถูกต้องต้องถูกปรับเป็น once_per_order', stored);
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-invalid', fx.stamp, 'Buyer', fx.product.id, fx.shipping, { qty: 3 }), fx.order_ids);
+    qaAssertOk_(res);
+    var g = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]), fx.gift_id);
+    qaAssert_(g.length === 1 && Number(g[0].gift_qty || 0) === 1, 'โหมดที่ไม่ถูกต้องต้องให้ของแถมเพียง 1 ชุด', g);
+    output = { stored_mode: stored.repeat_mode, gift_qty: g[0].gift_qty };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Backward compatibility: a rule created WITHOUT a repeat_mode field defaults to
+// once_per_order both in storage and behavior.
+function qaRunGiftRepeatMissingModeBackwardCompatFlow_(ctx) {
+  var token = ctx.options.adminToken;
+  var stamp = qaStamp_();
+  var shipping = qaCreateTempShippingMethod_(token, stamp, 'RepeatMissingMode');
+  var product = qaCreateOrderQaProduct_(token, shipping, stamp, 'RepeatMissingMode', 10, { price: 500 });
+  var gift = qaCreateGiftItem_(token, stamp, 'RepeatMissingMode', { stock: 10 });
+  var fx = { token: token, stamp: stamp, shipping: shipping, product: product, gift_id: gift.gift_id, rule_id: '', order_ids: [] };
+  var caught = null, output = null;
+  try {
+    // Deliberately omit repeat_mode from the payload (simulates legacy rules).
+    var created = qaCall_('createGiftRuleRpc', [token, {
+      name: 'QA Gift Rule RepeatMissingMode ' + stamp,
+      gift_id: gift.gift_id,
+      condition_type: 'required_products',
+      condition_json: { required_products: [{ product_id: product.id, min_qty: 1 }] },
+      gift_qty: 1,
+      no_end_date: true,
+      enabled: true,
+      priority: 9000
+    }]);
+    qaAssertOk_(created);
+    fx.rule_id = created.rule_id;
+    var stored = qaFindGiftRule_(token, fx.rule_id);
+    qaAssert_(stored && stored.repeat_mode === 'once_per_order', 'กฎที่ไม่มี repeat_mode ต้องอ่านค่าเป็น once_per_order', stored);
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-missing', stamp, 'Buyer', product.id, shipping, { qty: 3 }), fx.order_ids);
+    qaAssertOk_(res);
+    var g = qaActiveGiftLines_(qaReadOrder_(token, qaOrderIdsFromSubmit_(res)[0]), gift.gift_id);
+    qaAssert_(g.length === 1 && Number(g[0].gift_qty || 0) === 1, 'กฎเดิม (ไม่มี repeat_mode) ต้องให้ของแถม 1 ชุด', g);
+    output = { stored_mode: stored.repeat_mode, gift_qty: g[0].gift_qty };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Editing a rule between once_per_order and per_threshold round-trips through
+// storage and immediately changes awarded quantities.
+function qaRunGiftRepeatUpdateModeRoundTripFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'RepeatRoundTrip', { min_qty: 1, gift_qty: 1, gift_stock: 20, product_stock: 30, repeat_mode: 'once_per_order' });
+  var caught = null, output = null;
+  try {
+    var res1 = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-rt-1', fx.stamp, 'Once', fx.product.id, fx.shipping, { qty: 3 }), fx.order_ids);
+    qaAssertOk_(res1);
+    var g1 = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res1)[0]), fx.gift_id);
+    qaAssert_(g1.length === 1 && Number(g1[0].gift_qty || 0) === 1, 'เริ่มต้น once_per_order ต้องได้ 1 ชุด', g1);
+
+    qaAssertOk_(qaCall_('updateGiftRuleRpc', [fx.token, fx.rule_id, { repeat_mode: 'per_threshold' }]));
+    qaAssert_((qaFindGiftRule_(fx.token, fx.rule_id) || {}).repeat_mode === 'per_threshold', 'หลังแก้ไขต้องเก็บค่า per_threshold', fx.rule_id);
+    var res2 = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-rt-2', fx.stamp, 'Threshold', fx.product.id, fx.shipping, { qty: 3 }), fx.order_ids);
+    qaAssertOk_(res2);
+    var g2 = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res2)[0]), fx.gift_id);
+    qaAssert_(g2.length === 1 && Number(g2[0].gift_qty || 0) === 3, 'เปลี่ยนเป็น per_threshold แล้วซื้อ 3 ต้องได้ 3 ชุด', g2);
+
+    qaAssertOk_(qaCall_('updateGiftRuleRpc', [fx.token, fx.rule_id, { repeat_mode: 'once_per_order' }]));
+    qaAssert_((qaFindGiftRule_(fx.token, fx.rule_id) || {}).repeat_mode === 'once_per_order', 'หลังแก้ไขกลับต้องเก็บค่า once_per_order', fx.rule_id);
+    var res3 = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-rt-3', fx.stamp, 'BackToOnce', fx.product.id, fx.shipping, { qty: 3 }), fx.order_ids);
+    qaAssertOk_(res3);
+    var g3 = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res3)[0]), fx.gift_id);
+    qaAssert_(g3.length === 1 && Number(g3[0].gift_qty || 0) === 1, 'เปลี่ยนกลับ once_per_order ต้องได้ 1 ชุด', g3);
+    output = { once1: g1[0].gift_qty, threshold: g2[0].gift_qty, once2: g3[0].gift_qty };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// A per_threshold rule that is disabled or expired grants no gift regardless of
+// how many thresholds the cart clears.
+function qaRunGiftRepeatDisabledAndExpiredFlow_(ctx) {
+  var fxDisabled = qaCreateGiftEligibilityFixture_(ctx, 'RepeatDisabled', { min_qty: 1, gift_qty: 1, gift_stock: 10, product_stock: 10, repeat_mode: 'per_threshold', rule_enabled: false });
+  var fxExpired = qaCreateGiftEligibilityFixture_(ctx, 'RepeatExpired', { min_qty: 1, gift_qty: 1, gift_stock: 10, product_stock: 10, repeat_mode: 'per_threshold', starts_at: qaPastIso_(120000), ends_at: qaPastIso_(60000), no_end_date: false });
+  var caught = null, output = null;
+  try {
+    var resD = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-disabled', fxDisabled.stamp, 'Buyer', fxDisabled.product.id, fxDisabled.shipping, { qty: 4 }), fxDisabled.order_ids);
+    qaAssertOk_(resD);
+    qaAssert_(qaActiveGiftLines_(qaReadOrder_(fxDisabled.token, qaOrderIdsFromSubmit_(resD)[0]), fxDisabled.gift_id).length === 0, 'กฎที่ปิดใช้งานต้องไม่ให้ของแถม', resD);
+    qaAssert_(qaGetGiftStock_(fxDisabled.gift_id) === 10, 'สต็อกของแถมของกฎที่ปิดต้องไม่ถูกหัก', { stock: qaGetGiftStock_(fxDisabled.gift_id) });
+
+    var resE = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-expired', fxExpired.stamp, 'Buyer', fxExpired.product.id, fxExpired.shipping, { qty: 4 }), fxExpired.order_ids);
+    qaAssertOk_(resE);
+    qaAssert_(qaActiveGiftLines_(qaReadOrder_(fxExpired.token, qaOrderIdsFromSubmit_(resE)[0]), fxExpired.gift_id).length === 0, 'กฎที่หมดอายุต้องไม่ให้ของแถม', resE);
+    qaAssert_(qaGetGiftStock_(fxExpired.gift_id) === 10, 'สต็อกของแถมของกฎที่หมดอายุต้องไม่ถูกหัก', { stock: qaGetGiftStock_(fxExpired.gift_id) });
+    output = { disabled_stock: qaGetGiftStock_(fxDisabled.gift_id), expired_stock: qaGetGiftStock_(fxExpired.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = { disabled: qaCleanupGiftFixture_(fxDisabled), expired: qaCleanupGiftFixture_(fxExpired) };
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Insufficient gift stock for the full multiplied grant is all-or-nothing:
+// wants 5 but stock 3 → the whole set is skipped, no partial attach, stock stays 3.
+function qaRunGiftRepeatInsufficientStockAllOrNothingFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'RepeatInsufficientStock', { min_qty: 1, gift_qty: 1, gift_stock: 3, product_stock: 10, repeat_mode: 'per_threshold' });
+  var caught = null, output = null;
+  try {
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-insuf', fx.stamp, 'Buyer', fx.product.id, fx.shipping, { qty: 5 }), fx.order_ids);
+    qaAssertOk_(res);
+    var order = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]);
+    qaAssert_(qaActiveGiftLines_(order, fx.gift_id).length === 0, 'สต็อกไม่พอสำหรับชุดที่คูณแล้วต้องไม่แนบของแถมบางส่วน', order.items);
+    var skip = (res.gifts_skipped || []).filter(function(s){ return String(s.gift_id) === String(fx.gift_id); })[0];
+    qaAssert_(skip && skip.code === 'GIFT_OUT_OF_STOCK' && Number(skip.requested_qty) === 5, 'ต้องรายงาน GIFT_OUT_OF_STOCK พร้อมจำนวนที่ต้องการ 5', res);
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 3, 'สต็อกของแถมต้องคงเดิม (ไม่หักบางส่วน)', { stock: qaGetGiftStock_(fx.gift_id) });
+    output = { gift_lines: 0, skipped: skip, final_stock: qaGetGiftStock_(fx.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Unlimited gift stock (-1) with per_threshold: full multiplied grant attaches,
+// stock stays -1.
+function qaRunGiftRepeatUnlimitedStockFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'RepeatUnlimited', { min_qty: 1, gift_qty: 1, gift_stock: -1, product_stock: 10, repeat_mode: 'per_threshold' });
+  var caught = null, output = null;
+  try {
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-unlimited', fx.stamp, 'Buyer', fx.product.id, fx.shipping, { qty: 4 }), fx.order_ids);
+    qaAssertOk_(res);
+    var g = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]), fx.gift_id);
+    qaAssert_(g.length === 1 && Number(g[0].gift_qty || 0) === 4, 'สต็อกไม่จำกัดต้องได้ของแถม 4 ชุด', g);
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === -1, 'สต็อกไม่จำกัดต้องคงเป็น -1', { stock: qaGetGiftStock_(fx.gift_id) });
+    output = { gift_qty: g[0].gift_qty, final_stock: qaGetGiftStock_(fx.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Regression: once_per_order with gift_qty>1 grants exactly one set regardless
+// of how far the cart exceeds the threshold (must NOT multiply).
+function qaRunGiftRepeatOncePerOrderRegressionFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'RepeatOnceRegression', { min_qty: 1, gift_qty: 2, gift_stock: 20, product_stock: 10, repeat_mode: 'once_per_order' });
+  var caught = null, output = null;
+  try {
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-once-reg', fx.stamp, 'Buyer', fx.product.id, fx.shipping, { qty: 5 }), fx.order_ids);
+    qaAssertOk_(res);
+    var g = qaActiveGiftLines_(qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]), fx.gift_id);
+    qaAssert_(g.length === 1 && Number(g[0].gift_qty || 0) === 2, 'once_per_order gift_qty=2 ซื้อ 5 ต้องได้ 2 ชิ้น (1 ชุด) เท่านั้น', g);
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 18, 'สต็อกต้องลดลงเพียง 2 (ไม่คูณ)', { stock: qaGetGiftStock_(fx.gift_id) });
+    output = { gift_qty: g[0].gift_qty, final_stock: qaGetGiftStock_(fx.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Two simultaneous per_threshold rules on one cart each multiply independently
+// by their own gift_qty, and gift lines follow rule priority order.
+function qaRunGiftRepeatMultipleRulesPriorityFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'RepeatMultiRules');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'RepeatMultiRules', 20, { price: 500 });
+    fx.product_ids.push(product.id);
+    var giftA = qaCreateGiftItem_(fx.token, fx.stamp, 'RepeatRuleA', { stock: 10 });
+    var giftB = qaCreateGiftItem_(fx.token, fx.stamp, 'RepeatRuleB', { stock: 20 });
+    fx.gift_ids = [giftA.gift_id, giftB.gift_id];
+    var cond = { required_products: [{ product_id: product.id, min_qty: 1 }] };
+    var ruleA = qaCreateGiftRule_(fx.token, fx.stamp, 'RepeatRuleA', giftA.gift_id, { condition_json: cond, gift_qty: 1, repeat_mode: 'per_threshold', priority: 100 });
+    var ruleB = qaCreateGiftRule_(fx.token, fx.stamp, 'RepeatRuleB', giftB.gift_id, { condition_json: cond, gift_qty: 2, repeat_mode: 'per_threshold', priority: 50 });
+    fx.rule_ids = [ruleA.rule_id, ruleB.rule_id];
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rep-multi-rules', fx.stamp, 'Buyer', product.id, fx.shipping, { qty: 4 }), fx.order_ids);
+    qaAssertOk_(res);
+    var order = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]);
+    var lines = qaAllGiftLines_(order).filter(function(l){ return fx.rule_ids.indexOf(String(l.rule_id)) >= 0; });
+    qaAssert_(lines.length === 2, 'ต้องมีของแถมจากทั้งสองกฎ', lines);
+    qaAssert_(String(lines[0].rule_id) === String(ruleA.rule_id) && String(lines[1].rule_id) === String(ruleB.rule_id), 'ลำดับของแถมต้องเรียงตาม priority', lines);
+    var qtyA = qaActiveGiftLines_(order, giftA.gift_id);
+    var qtyB = qaActiveGiftLines_(order, giftB.gift_id);
+    qaAssert_(qtyA.length === 1 && Number(qtyA[0].gift_qty || 0) === 4, 'กฎ A (gift_qty=1 × 4) ต้องได้ 4 ชิ้น', qtyA);
+    qaAssert_(qtyB.length === 1 && Number(qtyB[0].gift_qty || 0) === 8, 'กฎ B (gift_qty=2 × 4) ต้องได้ 8 ชิ้น', qtyB);
+    qaAssert_(qaGetGiftStock_(giftA.gift_id) === 6 && qaGetGiftStock_(giftB.gift_id) === 12, 'สต็อกของแถมทั้งสองต้องถูกหักตามจำนวนที่คูณแล้ว', { a: qaGetGiftStock_(giftA.gift_id), b: qaGetGiftStock_(giftB.gift_id) });
+    output = { a_qty: qtyA[0].gift_qty, b_qty: qtyB[0].gift_qty, order: lines.map(function(l){ return l.rule_id; }) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
   if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
   output.cleanup = cleanup;
   return output;
@@ -6286,6 +9116,313 @@ function qaCreateCommerceFixture_(ctx, label, shippingOpts) {
   return { token:token, stamp:stamp, shipping:shipping, order_ids:[], product_ids:[], promotion_ids:[], gift_ids:[], rule_ids:[] };
 }
 
+function qaSecurityCartRpcResults_(fx, label, items) {
+  var promotionPreview = qaCall_('previewPromotionEligibilityRpc', [{ items:items }]);
+  var giftPreview = qaCall_('previewGiftEligibilityRpc', [{ items:items }]);
+  var payload = qaBuildOrderPayloadForProduct_('qa-security-cart', fx.stamp, label,
+    items && items[0] ? items[0].product_id : '', fx.shipping, { items:items });
+  var submit = qaSubmitAndTrack_(payload, fx.order_ids);
+  return { promotion_preview:promotionPreview, gift_preview:giftPreview, submit:submit };
+}
+
+function qaAssertSecurityCartRejected_(fx, label, items, expectedError) {
+  var results = qaSecurityCartRpcResults_(fx, label, items);
+  ['promotion_preview','gift_preview','submit'].forEach(function(key) {
+    var response = results[key];
+    qaAssert_(response && response.ok === false && response.error === expectedError,
+      label + ' should fail ' + key + ' with ' + expectedError, results);
+  });
+  qaAssert_(Array.isArray(results.promotion_preview.lines)
+    && Array.isArray(results.promotion_preview.eligible)
+    && Array.isArray(results.promotion_preview.near),
+    label + ' promotion preview must preserve its error response shape', results.promotion_preview);
+  qaAssert_(Array.isArray(results.gift_preview.eligible)
+    && Array.isArray(results.gift_preview.near),
+    label + ' gift preview must preserve its error response shape', results.gift_preview);
+  return results;
+}
+
+function qaAssertSecurityCartAccepted_(fx, label, items) {
+  var results = qaSecurityCartRpcResults_(fx, label, items);
+  qaAssertOk_(results.promotion_preview);
+  qaAssertOk_(results.gift_preview);
+  qaAssertOk_(results.submit);
+  return results;
+}
+
+function qaRunOrderSecurityVariantSelectionContractFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'SecurityVariantContract');
+  var steps = [], caught = null, output = null;
+  try {
+    var oneGroup = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'SecurityOneGroup', -1, {
+      price:300,
+      variants:[{ name:'Size', type:'text', options:[
+        { label:'M', price:350, weight_grams:200, stock:10 },
+        { label:'L', price:400, weight_grams:250, stock:10 }
+      ] }]
+    });
+    fx.product_ids.push(oneGroup.id);
+    var twoGroups = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'SecurityTwoGroups', -1, {
+      price:500,
+      variants:[
+        { name:'Size', type:'text', options:[
+          { label:'M', price:550, weight_grams:200, stock:20 },
+          { label:'L', price:600, weight_grams:250, stock:20 }
+        ] },
+        { name:'Color', type:'text', options:[
+          { label:'Red', price:700, weight_grams:300, stock:20 },
+          { label:'Blue', price:750, weight_grams:350, stock:20 }
+        ] }
+      ]
+    });
+    fx.product_ids.push(twoGroups.id);
+    var plainProduct = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'SecurityNoVariant', 5, { price:250 });
+    fx.product_ids.push(plainProduct.id);
+    qaStep_(steps, 'create generic one-group, multi-group, and no-variant products', 'ok', { product_ids:fx.product_ids.slice() });
+
+    var initial = {
+      one_m:qaGetVariantStock_(oneGroup.id, 'Size', 'M'),
+      two_red:qaGetVariantStock_(twoGroups.id, 'Color', 'Red'),
+      plain:qaGetProductStock_(plainProduct.id)
+    };
+    var rejected = [];
+    rejected.push(qaAssertSecurityCartRejected_(fx, 'missing-one-group', [
+      { product_id:oneGroup.id, qty:1, selected_variants:{} }
+    ], 'VARIANT_SELECTION_REQUIRED'));
+    rejected.push(qaAssertSecurityCartRejected_(fx, 'partial-two-groups', [
+      { product_id:twoGroups.id, qty:1, selected_variants:{ Size:'M' } }
+    ], 'VARIANT_SELECTION_REQUIRED'));
+    rejected.push(qaAssertSecurityCartRejected_(fx, 'unknown-group', [
+      { product_id:twoGroups.id, qty:1, selected_variants:{ Size:'M', Color:'Red', Material:'Cotton' } }
+    ], 'INVALID_VARIANT_GROUP'));
+    rejected.push(qaAssertSecurityCartRejected_(fx, 'unknown-option', [
+      { product_id:twoGroups.id, qty:1, selected_variants:{ Size:'M', Color:'Green' } }
+    ], 'INVALID_VARIANT_OPTION'));
+    rejected.push(qaAssertSecurityCartRejected_(fx, 'invalid-selection-shape', [
+      { product_id:twoGroups.id, qty:1, selected_variants:[] }
+    ], 'INVALID_VARIANT_OPTION'));
+    rejected.push(qaAssertSecurityCartRejected_(fx, 'unknown-product', [
+      { product_id:'qa-missing-security-product', qty:1, selected_variants:{} }
+    ], 'PRODUCT_NOT_FOUND'));
+    qaAssert_(fx.order_ids.length === 0, 'Rejected variant payloads must not create orders', { order_ids:fx.order_ids, rejected:rejected });
+    qaAssert_(qaGetVariantStock_(oneGroup.id, 'Size', 'M') === initial.one_m
+      && qaGetVariantStock_(twoGroups.id, 'Color', 'Red') === initial.two_red
+      && qaGetProductStock_(plainProduct.id) === initial.plain,
+      'Rejected variant payloads must preserve every stock value', { initial:initial });
+    qaStep_(steps, 'reject missing/partial/unknown variants consistently across all cart RPCs', 'ok', { rejected_count:rejected.length });
+
+    var validVariant = qaAssertSecurityCartAccepted_(fx, 'valid-two-groups', [
+      { product_id:twoGroups.id, qty:1, selected_variants:{ Color:'Red', Size:'M' } }
+    ]);
+    var validPlain = qaAssertSecurityCartAccepted_(fx, 'valid-no-variant', [
+      { product_id:plainProduct.id, qty:1, selected_variants:{} }
+    ]);
+    qaAssert_(qaGetVariantStock_(twoGroups.id, 'Color', 'Red') === initial.two_red - 1,
+      'A complete selection should deduct the verified variant stock', { response:validVariant });
+    qaAssert_(qaGetProductStock_(plainProduct.id) === initial.plain - 1,
+      'A no-variant product should retain product-level stock behavior', { response:validPlain });
+    qaStep_(steps, 'accept complete variants and backward-compatible no-variant products', 'ok', { order_ids:fx.order_ids.slice() });
+    output = { steps:steps, rejected_cases:rejected.length, accepted_order_ids:fx.order_ids.slice() };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  qaStep_(steps, 'cleanup security variant fixtures', cleanup && cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps:steps, cleanup:cleanup }); throw caught; }
+  qaAssert_(cleanup && cleanup.ok === true, 'Security variant fixture cleanup failed', cleanup);
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunOrderSecurityCartQuantityLimitsContractFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'SecurityCartLimits');
+  var steps = [], caught = null, output = null;
+  try {
+    var main = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'SecurityLimitMain', -1, { price:1 });
+    fx.product_ids.push(main.id);
+    var variantProduct = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'SecurityLimitVariants', -1, {
+      price:1,
+      variants:[{ name:'Size', type:'text', options:[
+        { label:'M', price:1, weight_grams:1, stock:-1 },
+        { label:'L', price:1, weight_grams:1, stock:-1 }
+      ] }]
+    });
+    fx.product_ids.push(variantProduct.id);
+
+    var invalidQtys = [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '1e3', '9'.repeat(200)];
+    invalidQtys.forEach(function(qty, index) {
+      qaAssertSecurityCartRejected_(fx, 'invalid-qty-' + index, [
+        { product_id:main.id, qty:qty, selected_variants:{} }
+      ], 'INVALID_QTY');
+    });
+    qaStep_(steps, 'reject unsafe qty values across promotion preview, gift preview, and submit', 'ok', { case_count:invalidQtys.length });
+
+    qaAssertSecurityCartRejected_(fx, 'qty-over-line-limit', [
+      { product_id:main.id, qty:10000, selected_variants:{} }
+    ], 'QTY_LIMIT_EXCEEDED');
+    qaAssertSecurityCartAccepted_(fx, 'qty-at-line-limit', [
+      { product_id:main.id, qty:9999, selected_variants:{} }
+    ]);
+
+    var hundredLines = [];
+    for (var li = 0; li < 100; li++) hundredLines.push({ product_id:main.id, qty:1, selected_variants:{} });
+    qaAssertSecurityCartAccepted_(fx, 'line-count-at-limit', hundredLines);
+    qaAssertSecurityCartRejected_(fx, 'line-count-over-limit', hundredLines.concat([
+      { product_id:main.id, qty:1, selected_variants:{} }
+    ]), 'TOO_MANY_ITEMS');
+
+    var oversizedClientPricing = qaBuildOrderPayloadForProduct_('qa-security-client-pricing', fx.stamp, 'OversizedSnapshot', main.id, fx.shipping, {
+      items:[{ product_id:main.id, qty:1, selected_variants:{} }]
+    });
+    oversizedClientPricing.client_pricing = {
+      items:Array.from({ length:101 }, function(){
+        return { product_id:main.id, qty:1, selected_variants:{}, unit_final_price:1, promotion_id:null };
+      }),
+      subtotal:1, shipping_fee:Number(fx.shipping.method.flat_rate || 0), total:1 + Number(fx.shipping.method.flat_rate || 0)
+    };
+    var oversizedPricingResponse = qaSubmitAndTrack_(oversizedClientPricing, fx.order_ids);
+    qaAssert_(oversizedPricingResponse && oversizedPricingResponse.ok === false
+      && oversizedPricingResponse.error === 'TOO_MANY_ITEMS'
+      && oversizedPricingResponse.field === 'client_pricing.items',
+      'Oversized client_pricing.items must be rejected before snapshot matching', oversizedPricingResponse);
+
+    qaAssertSecurityCartRejected_(fx, 'duplicate-variant-aggregate-limit', [
+      { product_id:main.id, qty:5000, selected_variants:{} },
+      { product_id:main.id, qty:5000, selected_variants:{} }
+    ], 'QTY_LIMIT_EXCEEDED');
+    qaAssertSecurityCartRejected_(fx, 'multi-variant-product-aggregate-limit', [
+      { product_id:variantProduct.id, qty:6000, selected_variants:{ Size:'M' } },
+      { product_id:variantProduct.id, qty:4000, selected_variants:{ Size:'L' } }
+    ], 'QTY_LIMIT_EXCEEDED');
+    qaStep_(steps, 'block duplicate-line and cross-variant splitting from bypassing product caps', 'ok', {});
+
+    var totalItems = [];
+    for (var pi = 0; pi < 6; pi++) {
+      var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'SecurityTotal' + pi, -1, { price:1 });
+      fx.product_ids.push(product.id);
+      totalItems.push({ product_id:product.id, qty:pi < 5 ? 9999 : 5, selected_variants:{} });
+    }
+    qaAssertSecurityCartAccepted_(fx, 'order-total-at-limit', totalItems);
+    var overTotal = totalItems.map(function(line){ return Object.assign({}, line); });
+    overTotal[5].qty = 6;
+    qaAssertSecurityCartRejected_(fx, 'order-total-over-limit', overTotal, 'QTY_LIMIT_EXCEEDED');
+    qaStep_(steps, 'enforce exact 50000-unit order boundary', 'ok', { accepted_total:50000, rejected_total:50001 });
+
+    output = { steps:steps, invalid_qty_count:invalidQtys.length, valid_order_ids:fx.order_ids.slice() };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  qaStep_(steps, 'cleanup security quantity fixtures', cleanup && cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps:steps, cleanup:cleanup }); throw caught; }
+  qaAssert_(cleanup && cleanup.ok === true, 'Security quantity fixture cleanup failed', cleanup);
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunOrderSecurityServerVariantAuthorityWorkflow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'SecurityVariantAuthority', {
+    mode:'weight',
+    brackets:[
+      { from_g:0, to_g:999, price:40 },
+      { from_g:1000, to_g:1999, price:80 },
+      { from_g:2000, to_g:999999, price:130 }
+    ]
+  });
+  var steps = [], caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'SecurityAuthority', -1, {
+      price:100,
+      weight_grams:10,
+      variants:[
+        { name:'Size', type:'text', options:[
+          { label:'M', price:400, weight_grams:400, stock:10 },
+          { label:'L', price:450, weight_grams:450, stock:10 }
+        ] },
+        { name:'Package', type:'text', options:[
+          { label:'Box', price:700, weight_grams:1200, stock:8 },
+          { label:'Bag', price:650, weight_grams:900, stock:8 }
+        ] }
+      ]
+    });
+    fx.product_ids.push(product.id);
+    var variantKey = 'Package=Box|Size=M';
+    var promotion = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'SecurityAuthorityVariant', {
+      discount_type:'fixed', discount_value:100,
+      target_type:'variant', target:[{ product_id:product.id, variant_key:variantKey }]
+    });
+    fx.promotion_ids.push(promotion.promotion_id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'SecurityAuthority', { stock:10 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'SecurityAuthority', gift.gift_id, {
+      condition_type:'required_variants',
+      condition_json:{ match_mode:'all', required_variants:[{ product_id:product.id, variant_key:variantKey, min_qty:2 }] },
+      gift_qty:1, repeat_mode:'once_per_order', priority:9900
+    });
+    fx.rule_ids.push(rule.rule_id);
+    qaStep_(steps, 'create authoritative multi-group variant promotion/gift/shipping fixture', 'ok', {
+      product_id:product.id, promotion_id:promotion.promotion_id, gift_id:gift.gift_id, rule_id:rule.rule_id
+    });
+
+    var cart = [{ product_id:product.id, qty:2, selected_variants:{ Package:'Box', Size:'M' } }];
+    var promoPreview = qaCall_('previewPromotionEligibilityRpc', [{ items:cart }]);
+    qaAssertOk_(promoPreview);
+    var previewLine = qaPromoPreviewLine_(promoPreview, product.id, variantKey);
+    qaAssert_(previewLine && Number(previewLine.unit_base_price) === 700
+      && Number(previewLine.unit_final_price) === 600
+      && previewLine.promotion && String(previewLine.promotion.promotion_id) === String(promotion.promotion_id),
+      'Promotion preview must use the verified variant key and price', { line:previewLine, preview:promoPreview });
+    var giftPreview = qaCall_('previewGiftEligibilityRpc', [{ items:cart }]);
+    qaAssertOk_(giftPreview);
+    var eligibleGift = (giftPreview.eligible || []).filter(function(entry){ return String(entry.rule_id) === String(rule.rule_id); })[0];
+    qaAssert_(eligibleGift && eligibleGift.gift && Number(eligibleGift.gift.qty) === 1,
+      'Gift preview must qualify from the verified variant quantity', giftPreview);
+    qaStep_(steps, 'verify promotion and gift previews use the canonical server variant', 'ok', {
+      variant_key:variantKey, unit_base_price:previewLine.unit_base_price, unit_final_price:previewLine.unit_final_price
+    });
+
+    var payload = qaBuildOrderPayloadForProduct_('qa-security-authority', fx.stamp, 'Buyer', product.id, fx.shipping, { items:cart });
+    payload.items[0].variant_info = 'ATTACKER CONTROLLED TEXT';
+    payload.items[0].unit_price = 1;
+    payload.items[0].price = 1;
+    payload.items[0].weight_grams = 1;
+    payload.items[0].stock = 999999;
+    payload.client_pricing = qaRuleOrderClientPricingFromPreview_(promoPreview, cart, 130);
+    var submit = qaSubmitAndTrack_(payload, fx.order_ids);
+    qaAssertOk_(submit);
+    var orderId = qaOrderIdsFromSubmit_(submit)[0];
+    var order = qaReadOrder_(fx.token, orderId);
+    var line = qaFindProductLineByVariantKey_(order, product.id, variantKey);
+    qaAssert_(line
+      && line.variant_info === 'Size: M, Package: Box'
+      && Number(line.qty) === 2
+      && Number(line.unit_base_price) === 700
+      && Number(line.unit_final_price) === 600
+      && Number(line.subtotal) === 1200
+      && line.promotion && String(line.promotion.promotion_id) === String(promotion.promotion_id),
+      'Persisted line must ignore forged client fields and use the server variant snapshot', { line:line, order:order });
+    qaAssert_(Number(order.subtotal) === 1200 && Number(order.shipping_fee) === 130 && Number(order.total) === 1330,
+      'Order totals and weight shipping must come from the verified variant', order);
+    var giftLines = qaActiveGiftLines_(order, gift.gift_id);
+    qaAssert_(giftLines.length === 1 && Number(giftLines[0].gift_qty) === 1 && String(giftLines[0].rule_id) === String(rule.rule_id),
+      'Persisted gift must match the verified variant rule', { gifts:giftLines, order:order });
+    qaAssert_(qaGetVariantStock_(product.id, 'Size', 'M') === 10
+      && qaGetVariantStock_(product.id, 'Package', 'Box') === 6
+      && qaGetGiftStock_(gift.gift_id) === 9,
+      'Only the authoritative stock targets should be deducted', {
+        size_m:qaGetVariantStock_(product.id, 'Size', 'M'),
+        package_box:qaGetVariantStock_(product.id, 'Package', 'Box'),
+        gift:qaGetGiftStock_(gift.gift_id)
+      });
+    qaStep_(steps, 'verify persisted pricing, shipping, promotion, gift, and stock authority', 'ok', {
+      order_id:orderId, subtotal:order.subtotal, shipping_fee:order.shipping_fee, total:order.total
+    });
+    output = { steps:steps, order_id:orderId, line:line, gift_lines:giftLines };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  qaStep_(steps, 'cleanup server authority fixtures', cleanup && cleanup.ok ? 'ok' : 'failed', cleanup);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps:steps, cleanup:cleanup }); throw caught; }
+  qaAssert_(cleanup && cleanup.ok === true, 'Server authority fixture cleanup failed', cleanup);
+  output.cleanup = cleanup;
+  return output;
+}
+
 function qaBulkOrderCount_(ctx, defaultCount) {
   var raw = ctx && ctx.options ? Number(ctx.options.bulkOrderCount) : 0;
   var n = isFinite(raw) && raw > 0 ? Math.floor(raw) : defaultCount;
@@ -6626,6 +9763,9 @@ function qaRunPromotionToggleOverlapGuardFlow_(ctx) {
     promos.push(disabled.promotion_id);
     var toggle = qaCall_('togglePromotionRpc', [fx.token, disabled.promotion_id, true]);
     qaAssert_(toggle && toggle.ok === false, 'Overlapping disabled promotion should not be enabled', toggle);
+    qaAssert_(toggle.error === 'PROMO_OVERLAP' && toggle.conflict
+      && String(toggle.conflict.promotion_id) === String(active.promotion_id),
+      'Toggle overlap rejection must return PROMO_OVERLAP with conflict details', toggle);
     output = { active:active.promotion_id, disabled:disabled.promotion_id, toggle_response:toggle };
   } catch (err) { caught = err; }
   var cleanup = qaCleanupCommerceFixture_({ token:fx.token, order_ids:fx.order_ids, promotion_ids:promos, product_ids:[fx.product.id], shipping:fx.shipping });
@@ -6652,6 +9792,9 @@ function qaRunPromotionUpdateOverlapGuardFlow_(ctx) {
       target:[{ product_id:p1.id }]
     })]);
     qaAssert_(update && update.ok === false, 'Overlapping promotion update should be rejected', update);
+    qaAssert_(update.error === 'PROMO_OVERLAP' && update.conflict
+      && String(update.conflict.promotion_id) === String(active.promotion_id),
+      'Update overlap rejection must return PROMO_OVERLAP with conflict details', update);
     output = { update_response:update };
   } catch (err) { caught = err; }
   var cleanup = qaCleanupCommerceFixture_(fx);
@@ -6977,6 +10120,95 @@ function qaRunGiftSplitShippingAutoGiftOnlyOnceFlow_(ctx) {
   return output;
 }
 
+// Split shipping combined with a cart-wide conditional promotion AND a per_threshold gift
+// rule. Both the promotion's qualifying subtotal and the gift's threshold multiplier must be
+// computed against the WHOLE cart (cartPricing.subtotal_after_direct), not per shipping
+// draft — submitOrderRpc evaluates gift eligibility once for the entire cart specifically to
+// avoid double-firing across drafts, and the same whole-cart base feeds the conditional
+// promotion. Two products priced 300 each, each pinned to a different shipping method
+// (forces a 2-draft split): whole-cart raw subtotal is 600. If evaluation were wrongly
+// per-draft (each draft only sees 300), the promo (needs >=500) would NOT qualify and the
+// gift (threshold 200, per_threshold) would only grant 1 set per draft (2 total, duplicated)
+// instead of the correct floor(600/200)=3 granted exactly once.
+function qaRunOrderSplitShippingConditionalPromoAndRepeatGiftFlow_(ctx) {
+  var token = ctx.options.adminToken, stamp = qaStamp_();
+  var shipping = qaCreateMultiMethodShippingFixture_(token, stamp, 'SplitCondGift', [
+    { name: 'QA Split Cond Gift A' }, { name: 'QA Split Cond Gift B' }
+  ]);
+  var fx = { token: token, stamp: stamp, shipping: shipping, order_ids: [], product_ids: [], gift_ids: [], rule_ids: [], promotion_ids: [] };
+  var caught = null, output = null;
+  try {
+    var methodA = shipping.methods[0], methodB = shipping.methods[1];
+    var pA = qaCreateOrderQaProduct_(token, shipping, stamp, 'SplitCondGiftA', 10, { price: 300, allowed_shipping_ids: [methodA.id] });
+    var pB = qaCreateOrderQaProduct_(token, shipping, stamp, 'SplitCondGiftB', 10, { price: 300, allowed_shipping_ids: [methodB.id] });
+    fx.product_ids = [pA.id, pB.id];
+
+    // Cart-wide conditional promo: target 'all', needs whole-cart subtotal >= 500 (only true
+    // if evaluated across both drafts: 300+300=600; a single draft alone is only 300).
+    var promo = qaCreatePromotion_(token, pA.id, stamp, 'SplitCondGift', {
+      discount_type: 'fixed', discount_value: 100, target_type: 'all', target: [],
+      application_mode: 'conditional', condition_type: 'min_subtotal',
+      condition_json: { min_subtotal: 500, calculation_base: 'after_discount_before_shipping' }
+    });
+    fx.promotion_ids.push(promo.promotion_id);
+
+    // per_threshold gift on whole-cart subtotal: min_subtotal 200 -> floor(600/200) = 3 sets.
+    // A per-draft evaluation would instead yield floor(300/200)=1 per draft (2 total, doubled).
+    var giftStockBefore = 20;
+    var gift = qaCreateGiftItem_(token, stamp, 'SplitCondGift', { stock: giftStockBefore });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(token, stamp, 'SplitCondGift', gift.gift_id, {
+      condition_type: 'min_subtotal', condition_json: { min_subtotal: 200 },
+      gift_qty: 1, repeat_mode: 'per_threshold'
+    });
+    fx.rule_ids.push(rule.rule_id);
+
+    var payload = qaBuildOrderPayloadForProduct_('qa-split-cond-gift', stamp, 'Buyer', pA.id, shipping, {
+      items: [{ product_id: pA.id, qty: 1, selected_variants: {} }, { product_id: pB.id, qty: 1, selected_variants: {} }]
+    });
+    payload.shipping_info = [
+      { company_id: shipping.company.id, method_id: methodA.id, item_product_ids: [pA.id] },
+      { company_id: shipping.company.id, method_id: methodB.id, item_product_ids: [pB.id] }
+    ];
+    var res = qaSubmitAndTrack_(payload, fx.order_ids);
+    qaAssertOk_(res);
+    qaAssert_(Array.isArray(res.orders) && res.orders.length === 2, 'Split shipping should create exactly 2 orders', res);
+
+    // Promotion discount must reflect the whole-cart subtotal (500 threshold met by 600),
+    // not a smaller per-draft subtotal (300, which alone would not qualify) — both lines
+    // should be discounted to 200 in their respective persisted orders.
+    var records = fx.order_ids.map(function(id){ return qaReadOrder_(token, id); });
+    var lineA = qaFindProductLine_(records.filter(function(r){ return !!qaFindProductLine_(r, pA.id); })[0], pA.id);
+    var lineB = qaFindProductLine_(records.filter(function(r){ return !!qaFindProductLine_(r, pB.id); })[0], pB.id);
+    qaAssert_(lineA && Number(lineA.unit_final_price) === 200 && lineA.promotion && String(lineA.promotion.promotion_id) === String(promo.promotion_id),
+      'A ต้องถูกลดราคาตามโปรเงื่อนไขที่ประเมินจากยอดรวมทั้งตะกร้า (คาด 200)', lineA);
+    qaAssert_(lineB && Number(lineB.unit_final_price) === 200 && lineB.promotion && String(lineB.promotion.promotion_id) === String(promo.promotion_id),
+      'B ต้องถูกลดราคาตามโปรเงื่อนไขที่ประเมินจากยอดรวมทั้งตะกร้า (คาด 200)', lineB);
+
+    // Gift: exactly 3 units awarded once across the whole cart, not duplicated per draft.
+    var attached = (res.gifts_attached || []).filter(function(g){ return String(g.gift_id) === String(gift.gift_id); });
+    var attachedQty = attached.reduce(function(s, g){ return s + Number(g.qty || 0); }, 0);
+    qaAssert_(attachedQty === 3, 'ของแถมต้องคำนวณจากยอดรวมทั้งตะกร้าครั้งเดียว (คาด 3 ไม่ใช่ซ้ำต่อ draft)', { gifts_attached: res.gifts_attached });
+    var ordersWithGift = records.filter(function(r){ return qaActiveGiftLines_(r, gift.gift_id).length > 0; });
+    qaAssert_(ordersWithGift.length === 1, 'ของแถมต้องอยู่ในออร์เดอร์เดียวจากการแยกจัดส่งเท่านั้น', records);
+    var totalGiftUnits = records.reduce(function(s, r){ return s + qaActiveGiftLines_(r, gift.gift_id).reduce(function(t, l){ return t + Number(l.gift_qty || 0); }, 0); }, 0);
+    qaAssert_(totalGiftUnits === 3, 'จำนวนของแถมรวมทุกออร์เดอร์ต้องเป็น 3', records);
+
+    var giftStockAfter = qaGetGiftStock_(gift.gift_id);
+    qaAssert_(giftStockAfter === giftStockBefore - 3, 'สต็อกของแถมต้องลดลง 3 (ครั้งเดียว ไม่ใช่ซ้ำ)', { before: giftStockBefore, after: giftStockAfter });
+
+    output = {
+      order_ids: fx.order_ids.slice(), promotion_id: promo.promotion_id, rule_id: rule.rule_id,
+      line_a_final: lineA.unit_final_price, line_b_final: lineB.unit_final_price,
+      gift_qty_total: totalGiftUnits, gift_stock_after: giftStockAfter
+    };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
 function qaRunGiftSnapshotImmutabilityFlow_(ctx) {
   var fx = qaCreateGiftEligibilityFixture_(ctx, 'GiftSnapshot', { gift_stock:5 });
   var caught = null, output = null;
@@ -7039,11 +10271,32 @@ function qaRunGiftManualAddInvalidQtyRejectedFlow_(ctx) {
     var orderRes = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-gift-bad-qty', fx.stamp, 'Buyer', fx.product.id, fx.shipping), fx.order_ids);
     qaAssertOk_(orderRes);
     var orderId = qaOrderIdsFromSubmit_(orderRes)[0];
-    var vals = [0, -1, 'abc'];
-    var results = vals.map(function(v){ return { qty:v, response:qaCall_('addManualGiftToOrderRpc', [fx.token, orderId, { gift_id:fx.gift_id, qty:v }]) }; });
-    qaAssert_(results.every(function(r){ return r.response && r.response.ok === false; }), 'Invalid manual gift quantities should be rejected', results);
+    var cases = [
+      { qty:0, error:'INVALID_QTY' }, { qty:-1, error:'INVALID_QTY' },
+      { qty:1.5, error:'INVALID_QTY' }, { qty:'abc', error:'INVALID_QTY' },
+      { qty:Infinity, error:'INVALID_QTY' }, { qty:'9'.repeat(200), error:'INVALID_QTY' },
+      { qty:10000, error:'QTY_LIMIT_EXCEEDED' }
+    ];
+    var results = cases.map(function(c){
+      return { qty:(typeof c.qty === 'number' && !isFinite(c.qty)) ? String(c.qty) : c.qty,
+        expected:c.error, response:qaCall_('addManualGiftToOrderRpc', [fx.token, orderId, { gift_id:fx.gift_id, qty:c.qty }]) };
+    });
+    qaAssert_(results.every(function(r){ return r.response && r.response.ok === false && r.response.error === r.expected; }),
+      'Invalid manual gift quantities should be rejected with the strict shared contract', results);
     qaAssert_(qaGetGiftStock_(fx.gift_id) === 3, 'Invalid manual add should not change stock', { stock:qaGetGiftStock_(fx.gift_id), results:results });
-    output = { results:results, final_stock:qaGetGiftStock_(fx.gift_id) };
+
+    var added = qaCall_('addManualGiftToOrderRpc', [fx.token, orderId, { gift_id:fx.gift_id, qty:1 }]);
+    qaAssertOk_(added);
+    var updateResults = cases.map(function(c){
+      return { qty:(typeof c.qty === 'number' && !isFinite(c.qty)) ? String(c.qty) : c.qty,
+        expected:c.error, response:qaCall_('updateGiftLineQtyRpc', [fx.token, orderId, added.gift_snapshot_id, c.qty]) };
+    });
+    qaAssert_(updateResults.every(function(r){ return r.response && r.response.ok === false && r.response.error === r.expected; }),
+      'Invalid manual gift updates should use the same strict quantity contract', updateResults);
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 2, 'Invalid manual updates should not change the one valid reservation', {
+      stock:qaGetGiftStock_(fx.gift_id), update_results:updateResults
+    });
+    output = { add_results:results, update_results:updateResults, final_stock:qaGetGiftStock_(fx.gift_id) };
   } catch (err) { caught = err; }
   var cleanup = qaCleanupGiftFixture_(fx);
   if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
@@ -7322,7 +10575,7 @@ function qaRunShippingSplitMissingItemAssignmentRejectedFlow_(ctx) {
       { company_id:shipping.company.id, method_id:mB.id }
     ];
     var res = qaSubmitAndTrack_(payload, fx.order_ids);
-    var noOrder = qaAssertNoNewOrderAfterFailure_(token, beforeCount, res, fx.order_ids, 'SHIPPING_INVALID');
+    var noOrder = qaAssertNoNewOrderAfterFailure_(token, beforeCount, res, fx.order_ids, 'SHIPPING_INVALID', payload);
     qaAssert_(qaGetProductStock_(productA.id) === 5 && qaGetProductStock_(productB.id) === 5, 'Rejected split assignment should not deduct stock', { a:qaGetProductStock_(productA.id), b:qaGetProductStock_(productB.id) });
     output = { response:res, counts:noOrder, stock_a:qaGetProductStock_(productA.id), stock_b:qaGetProductStock_(productB.id) };
   } catch (err) { caught = err; }
@@ -7358,7 +10611,7 @@ function qaRunShippingSplitWrongMethodForProductRejectedFlow_(ctx) {
       { company_id:shipping.company.id, method_id:mB.id, item_product_ids:[productA.id] }
     ];
     var res = qaSubmitAndTrack_(payload, fx.order_ids);
-    var noOrder = qaAssertNoNewOrderAfterFailure_(token, beforeCount, res, fx.order_ids, 'SHIPPING_INVALID');
+    var noOrder = qaAssertNoNewOrderAfterFailure_(token, beforeCount, res, fx.order_ids, 'SHIPPING_INVALID', payload);
     qaAssert_(qaGetProductStock_(productA.id) === 5 && qaGetProductStock_(productB.id) === 5, 'Wrong method assignment should not deduct stock', { a:qaGetProductStock_(productA.id), b:qaGetProductStock_(productB.id) });
     output = { response:res, counts:noOrder, stock_a:qaGetProductStock_(productA.id), stock_b:qaGetProductStock_(productB.id) };
   } catch (err) { caught = err; }
@@ -7842,7 +11095,7 @@ function qaRunShippingMatrixCaseFlow_(ctx, testId) {
     var beforeCount = qaOrderCount_(token);
     var res = qaSubmitAndTrack_(payload, fx.order_ids);
     if (caseDef.expect === 'reject') {
-      var noOrder = qaAssertNoNewOrderAfterFailure_(token, beforeCount, res, fx.order_ids, caseDef.error || 'SHIPPING_INVALID');
+      var noOrder = qaAssertNoNewOrderAfterFailure_(token, beforeCount, res, fx.order_ids, caseDef.error || 'SHIPPING_INVALID', payload);
       Object.keys(products).forEach(function(k) {
         qaAssert_(qaGetProductStock_(products[k].id) === products[k]._qa_start_stock,
           'Rejected shipping matrix submit should preserve stock',
@@ -7883,7 +11136,7 @@ function qaRunOrderEdgeEmptyCartRejectedFlow_(ctx) {
     var payload = qaBuildOrderPayloadForProduct_('qa-edge-empty-cart', fx.stamp, 'Buyer', fx.product.id, fx.shipping);
     payload.items = [];
     var res = qaSubmitAndTrack_(payload, fx.order_ids);
-    var noOrder = qaAssertNoNewOrderAfterFailure_(fx.token, beforeCount, res, fx.order_ids);
+    var noOrder = qaAssertNoNewOrderAfterFailure_(fx.token, beforeCount, res, fx.order_ids, null, payload);
     qaAssert_(qaGetProductStock_(fx.product.id) === 5, 'Empty cart rejection should preserve product stock', {
       stock: qaGetProductStock_(fx.product.id),
       response: res
@@ -7904,7 +11157,7 @@ function qaRunOrderEdgeShippingInfoEmptyRejectedFlow_(ctx) {
     var payload = qaBuildOrderPayloadForProduct_('qa-edge-no-shipping-info', fx.stamp, 'Buyer', fx.product.id, fx.shipping);
     payload.shipping_info = [];
     var res = qaSubmitAndTrack_(payload, fx.order_ids);
-    var noOrder = qaAssertNoNewOrderAfterFailure_(fx.token, beforeCount, res, fx.order_ids);
+    var noOrder = qaAssertNoNewOrderAfterFailure_(fx.token, beforeCount, res, fx.order_ids, null, payload);
     qaAssert_(qaGetProductStock_(fx.product.id) === 5, 'Missing shipping_info rejection should preserve stock', {
       stock: qaGetProductStock_(fx.product.id),
       response: res
@@ -7938,7 +11191,7 @@ function qaRunOrderEdgeClientPricingMissingItemRejectedFlow_(ctx) {
       total:200
     };
     var res = qaSubmitAndTrack_(payload, fx.order_ids);
-    var noOrder = qaAssertNoNewOrderAfterFailure_(fx.token, beforeCount, res, fx.order_ids, 'PRICE_CHANGED');
+    var noOrder = qaAssertNoNewOrderAfterFailure_(fx.token, beforeCount, res, fx.order_ids, 'PRICE_CHANGED', payload);
     var kinds = qaAssertDiffKinds_(res, ['item_missing', 'subtotal', 'total']);
     output = { response:res, diff_kinds:kinds, counts:noOrder };
   } catch (err) { caught = err; }
@@ -7974,6 +11227,40 @@ function qaRunOrderEdgeDuplicateProductLinesStockAggregateFlow_(ctx) {
   return output;
 }
 
+// Two lines of the same product, each individually within stock but summing to more than
+// it, must be rejected as a whole — not partially oversold. This is the "combined EXCEEDS
+// stock" counterpart to orders.edge-duplicate-product-lines-stock-aggregate (which only
+// covers combined == stock, a case that succeeds correctly). stock=3, two lines of qty 3
+// each (each individually <= 3, combined = 6 > 3).
+function qaRunOrderEdgeDuplicateLinesCombinedExceedsStockFlow_(ctx) {
+  var fx = qaCreateOrderFixture_(ctx, 'EdgeDuplicateExceed', 3, { price:100 }, { flat_rate:0 });
+  var caught = null, output = null;
+  try {
+    var beforeCount = qaOrderCount_(fx.token);
+    var payload = qaBuildOrderPayloadForProduct_('qa-edge-duplicate-exceed', fx.stamp, 'Buyer', fx.product.id, fx.shipping, {
+      items:[
+        { product_id:fx.product.id, qty:3, selected_variants:{} },
+        { product_id:fx.product.id, qty:3, selected_variants:{} }
+      ]
+    });
+    var res = qaSubmitAndTrack_(payload, fx.order_ids);
+    var noOrder = qaAssertNoNewOrderAfterFailure_(fx.token, beforeCount, res, fx.order_ids, 'STOCK_INSUFFICIENT', payload);
+    qaAssert_(res && res.ok === false && String(res.error) === 'STOCK_INSUFFICIENT'
+      && Number(res.requested_qty) === 6 && Number(res.available_qty) === 3,
+      'Duplicate-line stock rejection must expose cumulative requested/available quantities', {
+        response:res, expected:{ error:'STOCK_INSUFFICIENT', requested_qty:6, available_qty:3 }
+      });
+    qaAssert_(qaGetProductStock_(fx.product.id) === 3, 'สต็อกต้องไม่ถูกหักเมื่อรายการซ้ำรวมกันเกินสต็อก (ต้องปฏิเสธคำสั่งซื้อทั้งหมด)', {
+      stock:qaGetProductStock_(fx.product.id), response:res
+    });
+    output = { response:res, counts:noOrder, final_stock:qaGetProductStock_(fx.product.id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
 function qaRunOrderEdgeVariantStockRollbackOnFailureFlow_(ctx) {
   var fx = qaCreateCommerceFixture_(ctx, 'EdgeVariantRollback', { flat_rate:0 });
   var caught = null, output = null;
@@ -7995,7 +11282,7 @@ function qaRunOrderEdgeVariantStockRollbackOnFailureFlow_(ctx) {
       ]
     });
     var res = qaSubmitAndTrack_(payload, fx.order_ids);
-    var noOrder = qaAssertNoNewOrderAfterFailure_(fx.token, beforeCount, res, fx.order_ids, 'STOCK_INSUFFICIENT');
+    var noOrder = qaAssertNoNewOrderAfterFailure_(fx.token, beforeCount, res, fx.order_ids, 'STOCK_INSUFFICIENT', payload);
     qaAssert_(qaGetVariantStock_(variantProduct.id, 'Color', 'Red') === 2, 'Variant stock should roll back when a later line fails', {
       variant_stock:qaGetVariantStock_(variantProduct.id, 'Color', 'Red'),
       response:res
@@ -8383,7 +11670,7 @@ function qaRunOrderClientPricingSplitShippingMismatchFlow_(ctx) {
       total:1699
     };
     var res = qaSubmitAndTrack_(payload, fx.order_ids);
-    var noOrder = qaAssertNoNewOrderAfterFailure_(token, beforeCount, res, fx.order_ids, 'PRICE_CHANGED');
+    var noOrder = qaAssertNoNewOrderAfterFailure_(token, beforeCount, res, fx.order_ids, 'PRICE_CHANGED', payload);
     var kinds = qaAssertDiffKinds_(res, ['shipping_fee', 'total']);
     output = { response:res, diff_kinds:kinds, counts:noOrder };
   } catch (err) { caught = err; }
@@ -8456,12 +11743,65 @@ function qaRunOrderClientPricingPromoRemovedBeforeSubmitFlow_(ctx) {
       total:800 + Number(fx.shipping.method.flat_rate || 0)
     };
     var res = qaSubmitAndTrack_(payload, fx.order_ids);
-    var noOrder = qaAssertNoNewOrderAfterFailure_(fx.token, beforeCount, res, fx.order_ids, 'PRICE_CHANGED');
+    var noOrder = qaAssertNoNewOrderAfterFailure_(fx.token, beforeCount, res, fx.order_ids, 'PRICE_CHANGED', payload);
     var kinds = qaAssertDiffKinds_(res, ['item_price', 'item_promotion', 'subtotal', 'total']);
     output = { delete_promotion:delPromo, response:res, diff_kinds:kinds, counts:noOrder };
   } catch (err) { caught = err; }
   var cleanup = qaCleanupCommerceFixture_(fx);
   if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// A conditional promo (unlike a direct one) can go stale WITHOUT the promotion itself being
+// touched: the client previews a cart that satisfies the qualifying condition (getting a
+// discounted price for the target line), then the customer edits the cart below the
+// condition's threshold before submitting. The stale client_pricing snapshot still echoes the
+// discounted price/promotion_id — submitOrderRpc must recompute against the ACTUAL submitted
+// cart (where the condition is no longer met) and reject with PRICE_CHANGED.
+function qaRunOrderClientPricingConditionalPromoUnqualifiedBeforeSubmitFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'CondPromoUnqualifiedBeforeSubmit');
+  var caught = null, output = null;
+  try {
+    var A = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'CondUnqualA', 10, { price: 300 });
+    var T = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'CondUnqualT', 10, { price: 1000 });
+    fx.product_ids.push(A.id, T.id);
+    var promo = qaCreatePromotion_(fx.token, T.id, fx.stamp, 'CondUnqualifiedBeforeSubmit', {
+      discount_type: 'fixed', discount_value: 300, target_type: 'product', target: [{ product_id: T.id }],
+      application_mode: 'conditional', condition_type: 'required_products',
+      condition_json: { match_mode: 'all', required_products: [{ product_id: A.id, min_qty: 2 }] }
+    });
+    fx.promotion_ids.push(promo.promotion_id);
+
+    // Preview while the cart still qualifies (A qty 2): T is discounted to 700.
+    var qualifyingPreview = qaCall_('previewPromotionEligibilityRpc', [{ items: [qaCartItem_(A.id, 2, {}), qaCartItem_(T.id, 1, {})] }]);
+    qaAssertOk_(qualifyingPreview);
+    var tLine = qaPromoPreviewLine_(qualifyingPreview, T.id, '');
+    qaAssert_(tLine && Number(tLine.unit_final_price) === 700, 'ตอน preview (A ครบ 2) T ต้องลดเหลือ 700', qualifyingPreview);
+
+    var beforeCount = qaOrderCount_(fx.token);
+    // Submit with A reduced to qty 1 (condition no longer met) while client_pricing still
+    // echoes the stale qualifying preview's T price/promotion.
+    var payload = qaBuildOrderPayloadForProduct_('qa-cond-unqualified', fx.stamp, 'Buyer', T.id, fx.shipping, {
+      items: [{ product_id: A.id, qty: 1, selected_variants: {} }, { product_id: T.id, qty: 1, selected_variants: {} }]
+    });
+    var feeNum = Number(fx.shipping.method.flat_rate || 0);
+    payload.client_pricing = {
+      items: [
+        { product_id: A.id, selected_variants: {}, qty: 1, unit_final_price: 300, promotion_id: null },
+        { product_id: T.id, selected_variants: {}, qty: 1, unit_final_price: 700, promotion_id: promo.promotion_id }
+      ],
+      subtotal: 1000,
+      shipping_fee: feeNum,
+      total: 1000 + feeNum
+    };
+    var res = qaSubmitAndTrack_(payload, fx.order_ids);
+    var noOrder = qaAssertNoNewOrderAfterFailure_(fx.token, beforeCount, res, fx.order_ids, 'PRICE_CHANGED', payload);
+    var kinds = qaAssertDiffKinds_(res, ['item_price', 'item_promotion', 'subtotal', 'total']);
+    output = { promotion_id: promo.promotion_id, response: res, diff_kinds: kinds, counts: noOrder };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
   output.cleanup = cleanup;
   return output;
 }
@@ -9030,6 +12370,802 @@ var _QA_ADDR_PATCH = {
   shipping_postal_code: '10110'
 };
 
+/* ===== Promotion/gift settings coverage expansion ===== */
+
+function qaRunPromotionSettingsValidationMatrixFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'PromoSettingsValidation');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'PromoSettingsValidation', 10, {
+      price: 1000,
+      variants: [
+        { name:'Color', type:'text', options:[{ label:'Red', price:1000, stock:10 }, { label:'Blue', price:1000, stock:10 }] },
+        { name:'Size', type:'text', options:[{ label:'S', price:1000, stock:10 }, { label:'L', price:1000, stock:10 }] }
+      ]
+    });
+    fx.product_ids.push(product.id);
+    function base() {
+      return {
+        name:'QA Promo Settings Validation ' + fx.stamp,
+        discount_type:'fixed', discount_value:100,
+        target_type:'all', target:[],
+        starts_at:qaPastIso_(60000), ends_at:'', no_end_date:true, enabled:true,
+        application_mode:'conditional', condition_type:'min_subtotal',
+        condition_json:{ min_subtotal:500 }
+      };
+    }
+    var cases = [];
+    function run(label, mutate) {
+      var payload = base();
+      mutate(payload);
+      var res = qaCall_('createPromotionRpc', [fx.token, payload]);
+      if (res && res.promotion_id) fx.promotion_ids.push(res.promotion_id);
+      cases.push({ label:label, response:res });
+    }
+    run('invalid application_mode', function(p){ p.application_mode = 'stacked'; });
+    run('invalid condition_type', function(p){ p.condition_type = 'cart_magic'; });
+    run('zero min_subtotal', function(p){ p.condition_json = { min_subtotal:0 }; });
+    run('empty required_products', function(p){ p.condition_type='required_products'; p.condition_json={ required_products:[] }; });
+    run('missing required product', function(p){ p.condition_type='required_products'; p.condition_json={ required_products:[{ product_id:'qa_missing_product', min_qty:1 }] }; });
+    run('empty required_variants', function(p){ p.condition_type='required_variants'; p.condition_json={ required_variants:[] }; });
+    run('invalid required variant key', function(p){ p.condition_type='required_variants'; p.condition_json={ required_variants:[{ product_id:product.id, variant_key:'Color=Red', min_qty:1 }] }; });
+    // A blank starts_at intentionally means "active immediately". Exercise the
+    // actual invalid schedule branch with a non-date value instead.
+    run('invalid starts_at', function(p){ p.starts_at='not-a-date'; });
+    var accepted = cases.filter(function(c){ return !c.response || c.response.ok !== false; });
+    qaAssert_(accepted.length === 0, 'Invalid promotion settings were accepted', { accepted:accepted, cases:cases });
+    output = { checked:cases.length, cases:cases };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunPromotionSettingsScheduleRoundTripFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'PromoScheduleRoundTrip');
+  var caught = null, output = null, states = [];
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'PromoScheduleRoundTrip', 10, { price:1000 });
+    fx.product_ids.push(product.id);
+    var promo = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'ScheduleRoundTrip', {
+      discount_value:100, starts_at:qaFutureIso_(3600000), no_end_date:true
+    });
+    fx.promotion_ids.push(promo.promotion_id);
+    function readState(label) {
+      var listed = qaCall_('listPromotionsRpc', [fx.token]);
+      qaAssertOk_(listed);
+      var row = (listed.promotions || []).filter(function(p){ return String(p.promotion_id) === String(promo.promotion_id); })[0];
+      qaAssert_(!!row, 'Promotion missing while checking schedule state: ' + label, listed);
+      states.push({ label:label, status:row.status, starts_at:row.starts_at, ends_at:row.ends_at, no_end_date:row.no_end_date, enabled:row.enabled });
+      return row;
+    }
+    qaAssert_(readState('scheduled').status === 'scheduled', 'Future promotion must be scheduled', states);
+    qaAssertOk_(qaCall_('updatePromotionRpc', [fx.token, promo.promotion_id, {
+      starts_at:'', ends_at:'', no_end_date:true
+    }]));
+    var active = readState('active-immediately-no-end');
+    qaAssert_(active.status === 'active' && !active.starts_at && active.no_end_date === true && !active.ends_at, 'Promotion without start/end dates did not normalize as active', active);
+    var activeRecord = qaGetProductRecord_(product.id);
+    qaAssert_(activeRecord.promotion && String(activeRecord.promotion.promotion_id) === String(promo.promotion_id), 'Active promotion missing from product snapshot', activeRecord);
+
+    qaAssertOk_(qaCall_('updatePromotionRpc', [fx.token, promo.promotion_id, {
+      starts_at:qaPastIso_(120000), ends_at:qaPastIso_(60000), no_end_date:false
+    }]));
+    qaAssert_(readState('expired').status === 'expired', 'Past schedule must be expired', states);
+    var expiredRecord = qaGetProductRecord_(product.id);
+    qaAssert_(!expiredRecord.promotion || String(expiredRecord.promotion.promotion_id) !== String(promo.promotion_id), 'Expired promotion still applied', expiredRecord);
+
+    qaAssertOk_(qaCall_('updatePromotionRpc', [fx.token, promo.promotion_id, {
+      starts_at:qaPastIso_(60000), ends_at:'', no_end_date:true
+    }]));
+    qaAssertOk_(qaCall_('togglePromotionRpc', [fx.token, promo.promotion_id, false]));
+    qaAssert_(readState('disabled').status === 'disabled', 'Disabled promotion status mismatch', states);
+    qaAssertOk_(qaCall_('togglePromotionRpc', [fx.token, promo.promotion_id, true]));
+    qaAssert_(readState('re-enabled').status === 'active', 'Re-enabled no-end promotion must be active', states);
+    output = { promotion_id:promo.promotion_id, states:states };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup, states:states }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunPromotionSettingsModeTransitionFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'PromoModeTransition');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'PromoModeTransition', 10, { price:1000 });
+    fx.product_ids.push(product.id);
+    var promo = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'ModeTransition', { discount_value:200 });
+    fx.promotion_ids.push(promo.promotion_id);
+    var directRecord = qaGetProductRecord_(product.id);
+    qaAssert_(directRecord.promotion && String(directRecord.promotion.promotion_id) === String(promo.promotion_id), 'Initial direct promotion must be in snapshot', directRecord);
+
+    qaAssertOk_(qaCall_('updatePromotionRpc', [fx.token, promo.promotion_id, {
+      application_mode:'conditional', condition_type:'min_subtotal', condition_json:{ min_subtotal:2000 }
+    }]));
+    var conditional = qaCall_('getPromotionRpc', [fx.token, promo.promotion_id]);
+    qaAssertOk_(conditional);
+    qaAssert_(conditional.promotion.application_mode === 'conditional' && Number(conditional.promotion.condition_json.min_subtotal) === 2000, 'Conditional settings were not persisted', conditional);
+    var conditionalRecord = qaGetProductRecord_(product.id);
+    qaAssert_(!conditionalRecord.promotion || String(conditionalRecord.promotion.promotion_id) !== String(promo.promotion_id), 'Conditional promotion must not be injected into product snapshot', conditionalRecord);
+    var below = qaPreviewPromo_([qaCartItem_(product.id, 1, {})]);
+    qaAssert_(qaPromoNearHas_(below, promo.promotion_id), 'Conditional promotion should be a near miss below threshold', below);
+
+    qaAssertOk_(qaCall_('updatePromotionRpc', [fx.token, promo.promotion_id, {
+      application_mode:'direct', condition_type:'required_products',
+      condition_json:{ required_products:[{ product_id:product.id, min_qty:99 }] }
+    }]));
+    var directAgain = qaCall_('getPromotionRpc', [fx.token, promo.promotion_id]);
+    qaAssertOk_(directAgain);
+    qaAssert_(directAgain.promotion.application_mode === 'direct'
+      && !directAgain.promotion.condition_type
+      && Object.keys(directAgain.promotion.condition_json || {}).length === 0,
+      'Direct mode must strip stale condition fields', directAgain);
+    var finalRecord = qaGetProductRecord_(product.id);
+    qaAssert_(finalRecord.promotion && String(finalRecord.promotion.promotion_id) === String(promo.promotion_id), 'Promotion must return to direct snapshot pricing', finalRecord);
+    output = { promotion_id:promo.promotion_id, conditional:conditional.promotion, direct_again:directAgain.promotion };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunPromotionConditionalSubtotalAfterDirectFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'PromoSubtotalAfterDirect');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'PromoSubtotalAfterDirect', 10, { price:1000 });
+    fx.product_ids.push(product.id);
+    var direct = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'SubtotalDirect', { discount_value:200 });
+    fx.promotion_ids.push(direct.promotion_id);
+    Utilities.sleep(5);
+    var conditionalEndsAt = new Date(Date.now() + 86400000).toISOString();
+    var conditional = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'SubtotalConditional', {
+      discount_value:100, application_mode:'conditional', condition_type:'min_subtotal', condition_json:{ min_subtotal:900 },
+      ends_at:conditionalEndsAt, no_end_date:false
+    });
+    fx.promotion_ids.push(conditional.promotion_id);
+    var below = qaPreviewPromo_([qaCartItem_(product.id, 1, {})]);
+    qaAssert_(!qaPromoEligibleHas_(below, conditional.promotion_id) && qaPromoNearHas_(below, conditional.promotion_id), 'Threshold 900 must use direct-discount subtotal 800', below);
+    var belowEntry = (below.near || []).filter(function(e){ return String(e.promotion_id) === String(conditional.promotion_id); })[0];
+    qaAssert_(belowEntry && belowEntry.starts_at && belowEntry.ends_at === conditionalEndsAt && belowEntry.no_end_date === false,
+      'Promotion near preview must expose its active schedule', belowEntry);
+    var belowLine = qaPromoPreviewLine_(below, product.id, '');
+    qaAssert_(Number(belowLine.unit_final_price) === 800 && String(belowLine.promotion.promotion_id) === String(direct.promotion_id), 'Unqualified conditional must fall back to direct price 800', belowLine);
+
+    qaAssertOk_(qaCall_('updatePromotionRpc', [fx.token, conditional.promotion_id, { condition_json:{ min_subtotal:800 } }]));
+    var exact = qaPreviewPromo_([qaCartItem_(product.id, 1, {})]);
+    var exactLine = qaPromoPreviewLine_(exact, product.id, '');
+    qaAssert_(qaPromoEligibleHas_(exact, conditional.promotion_id), 'Threshold 800 must qualify at direct-discount subtotal 800', exact);
+    // Best-price policy: the qualified conditional (-100) is outpriced by the direct (-200),
+    // so the line keeps the direct price 800 and the conditional is qualified-but-not-applied.
+    qaAssert_(Number(exactLine.unit_final_price) === 800 && String(exactLine.promotion.promotion_id) === String(direct.promotion_id), 'Best-price must keep the bigger direct discount over the qualified conditional', exactLine);
+    var exactEntry = (exact.eligible || []).filter(function(e){ return String(e.promotion_id) === String(conditional.promotion_id); })[0];
+    qaAssert_(exactEntry && exactEntry.applied === false
+      && Array.isArray(exactEntry.outpriced_lines) && exactEntry.outpriced_lines.length === 1,
+      'Outpriced qualified conditional must report applied:false + outpriced_lines', exactEntry);
+    qaAssert_(exactEntry.starts_at && exactEntry.ends_at === conditionalEndsAt && exactEntry.no_end_date === false,
+      'Promotion eligible preview must expose its active schedule', exactEntry);
+    qaSubmitAndAssertMatchesPreview_(fx, 'SubtotalAfterDirect', [qaCartItem_(product.id, 1, {})], exact);
+    output = { direct:direct.promotion_id, conditional:conditional.promotion_id, below:below, exact:exact };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunPromotionResolverReverseSpecificityFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'PromoReverseSpecificity');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'PromoReverseSpecificity', -1, {
+      price:1000,
+      variants:[{ name:'Size', type:'text', options:[{ label:'S', price:1000, stock:10 }, { label:'L', price:1000, stock:10 }] }]
+    });
+    fx.product_ids.push(product.id);
+    var directVariant = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'DirectVariant', {
+      discount_value:300, target_type:'variant', target:[{ product_id:product.id, variant_key:'Size=L' }]
+    });
+    fx.promotion_ids.push(directVariant.promotion_id);
+    Utilities.sleep(5);
+    var conditionalProduct = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'ConditionalProduct', {
+      discount_value:100, target_type:'product', target:[{ product_id:product.id }],
+      application_mode:'conditional', condition_type:'min_subtotal', condition_json:{ min_subtotal:1 }
+    });
+    fx.promotion_ids.push(conditionalProduct.promotion_id);
+    var cart = [qaCartItem_(product.id, 1, { Size:'L' }), qaCartItem_(product.id, 1, { Size:'S' })];
+    var preview = qaPreviewPromo_(cart);
+    var lineL = qaPromoPreviewLine_(preview, product.id, 'Size=L');
+    var lineS = qaPromoPreviewLine_(preview, product.id, 'Size=S');
+    qaAssert_(Number(lineL.unit_final_price) === 700 && String(lineL.promotion.promotion_id) === String(directVariant.promotion_id), 'Bigger direct variant discount must win on Size=L (best price)', lineL);
+    qaAssert_(Number(lineS.unit_final_price) === 900 && String(lineS.promotion.promotion_id) === String(conditionalProduct.promotion_id), 'Sibling Size=S must use qualified conditional product promotion', lineS);
+    qaSubmitAndAssertMatchesPreview_(fx, 'ReverseSpecificity', cart, preview);
+    output = { direct_variant:directVariant.promotion_id, conditional_product:conditionalProduct.promotion_id, preview:preview };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunPromotionResolverCreatedAtTiebreakFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'PromoCreatedAtTiebreak');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'PromoCreatedAtTiebreak', 10, { price:1000 });
+    fx.product_ids.push(product.id);
+    // Equal discounts -> equal final price -> equal specificity: the created_at tiebreak
+    // (newest wins) is the only thing separating them under the best-price policy.
+    var older = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'TieOlder', {
+      discount_value:250, application_mode:'conditional', condition_type:'min_subtotal', condition_json:{ min_subtotal:1 }
+    });
+    fx.promotion_ids.push(older.promotion_id);
+    Utilities.sleep(20);
+    var newer = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'TieNewer', {
+      discount_value:250, application_mode:'conditional', condition_type:'min_subtotal', condition_json:{ min_subtotal:1 }
+    });
+    fx.promotion_ids.push(newer.promotion_id);
+    var first = qaPreviewPromo_([qaCartItem_(product.id, 1, {})]);
+    var firstLine = qaPromoPreviewLine_(first, product.id, '');
+    qaAssert_(Number(firstLine.unit_final_price) === 750 && String(firstLine.promotion.promotion_id) === String(newer.promotion_id), 'Newer promotion must win the price tie at equal specificity', firstLine);
+    qaAssertOk_(qaCall_('togglePromotionRpc', [fx.token, newer.promotion_id, false]));
+    var fallback = qaPreviewPromo_([qaCartItem_(product.id, 1, {})]);
+    var fallbackLine = qaPromoPreviewLine_(fallback, product.id, '');
+    qaAssert_(Number(fallbackLine.unit_final_price) === 750 && String(fallbackLine.promotion.promotion_id) === String(older.promotion_id), 'Older promotion must win after newer is disabled', fallbackLine);
+    output = { older:older.promotion_id, newer:newer.promotion_id, first:first, fallback:fallback };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// The core best-price policy flip: a LESS specific promotion with a BIGGER discount must
+// beat a MORE specific promotion with a smaller discount on the same line. Under the old
+// specificity-first rule the direct variant (-100) would have won; under best-price the
+// qualified conditional product promo (-300) wins.
+function qaRunPromotionBestPriceOverSpecificityFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'PromoBestPrice');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'PromoBestPrice', -1, {
+      price:1000,
+      variants:[{ name:'Size', type:'text', options:[{ label:'S', price:1000, stock:10 }, { label:'L', price:1000, stock:10 }] }]
+    });
+    fx.product_ids.push(product.id);
+    var directVariant = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'BestPriceDirectVar', {
+      discount_value:100, target_type:'variant', target:[{ product_id:product.id, variant_key:'Size=L' }]
+    });
+    fx.promotion_ids.push(directVariant.promotion_id);
+    Utilities.sleep(5);
+    var conditionalProduct = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'BestPriceCondProd', {
+      discount_value:300, target_type:'product', target:[{ product_id:product.id }],
+      application_mode:'conditional', condition_type:'min_subtotal', condition_json:{ min_subtotal:1 }
+    });
+    fx.promotion_ids.push(conditionalProduct.promotion_id);
+    var cart = [qaCartItem_(product.id, 1, { Size:'L' })];
+    var preview = qaPreviewPromo_(cart);
+    var lineL = qaPromoPreviewLine_(preview, product.id, 'Size=L');
+    qaAssert_(Number(lineL.unit_final_price) === 700 && String(lineL.promotion.promotion_id) === String(conditionalProduct.promotion_id), 'Bigger conditional product discount must beat the more-specific direct variant (best price)', lineL);
+    var entry = (preview.eligible || []).filter(function(e){ return String(e.promotion_id) === String(conditionalProduct.promotion_id); })[0];
+    qaAssert_(entry && entry.applied === true
+      && Array.isArray(entry.applied_lines) && entry.applied_lines.length === 1
+      && Array.isArray(entry.outpriced_lines) && entry.outpriced_lines.length === 0,
+      'Winning conditional must report applied:true with its applied line', entry);
+    qaSubmitAndAssertMatchesPreview_(fx, 'BestPriceFlip', cart, preview);
+    output = { direct_variant:directVariant.promotion_id, conditional_product:conditionalProduct.promotion_id, preview:preview };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunGiftLegacyInvalidDataFailClosedFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'GiftLegacyFailClosed');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'GiftLegacyFailClosed', 10, { price:500 });
+    fx.product_ids.push(product.id);
+    var validGift = qaCreateGiftItem_(fx.token, fx.stamp, 'GiftLegacyInvalidRule', { stock:10 });
+    fx.gift_ids.push(validGift.gift_id);
+
+    var suffix = uuid_().replace(/-/g, '').slice(0, 12);
+    var invalidGiftId = 'gift_legacy_' + suffix;
+    var invalidGiftRuleId = 'gr_legacy_stock_' + suffix;
+    var invalidQtyRuleId = 'gr_legacy_qty_' + suffix;
+    var now = nowISO_();
+    sheetGiftItems_().appendRow([
+      invalidGiftId, 'QA Legacy Invalid Gift ' + fx.stamp, 'fractional stock fixture', '', '',
+      1.5, 'TRUE', now, now, '', '', ''
+    ]);
+    fx.gift_ids.push(invalidGiftId);
+    sheetGiftRules_().appendRow([
+      invalidGiftRuleId, 'QA Legacy Invalid Gift Rule ' + fx.stamp, '', invalidGiftId,
+      'required_products', JSON.stringify({ required_products:[{ product_id:product.id, min_qty:1 }] }),
+      1, 'once_per_order', qaPastIso_(60000), '', 'TRUE', 'TRUE', 9200, now, now, '', '', ''
+    ]);
+    sheetGiftRules_().appendRow([
+      invalidQtyRuleId, 'QA Legacy Invalid Qty Rule ' + fx.stamp, '', validGift.gift_id,
+      'required_products', JSON.stringify({ required_products:[{ product_id:product.id, min_qty:1.5 }] }),
+      1, 'per_threshold', qaPastIso_(60000), '', 'TRUE', 'TRUE', 9100, now, now, '', '', ''
+    ]);
+    fx.rule_ids.push(invalidGiftRuleId, invalidQtyRuleId);
+    _invalidateGiftCaches_();
+
+    var adminItems = qaCall_('listGiftItemsRpc', [fx.token]);
+    var adminRules = qaCall_('listGiftRulesRpc', [fx.token]);
+    qaAssertOk_(adminItems); qaAssertOk_(adminRules);
+    var adminGift = (adminItems.items || []).filter(function(g){ return String(g.gift_id) === invalidGiftId; })[0];
+    var adminInvalidStockRule = (adminRules.rules || []).filter(function(r){ return String(r.rule_id) === invalidGiftRuleId; })[0];
+    var adminInvalidQtyRule = (adminRules.rules || []).filter(function(r){ return String(r.rule_id) === invalidQtyRuleId; })[0];
+    qaAssert_(adminGift && adminGift.operational === false && (adminGift.validation_errors || []).length,
+      'Legacy invalid gift must remain visible to admin with validation errors', adminGift || adminItems);
+    qaAssert_(adminInvalidStockRule && adminInvalidStockRule.operational === false && (adminInvalidStockRule.validation_errors || []).length
+      && adminInvalidQtyRule && adminInvalidQtyRule.operational === false && (adminInvalidQtyRule.validation_errors || []).length,
+      'Legacy invalid rules must remain visible to admin with validation errors', { stock_rule:adminInvalidStockRule, qty_rule:adminInvalidQtyRule });
+
+    var campaigns = qaCall_('getActiveGiftCampaignsRpc', []);
+    var preview = qaCall_('previewGiftEligibilityRpc', [{ items:[{ product_id:product.id, qty:3, selected_variants:{} }] }]);
+    qaAssertOk_(campaigns); qaAssertOk_(preview);
+    var blockedRuleIds = [invalidGiftRuleId, invalidQtyRuleId];
+    qaAssert_(!(campaigns.campaigns || []).some(function(c){ return blockedRuleIds.indexOf(String(c.rule_id)) >= 0; }),
+      'Invalid legacy rules must not be public campaigns', campaigns);
+    qaAssert_(!(preview.eligible || []).some(function(e){ return blockedRuleIds.indexOf(String(e.rule_id)) >= 0; }),
+      'Invalid legacy rules must not be previewed as eligible', preview);
+
+    var submit = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-gift-legacy-fail-closed', fx.stamp, 'Buyer', product.id, fx.shipping, { qty:3 }), fx.order_ids);
+    qaAssertOk_(submit);
+    var order = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(submit)[0]);
+    var fixtureGiftIds = [invalidGiftId, validGift.gift_id];
+    var awarded = (order.items || []).filter(function(line){ return line.line_type === 'gift' && fixtureGiftIds.indexOf(String(line.gift_id)) >= 0; });
+    var manualAdd = qaCall_('addManualGiftToOrderRpc', [fx.token, order.order_id, { gift_id:invalidGiftId, qty:1 }]);
+    qaAssert_(manualAdd && manualAdd.ok === false && awarded.length === 0
+      && qaGetGiftStock_(invalidGiftId) === 1.5 && qaGetGiftStock_(validGift.gift_id) === 10,
+      'Invalid legacy data must not award gifts or mutate gift stock', { order:order, awarded:awarded, preview:preview, manual_add:manualAdd });
+    output = { admin_gift:adminGift, admin_rules:[adminInvalidStockRule, adminInvalidQtyRule], campaigns:campaigns, preview:preview, order:order, manual_add:manualAdd };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunGiftSettingsValidationMatrixFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'GiftSettingsValidation');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'GiftSettingsValidation', 10, {
+      price:500,
+      variants:[
+        { name:'Color', type:'text', options:[{ label:'Red', price:500, stock:10 }, { label:'Blue', price:500, stock:10 }] },
+        { name:'Size', type:'text', options:[{ label:'S', price:500, stock:10 }, { label:'L', price:500, stock:10 }] }
+      ]
+    });
+    fx.product_ids.push(product.id);
+    var productWithoutVariants = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'GiftSettingsNoVariants', 10, { price:500 });
+    fx.product_ids.push(productWithoutVariants.id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'GiftSettingsValidation', { stock:10 });
+    fx.gift_ids.push(gift.gift_id);
+    function base() {
+      return {
+        name:'QA Gift Settings Validation ' + fx.stamp,
+        gift_id:gift.gift_id,
+        condition_type:'required_products',
+        condition_json:{ required_products:[{ product_id:product.id, min_qty:1 }] },
+        gift_qty:1, repeat_mode:'once_per_order',
+        starts_at:qaPastIso_(60000), ends_at:'', no_end_date:true, enabled:true, priority:9000
+      };
+    }
+    var cases = [];
+    var validRule = qaCreateGiftRule_(fx.token, fx.stamp, 'GiftSettingsValidationUpdateTarget', gift.gift_id, {
+      condition_type:'required_products',
+      condition_json:{ required_products:[{ product_id:product.id, min_qty:1 }] }
+    });
+    fx.rule_ids.push(validRule.rule_id);
+    function run(label, mutate) {
+      var payload = base(); mutate(payload);
+      var res = qaCall_('createGiftRuleRpc', [fx.token, payload]);
+      if (res && res.rule_id) fx.rule_ids.push(res.rule_id);
+      cases.push({ operation:'create', label:label, response:res });
+      var updatePayload = base(); mutate(updatePayload);
+      var updateRes = qaCall_('updateGiftRuleRpc', [fx.token, validRule.rule_id, updatePayload]);
+      cases.push({ operation:'update', label:label, response:updateRes });
+    }
+    run('missing gift', function(p){ p.gift_id='qa_missing_gift'; });
+    run('invalid condition_type', function(p){ p.condition_type='cart_magic'; });
+    run('zero min_subtotal', function(p){ p.condition_type='min_subtotal'; p.condition_json={ min_subtotal:0 }; });
+    run('empty required_products', function(p){ p.condition_json={ required_products:[] }; });
+    run('missing required product', function(p){ p.condition_json={ required_products:[{ product_id:'qa_missing_product', min_qty:1 }] }; });
+    run('empty required_variants', function(p){ p.condition_type='required_variants'; p.condition_json={ required_variants:[] }; });
+    run('missing required variant product', function(p){ p.condition_type='required_variants'; p.condition_json={ required_variants:[{ product_id:'qa_missing_product', variant_key:'Size=S', min_qty:1 }] }; });
+    run('required variant product has no variants', function(p){ p.condition_type='required_variants'; p.condition_json={ required_variants:[{ product_id:productWithoutVariants.id, variant_key:'', min_qty:1 }] }; });
+    run('incomplete required variant key', function(p){ p.condition_type='required_variants'; p.condition_json={ required_variants:[{ product_id:product.id, variant_key:'Color=Red', min_qty:1 }] }; });
+    run('unknown required variant value', function(p){ p.condition_type='required_variants'; p.condition_json={ required_variants:[{ product_id:product.id, variant_key:'Color=Green|Size=S', min_qty:1 }] }; });
+    var accepted = cases.filter(function(c){ return !c.response || c.response.ok !== false; });
+    qaAssert_(accepted.length === 0, 'Invalid gift rule settings were accepted', { accepted:accepted, cases:cases });
+    output = { checked:cases.length, cases:cases };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunGiftSettingsIntegerQuantityValidationFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'GiftIntegerValidation');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'GiftIntegerValidation', 10, { price:500 });
+    fx.product_ids.push(product.id);
+    var normalGift = qaCreateGiftItem_(fx.token, fx.stamp, 'GiftIntegerValidation', { stock:10 });
+    fx.gift_ids.push(normalGift.gift_id);
+    var updateTarget = qaCreateGiftRule_(fx.token, fx.stamp, 'GiftIntegerUpdateTarget', normalGift.gift_id, {
+      condition_json:{ required_products:[{ product_id:product.id, min_qty:1 }] }, gift_qty:1
+    });
+    fx.rule_ids.push(updateTarget.rule_id);
+    var cases = [];
+    var fracStock = qaCall_('createGiftItemRpc', [fx.token, {
+      name:'QA Fractional Gift Stock ' + fx.stamp, description:'QA invalid fractional stock', stock:1.5, enabled:true
+    }]);
+    if (fracStock && fracStock.gift_id) fx.gift_ids.push(fracStock.gift_id);
+    cases.push({ operation:'create', label:'fractional gift stock', response:fracStock });
+    var fracStockUpdate = qaCall_('updateGiftItemRpc', [fx.token, normalGift.gift_id, { stock:1.5 }]);
+    cases.push({ operation:'update', label:'fractional gift stock', response:fracStockUpdate });
+    [-2, ''].forEach(function(invalidStock) {
+      var label = invalidStock === '' ? 'blank gift stock' : 'negative gift stock below -1';
+      var createStock = qaCall_('createGiftItemRpc', [fx.token, {
+        name:'QA Invalid Gift Stock ' + label + ' ' + fx.stamp, stock:invalidStock, enabled:true
+      }]);
+      if (createStock && createStock.gift_id) fx.gift_ids.push(createStock.gift_id);
+      cases.push({ operation:'create', label:label, response:createStock });
+      cases.push({ operation:'update', label:label, response:qaCall_('updateGiftItemRpc', [fx.token, normalGift.gift_id, { stock:invalidStock }]) });
+    });
+    function createRule(label, giftQty, minQty) {
+      var res = qaCall_('createGiftRuleRpc', [fx.token, {
+        name:'QA Integer Rule ' + label + ' ' + fx.stamp,
+        gift_id:normalGift.gift_id,
+        condition_type:'required_products',
+        condition_json:{ required_products:[{ product_id:product.id, min_qty:minQty }] },
+        gift_qty:giftQty, repeat_mode:'per_threshold',
+        starts_at:qaPastIso_(60000), ends_at:'', no_end_date:true, enabled:true, priority:9000
+      }]);
+      if (res && res.rule_id) fx.rule_ids.push(res.rule_id);
+      cases.push({ operation:'create', label:label, response:res });
+      var updateRes = qaCall_('updateGiftRuleRpc', [fx.token, updateTarget.rule_id, {
+        gift_qty:giftQty,
+        condition_type:'required_products',
+        condition_json:{ required_products:[{ product_id:product.id, min_qty:minQty }] }
+      }]);
+      cases.push({ operation:'update', label:label, response:updateRes });
+    }
+    createRule('zero gift_qty', 0, 1);
+    createRule('negative gift_qty', -1, 1);
+    createRule('fractional gift_qty', 1.5, 1);
+    createRule('zero min_qty', 1, 0);
+    createRule('negative min_qty', 1, -2);
+    createRule('fractional min_qty', 1, 1.5);
+    var accepted = cases.filter(function(c){ return !c.response || c.response.ok !== false; });
+    qaAssert_(accepted.length === 0, 'Fractional or non-positive inventory quantities were accepted', { accepted:accepted, cases:cases });
+    var unlimited = qaCreateGiftItem_(fx.token, fx.stamp, 'GiftIntegerBoundaryUnlimited', { stock:-1 });
+    var zeroStock = qaCreateGiftItem_(fx.token, fx.stamp, 'GiftIntegerBoundaryZero', { stock:0 });
+    fx.gift_ids.push(unlimited.gift_id, zeroStock.gift_id);
+    var boundaryStockZeroUpdate = qaCall_('updateGiftItemRpc', [fx.token, unlimited.gift_id, { stock:0 }]);
+    var boundaryStockUnlimitedUpdate = qaCall_('updateGiftItemRpc', [fx.token, unlimited.gift_id, { stock:-1 }]);
+    qaAssertOk_(boundaryStockZeroUpdate); qaAssertOk_(boundaryStockUnlimitedUpdate);
+    var boundaryRule = qaCreateGiftRule_(fx.token, fx.stamp, 'GiftIntegerBoundaryRule', unlimited.gift_id, {
+      condition_json:{ required_products:[{ product_id:product.id, min_qty:1 }] }, gift_qty:1
+    });
+    fx.rule_ids.push(boundaryRule.rule_id);
+    var boundaryUpdate = qaCall_('updateGiftRuleRpc', [fx.token, boundaryRule.rule_id, {
+      gift_qty:1, condition_json:{ required_products:[{ product_id:product.id, min_qty:1 }] }
+    }]);
+    qaAssertOk_(boundaryUpdate);
+    output = { checked:cases.length, cases:cases, valid_boundaries:{
+      stock_minus_one:unlimited.response, stock_zero:zeroStock.response,
+      stock_update_zero:boundaryStockZeroUpdate, stock_update_minus_one:boundaryStockUnlimitedUpdate,
+      rule_update:boundaryUpdate
+    } };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunGiftSettingsScheduleRoundTripFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'GiftScheduleRoundTrip', {
+    gift_stock:10, product_stock:10, starts_at:qaFutureIso_(3600000), no_end_date:true
+  });
+  var caught = null, output = null, states = [];
+  try {
+    function readState(label) {
+      var listed = qaCall_('listGiftRulesRpc', [fx.token]);
+      qaAssertOk_(listed);
+      var row = (listed.rules || []).filter(function(r){ return String(r.rule_id) === String(fx.rule_id); })[0];
+      qaAssert_(!!row, 'Gift rule missing while checking schedule state: ' + label, listed);
+      states.push({ label:label, status:row.status, starts_at:row.starts_at, ends_at:row.ends_at, no_end_date:row.no_end_date, enabled:row.enabled });
+      return row;
+    }
+    qaAssert_(readState('scheduled').status === 'scheduled', 'Future gift rule must be scheduled', states);
+    qaAssert_(!qaHasEligibleRule_(qaPreviewGiftFixture_(fx, 1), fx.rule_id), 'Scheduled rule must not be eligible', states);
+
+    qaAssertOk_(qaCall_('updateGiftRuleRpc', [fx.token, fx.rule_id, {
+      starts_at:'', ends_at:'', no_end_date:true
+    }]));
+    var active = readState('active-immediately-no-end');
+    qaAssert_(active.status === 'active' && !active.starts_at && active.no_end_date === true && !active.ends_at, 'Gift rule without start/end dates did not normalize as active', active);
+    qaAssert_(qaHasEligibleRule_(qaPreviewGiftFixture_(fx, 1), fx.rule_id), 'Active no-end rule must be eligible', active);
+
+    qaAssertOk_(qaCall_('updateGiftRuleRpc', [fx.token, fx.rule_id, {
+      starts_at:qaPastIso_(120000), ends_at:qaPastIso_(60000), no_end_date:false
+    }]));
+    qaAssert_(readState('expired').status === 'expired', 'Past gift rule must be expired', states);
+    qaAssert_(!qaHasEligibleRule_(qaPreviewGiftFixture_(fx, 1), fx.rule_id), 'Expired rule must not be eligible', states);
+
+    qaAssertOk_(qaCall_('updateGiftRuleRpc', [fx.token, fx.rule_id, {
+      starts_at:qaPastIso_(60000), ends_at:'', no_end_date:true
+    }]));
+    qaAssertOk_(qaCall_('toggleGiftRuleRpc', [fx.token, fx.rule_id, false]));
+    qaAssert_(readState('disabled').status === 'disabled', 'Disabled gift rule status mismatch', states);
+    qaAssert_(!qaHasEligibleRule_(qaPreviewGiftFixture_(fx, 1), fx.rule_id), 'Disabled gift rule must not be eligible', states);
+    qaAssertOk_(qaCall_('toggleGiftRuleRpc', [fx.token, fx.rule_id, true]));
+    qaAssert_(readState('re-enabled').status === 'active', 'Re-enabled gift rule must be active', states);
+    qaAssert_(qaHasEligibleRule_(qaPreviewGiftFixture_(fx, 1), fx.rule_id), 'Re-enabled gift rule must be eligible', states);
+    output = { rule_id:fx.rule_id, states:states };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup, states:states }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunGiftSettingsConditionTransitionFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'GiftConditionTransition');
+  var caught = null, output = null, snapshots = [];
+  try {
+    var a = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'GiftCondA', 20, { price:300 });
+    var b = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'GiftCondB', 20, { price:300 });
+    var v = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'GiftCondVariant', -1, {
+      price:400, variants:[{ name:'Size', type:'text', options:[{ label:'M', price:400, stock:20 }, { label:'L', price:400, stock:20 }] }]
+    });
+    fx.product_ids = [a.id, b.id, v.id];
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'GiftConditionTransition', { stock:20 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'GiftConditionTransition', gift.gift_id, {
+      condition_type:'required_products',
+      condition_json:{ match_mode:'all', required_products:[{ product_id:a.id, min_qty:1 }, { product_id:b.id, min_qty:1 }] }
+    });
+    fx.rule_ids.push(rule.rule_id);
+    function preview(items) { return qaCall_('previewGiftEligibilityRpc', [{ items:items }]); }
+    function read(label) {
+      var got = qaCall_('getGiftRuleRpc', [fx.token, rule.rule_id]); qaAssertOk_(got);
+      snapshots.push({ label:label, condition_type:got.rule.condition_type, condition_json:got.rule.condition_json });
+      return got.rule;
+    }
+    qaAssert_(!qaHasEligibleRule_(preview([qaCartItem_(a.id, 1, {})]), rule.rule_id), 'ALL mode must require A and B');
+    qaAssertOk_(qaCall_('updateGiftRuleRpc', [fx.token, rule.rule_id, {
+      condition_type:'required_products',
+      condition_json:{ match_mode:'any', required_products:[{ product_id:a.id, min_qty:1 }, { product_id:b.id, min_qty:1 }] }
+    }]));
+    var anyRule = read('required-products-any');
+    qaAssert_(anyRule.condition_json.match_mode === 'any' && qaHasEligibleRule_(preview([qaCartItem_(a.id, 1, {})]), rule.rule_id), 'ANY mode transition did not take effect', anyRule);
+
+    qaAssertOk_(qaCall_('updateGiftRuleRpc', [fx.token, rule.rule_id, {
+      condition_type:'min_subtotal', condition_json:{ min_subtotal:500 }
+    }]));
+    var subtotalRule = read('min-subtotal');
+    qaAssert_(Number(subtotalRule.condition_json.min_subtotal) === 500
+      && subtotalRule.condition_json.required_products === undefined
+      && qaHasEligibleRule_(preview([qaCartItem_(a.id, 2, {})]), rule.rule_id),
+      'min_subtotal transition retained stale product conditions or failed eligibility', subtotalRule);
+
+    qaAssertOk_(qaCall_('updateGiftRuleRpc', [fx.token, rule.rule_id, {
+      condition_type:'required_variants',
+      condition_json:{ match_mode:'all', required_variants:[{ product_id:v.id, variant_key:'Size=M', min_qty:2 }] }
+    }]));
+    var variantRule = read('required-variants');
+    qaAssert_(variantRule.condition_json.min_subtotal === undefined && variantRule.condition_json.required_products === undefined, 'Variant transition retained stale condition fields', variantRule);
+    qaAssert_(!qaHasEligibleRule_(preview([qaCartItem_(v.id, 2, { Size:'L' })]), rule.rule_id), 'Wrong variant must not qualify after transition', variantRule);
+    qaAssert_(qaHasEligibleRule_(preview([qaCartItem_(v.id, 2, { Size:'M' })]), rule.rule_id), 'Correct variant must qualify after transition', variantRule);
+    output = { rule_id:rule.rule_id, snapshots:snapshots };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup, snapshots:snapshots }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunGiftRepeatDuplicateVariantLinesFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'GiftRepeatDuplicateVariants');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'GiftRepeatDuplicateVariants', -1, {
+      price:500, variants:[{ name:'Size', type:'text', options:[{ label:'M', price:500, stock:10 }, { label:'L', price:500, stock:10 }] }]
+    });
+    fx.product_ids.push(product.id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'GiftRepeatDuplicateVariants', { stock:10 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'GiftRepeatDuplicateVariants', gift.gift_id, {
+      condition_type:'required_variants', repeat_mode:'per_threshold',
+      condition_json:{ required_variants:[{ product_id:product.id, variant_key:'Size=M', min_qty:2 }] }
+    });
+    fx.rule_ids.push(rule.rule_id);
+    var items = [qaCartItem_(product.id, 1, { Size:'M' }), qaCartItem_(product.id, 3, { Size:'M' })];
+    var preview = qaCall_('previewGiftEligibilityRpc', [{ items:items }]);
+    qaAssertOk_(preview);
+    var eligible = (preview.eligible || []).filter(function(e){ return String(e.rule_id) === String(rule.rule_id); })[0];
+    qaAssert_(eligible && Number(eligible.gift.qty) === 2, 'Duplicate variant lines must preview two completed thresholds', preview);
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-gift-repeat-dup-var', fx.stamp, 'Buyer', product.id, fx.shipping, { items:items }), fx.order_ids);
+    qaAssertOk_(res);
+    var order = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]);
+    var lines = qaActiveGiftLines_(order, gift.gift_id);
+    qaAssert_(lines.length === 1 && Number(lines[0].gift_qty) === 2 && qaGetGiftStock_(gift.gift_id) === 8, 'Duplicate variant lines produced incorrect gift quantity/stock', { lines:lines, stock:qaGetGiftStock_(gift.gift_id) });
+    output = { preview_qty:eligible.gift.qty, order_qty:lines[0].gift_qty, stock:qaGetGiftStock_(gift.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunGiftRepeatSameGiftCumulativeStockFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'GiftRepeatCumulativeStock');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'GiftRepeatCumulativeStock', 10, { price:100 });
+    fx.product_ids.push(product.id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'GiftRepeatCumulativeStock', { stock:5 });
+    fx.gift_ids.push(gift.gift_id);
+    var condition = { required_products:[{ product_id:product.id, min_qty:1 }] };
+    var high = qaCreateGiftRule_(fx.token, fx.stamp, 'GiftRepeatCumulativeHigh', gift.gift_id, { condition_json:condition, gift_qty:2, repeat_mode:'per_threshold', priority:9100 });
+    var low = qaCreateGiftRule_(fx.token, fx.stamp, 'GiftRepeatCumulativeLow', gift.gift_id, { condition_json:condition, gift_qty:2, repeat_mode:'per_threshold', priority:9000 });
+    fx.rule_ids = [high.rule_id, low.rule_id];
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-gift-repeat-cumulative', fx.stamp, 'Buyer', product.id, fx.shipping, { qty:2 }), fx.order_ids);
+    qaAssertOk_(res);
+    var order = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]);
+    var lines = qaActiveGiftLines_(order, gift.gift_id);
+    var skipped = (res.gifts_skipped || []).filter(function(s){ return String(s.gift_id) === String(gift.gift_id); });
+    qaAssert_(lines.length === 1 && Number(lines[0].gift_qty) === 4 && String(lines[0].rule_id) === String(high.rule_id), 'Higher-priority repeated grant must attach four units', lines);
+    qaAssert_(skipped.length === 1 && Number(skipped[0].requested_qty) === 4 && Number(skipped[0].available_qty) === 1, 'Second repeated grant must be skipped atomically with accurate quantities', skipped);
+    qaAssert_(qaGetGiftStock_(gift.gift_id) === 1, 'Cumulative same-gift stock must end at one', { stock:qaGetGiftStock_(gift.gift_id) });
+    output = { attached:lines, skipped:skipped, stock:qaGetGiftStock_(gift.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunGiftRepeatRejectUnrejectStockLifecycleFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'GiftRepeatLifecycle', {
+    product_stock:10, product_price:500, gift_stock:20, min_qty:2, gift_qty:2, repeat_mode:'per_threshold'
+  });
+  var caught = null, output = null;
+  try {
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-gift-repeat-lifecycle', fx.stamp, 'Buyer', fx.product.id, fx.shipping, { qty:4 }), fx.order_ids);
+    qaAssertOk_(res);
+    var orderId = qaOrderIdsFromSubmit_(res)[0];
+    var order = qaReadOrder_(fx.token, orderId);
+    var lines = qaActiveGiftLines_(order, fx.gift_id);
+    qaAssert_(lines.length === 1 && Number(lines[0].gift_qty) === 4, 'Order must attach multiplied gift quantity four', lines);
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 16, 'Submit must deduct all four gift units', { stock:qaGetGiftStock_(fx.gift_id) });
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'rejected', 'qa repeat lifecycle reject']));
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 20, 'Reject must restore all four gift units', { stock:qaGetGiftStock_(fx.gift_id) });
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'paid', 'qa repeat lifecycle unreject']));
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 16, 'Un-reject must re-deduct all four gift units', { stock:qaGetGiftStock_(fx.gift_id) });
+    output = { order_id:orderId, gift_qty:lines[0].gift_qty, final_stock:qaGetGiftStock_(fx.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunGiftStalePreviewCartReducedFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'GiftStaleCartReduced', {
+    product_stock:10, gift_stock:10, min_qty:2, repeat_mode:'per_threshold'
+  });
+  var caught = null, output = null;
+  try {
+    var preview = qaPreviewGiftFixture_(fx, 4);
+    qaAssertOk_(preview);
+    var eligible = (preview.eligible || []).filter(function(e){ return String(e.rule_id) === String(fx.rule_id); })[0];
+    qaAssert_(eligible && Number(eligible.gift.qty) === 2, 'Preview qty four must promise two completed gift thresholds', preview);
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-gift-stale-cart-reduced', fx.stamp, 'Buyer', fx.product.id, fx.shipping, { qty:1 }), fx.order_ids);
+    qaAssertOk_(res);
+    var order = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]);
+    qaAssert_(qaActiveGiftLines_(order, fx.gift_id).length === 0, 'Reduced submitted cart must not attach stale preview gift', order.items);
+    qaAssert_(!(res.gifts_skipped || []).some(function(s){ return String(s.gift_id) === String(fx.gift_id); }), 'Unqualified gift must not be reported as a stock skip', res);
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 10, 'Unqualified stale preview must not change gift stock', { stock:qaGetGiftStock_(fx.gift_id) });
+    output = { preview_qty:eligible.gift.qty, order_id:order.order_id, stock:qaGetGiftStock_(fx.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunGiftPreviewInsufficientStockContractFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'GiftPreviewInsufficient', {
+    product_stock:5, gift_stock:1, min_qty:1, gift_qty:2, repeat_mode:'once_per_order'
+  });
+  var caught = null, output = null;
+  try {
+    var preview = qaPreviewGiftFixture_(fx, 1);
+    qaAssertOk_(preview);
+    var eligible = (preview.eligible || []).filter(function(e){ return String(e.rule_id) === String(fx.rule_id); })[0];
+    qaAssert_(eligible && Number(eligible.gift.qty) === 2 && Number(eligible.gift.stock) === 1, 'Preview must expose requested qty two and stock one', preview);
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-gift-preview-insufficient', fx.stamp, 'Buyer', fx.product.id, fx.shipping), fx.order_ids);
+    qaAssertOk_(res);
+    var order = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]);
+    var skipped = (res.gifts_skipped || []).filter(function(s){ return String(s.gift_id) === String(fx.gift_id); });
+    qaAssert_(qaActiveGiftLines_(order, fx.gift_id).length === 0, 'Insufficient grant must not partially attach', order.items);
+    qaAssert_(skipped.length === 1 && skipped[0].code === 'GIFT_OUT_OF_STOCK'
+      && Number(skipped[0].requested_qty) === 2 && Number(skipped[0].available_qty) === 1,
+      'Submit skip warning quantities mismatch', skipped);
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 1, 'Skipped grant must leave stock unchanged', { stock:qaGetGiftStock_(fx.gift_id) });
+    output = { preview:eligible.gift, skipped:skipped[0], stock:qaGetGiftStock_(fx.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunGiftPublicCampaignSettingsContractFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'GiftPublicCampaignContract');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'GiftPublicCampaignContract', 10, { price:500 });
+    fx.product_ids.push(product.id);
+    var activeGift = qaCreateGiftItem_(fx.token, fx.stamp, 'CampaignActive', { stock:7 });
+    var scheduledGift = qaCreateGiftItem_(fx.token, fx.stamp, 'CampaignScheduled', { stock:-1 });
+    var disabledGift = qaCreateGiftItem_(fx.token, fx.stamp, 'CampaignDisabled', { stock:3 });
+    fx.gift_ids = [activeGift.gift_id, scheduledGift.gift_id, disabledGift.gift_id];
+    var activeRule = qaCreateGiftRule_(fx.token, fx.stamp, 'CampaignActive', activeGift.gift_id, {
+      condition_type:'min_subtotal', condition_json:{ min_subtotal:750 }, gift_qty:2,
+      starts_at:qaPastIso_(60000), no_end_date:true, priority:9300
+    });
+    var scheduledRule = qaCreateGiftRule_(fx.token, fx.stamp, 'CampaignScheduled', scheduledGift.gift_id, {
+      condition_type:'required_products', condition_json:{ required_products:[{ product_id:product.id, min_qty:3 }] }, gift_qty:3,
+      starts_at:qaFutureIso_(3600000), no_end_date:true, priority:9200
+    });
+    var disabledRule = qaCreateGiftRule_(fx.token, fx.stamp, 'CampaignDisabled', disabledGift.gift_id, {
+      condition_type:'required_products', condition_json:{ required_products:[{ product_id:product.id, min_qty:1 }] },
+      enabled:false, priority:9100
+    });
+    fx.rule_ids = [activeRule.rule_id, scheduledRule.rule_id, disabledRule.rule_id];
+    var res = qaCall_('getActiveGiftCampaignsRpc');
+    qaAssertOk_(res);
+    function campaign(ruleId) { return (res.campaigns || []).filter(function(c){ return String(c.rule_id) === String(ruleId); })[0]; }
+    var active = campaign(activeRule.rule_id);
+    var scheduled = campaign(scheduledRule.rule_id);
+    var disabled = campaign(disabledRule.rule_id);
+    qaAssert_(active && active.status === 'active' && Number(active.gift_qty) === 2
+      && active.no_end_date === true && !active.ends_at
+      && active.condition_details && active.condition_details.length === 1
+      && Number(active.condition_details[0].amount) === 750
+      && Number(active.gift_item.stock) === 7,
+      'Active public campaign settings contract mismatch', active || res);
+    qaAssert_(scheduled && scheduled.status === 'scheduled' && Number(scheduled.gift_qty) === 3
+      && scheduled.condition_details && scheduled.condition_details.length === 1
+      && Number(scheduled.condition_details[0].qty) === 3
+      && Number(scheduled.gift_item.stock) === -1,
+      'Scheduled public campaign settings contract mismatch', scheduled || res);
+    qaAssert_(!disabled, 'Disabled rule must not be returned as a public campaign', disabled || res);
+    output = { active:active, scheduled:scheduled, disabled_present:!!disabled };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
 function qaRunShippingAddressValidUpdateFlow_(ctx) {
   var fx = qaCreateOrderFixture_(ctx, 'AddrValid', 5);
   var caught = null, output = null;
@@ -9165,6 +13301,1476 @@ function qaRunShippingAddressNoClobberStatusFlow_(ctx) {
   } catch (err) { caught = err; }
   var cleanup = qaCleanupOrdersProductsShipping_(fx.token, fx.order_ids, [fx.product.id], fx.shipping);
   if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup: cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+/* ===================== Order coverage for promotion/gift rule updates ===================== */
+
+function qaRuleOrderClientPricingFromPreview_(preview, cartItems, shippingFee) {
+  var fee = Number(shippingFee || 0);
+  var orderDiscount = preview && preview.order_discount
+    ? Number(preview.order_discount.amount || 0)
+    : 0;
+  var subtotal = Number(preview.subtotal || 0);
+  var items = (cartItems || []).map(function(ci) {
+    var variantKey = qaVariantKeyOf_(ci.selected_variants || {});
+    var line = qaPromoPreviewLine_(preview, ci.product_id, variantKey);
+    qaAssert_(!!line, 'Promotion preview is missing an order item', { item:ci, preview:preview });
+    return {
+      product_id:String(ci.product_id),
+      selected_variants:ci.selected_variants || {},
+      qty:Number(ci.qty || 0),
+      unit_final_price:Number(line.unit_final_price),
+      promotion_id:line.promotion ? line.promotion.promotion_id : null
+    };
+  });
+  return {
+    items:items,
+    subtotal:subtotal,
+    order_discount:orderDiscount,
+    shipping_fee:fee,
+    total:Math.max(0, subtotal - orderDiscount) + fee
+  };
+}
+
+function qaRunOrderRulesPromoNewlyQualifiedStalePricingFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'OrderRulePromoNewlyQualified');
+  var caught = null, output = null;
+  try {
+    var qualifier = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'PromoNewQualifier', 10, { price:300 });
+    var target = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'PromoNewTarget', 10, { price:1000 });
+    fx.product_ids = [qualifier.id, target.id];
+    var promo = qaCreatePromotion_(fx.token, target.id, fx.stamp, 'OrderPromoNewlyQualified', {
+      discount_value:300,
+      application_mode:'conditional',
+      condition_type:'required_products',
+      condition_json:{ match_mode:'all', required_products:[{ product_id:qualifier.id, min_qty:2 }] }
+    });
+    fx.promotion_ids.push(promo.promotion_id);
+
+    var staleCart = [qaCartItem_(qualifier.id, 1, {}), qaCartItem_(target.id, 1, {})];
+    var stalePreview = qaPreviewPromo_(staleCart);
+    var staleTarget = qaPromoPreviewLine_(stalePreview, target.id, '');
+    qaAssert_(staleTarget && !staleTarget.promotion && Number(staleTarget.unit_final_price) === 1000,
+      'Pre-qualification preview must show the target at full price', stalePreview);
+
+    var submittedCart = [qaCartItem_(qualifier.id, 2, {}), qaCartItem_(target.id, 1, {})];
+    var beforeCount = qaOrderCount_(fx.token);
+    var payload = qaBuildOrderPayloadForProduct_('qa-rule-promo-newly-qualified', fx.stamp, 'Buyer', qualifier.id, fx.shipping, { items:submittedCart });
+    payload.client_pricing = {
+      items:[
+        { product_id:qualifier.id, selected_variants:{}, qty:2, unit_final_price:300, promotion_id:null },
+        { product_id:target.id, selected_variants:{}, qty:1, unit_final_price:1000, promotion_id:null }
+      ],
+      subtotal:1600,
+      shipping_fee:Number(fx.shipping.method.flat_rate || 0),
+      total:1600 + Number(fx.shipping.method.flat_rate || 0)
+    };
+    var res = qaSubmitAndTrack_(payload, fx.order_ids);
+    var noOrder = qaAssertNoNewOrderAfterFailure_(fx.token, beforeCount, res, fx.order_ids, 'PRICE_CHANGED', payload);
+    var kinds = qaAssertDiffKinds_(res, ['item_price', 'item_promotion', 'subtotal', 'total']);
+    qaAssert_(qaGetProductStock_(qualifier.id) === 10 && qaGetProductStock_(target.id) === 10,
+      'PRICE_CHANGED must preserve every product stock', { qualifier_stock:qaGetProductStock_(qualifier.id), target_stock:qaGetProductStock_(target.id) });
+    output = { promotion_id:promo.promotion_id, response:res, diff_kinds:kinds, counts:noOrder };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunOrderRulesPromoExpiredAfterPreviewFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'OrderRulePromoExpired');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'PromoExpiredTarget', 10, { price:1000 });
+    fx.product_ids.push(product.id);
+    var promo = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'OrderPromoExpired', {
+      discount_value:250,
+      application_mode:'conditional',
+      condition_type:'min_subtotal',
+      condition_json:{ min_subtotal:1 }
+    });
+    fx.promotion_ids.push(promo.promotion_id);
+    var cart = [qaCartItem_(product.id, 1, {})];
+    var preview = qaPreviewPromo_(cart);
+    var previewLine = qaPromoPreviewLine_(preview, product.id, '');
+    qaAssert_(previewLine && Number(previewLine.unit_final_price) === 750
+      && previewLine.promotion && String(previewLine.promotion.promotion_id) === String(promo.promotion_id),
+      'Active conditional promotion must be present before expiry', preview);
+
+    qaAssertOk_(qaCall_('updatePromotionRpc', [fx.token, promo.promotion_id, {
+      starts_at:qaPastIso_(120000), ends_at:qaPastIso_(1000), no_end_date:false
+    }]));
+    var beforeCount = qaOrderCount_(fx.token);
+    var payload = qaBuildOrderPayloadForProduct_('qa-rule-promo-expired', fx.stamp, 'Buyer', product.id, fx.shipping);
+    payload.client_pricing = qaRuleOrderClientPricingFromPreview_(preview, cart, fx.shipping.method.flat_rate);
+    var res = qaSubmitAndTrack_(payload, fx.order_ids);
+    var noOrder = qaAssertNoNewOrderAfterFailure_(fx.token, beforeCount, res, fx.order_ids, 'PRICE_CHANGED', payload);
+    var kinds = qaAssertDiffKinds_(res, ['item_price', 'item_promotion', 'subtotal', 'total']);
+    qaAssert_(qaGetProductStock_(product.id) === 10, 'Expired-promotion rejection must preserve stock', { stock:qaGetProductStock_(product.id) });
+    output = { promotion_id:promo.promotion_id, response:res, diff_kinds:kinds, counts:noOrder };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunOrderRulesGiftExpiredAfterPreviewFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'OrderRuleGiftExpired', {
+    product_stock:10, gift_stock:10, min_qty:2, gift_qty:2, repeat_mode:'per_threshold'
+  });
+  var caught = null, output = null;
+  try {
+    var preview = qaPreviewGiftFixture_(fx, 4);
+    qaAssertOk_(preview);
+    var eligible = (preview.eligible || []).filter(function(e){ return String(e.rule_id) === String(fx.rule_id); })[0];
+    qaAssert_(eligible && Number(eligible.gift.qty) === 4, 'Preview must award four gift units before expiry', preview);
+    qaAssertOk_(qaCall_('updateGiftRuleRpc', [fx.token, fx.rule_id, {
+      starts_at:qaPastIso_(120000), ends_at:qaPastIso_(1000), no_end_date:false
+    }]));
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rule-gift-expired', fx.stamp, 'Buyer', fx.product.id, fx.shipping, { qty:4 }), fx.order_ids);
+    qaAssertOk_(res);
+    var order = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]);
+    qaAssert_(qaActiveGiftLines_(order, fx.gift_id).length === 0, 'Expired gift rule must not attach a stale gift', order.items);
+    qaAssert_(!(res.gifts_skipped || []).some(function(s){ return String(s.gift_id) === String(fx.gift_id); }),
+      'An expired rule is unqualified, not a stock skip', res);
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 10, 'Expired gift rule must preserve gift stock', { stock:qaGetGiftStock_(fx.gift_id) });
+    output = { preview_qty:eligible.gift.qty, order_id:order.order_id, gift_stock:qaGetGiftStock_(fx.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunOrderRulesGiftActivatedAfterPreviewFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'OrderRuleGiftActivated', {
+    product_stock:10, gift_stock:10, min_qty:2, gift_qty:2, repeat_mode:'per_threshold',
+    starts_at:qaFutureIso_(3600000), no_end_date:true
+  });
+  var caught = null, output = null;
+  try {
+    var before = qaPreviewGiftFixture_(fx, 4);
+    qaAssertOk_(before);
+    qaAssert_(!qaHasEligibleRule_(before, fx.rule_id), 'Scheduled gift rule must not be eligible before activation', before);
+    qaAssertOk_(qaCall_('updateGiftRuleRpc', [fx.token, fx.rule_id, {
+      starts_at:qaPastIso_(60000), ends_at:'', no_end_date:true
+    }]));
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rule-gift-activated', fx.stamp, 'Buyer', fx.product.id, fx.shipping, { qty:4 }), fx.order_ids);
+    qaAssertOk_(res);
+    var order = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]);
+    var lines = qaActiveGiftLines_(order, fx.gift_id);
+    qaAssert_(lines.length === 1 && Number(lines[0].gift_qty) === 4,
+      'Newly active repeated gift rule must attach four units', lines);
+    qaAssert_(qaGetGiftStock_(fx.gift_id) === 6, 'Newly active gift must deduct the full multiplied quantity', { stock:qaGetGiftStock_(fx.gift_id) });
+    output = { order_id:order.order_id, gift_qty:lines[0].gift_qty, gift_stock:qaGetGiftStock_(fx.gift_id) };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunOrderRulesConditionalPromoSnapshotImmutableFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'OrderRulePromoSnapshot');
+  var caught = null, output = null;
+  try {
+    var qualifier = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'PromoSnapshotQualifier', 10, { price:300 });
+    var target = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'PromoSnapshotTarget', 10, { price:1000 });
+    fx.product_ids = [qualifier.id, target.id];
+    var promo = qaCreatePromotion_(fx.token, target.id, fx.stamp, 'OrderConditionalSnapshot', {
+      discount_value:300,
+      application_mode:'conditional',
+      condition_type:'required_products',
+      condition_json:{ match_mode:'all', required_products:[{ product_id:qualifier.id, min_qty:2 }] }
+    });
+    fx.promotion_ids.push(promo.promotion_id);
+    var cart = [qaCartItem_(qualifier.id, 2, {}), qaCartItem_(target.id, 1, {})];
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rule-promo-snapshot', fx.stamp, 'Buyer', qualifier.id, fx.shipping, { items:cart }), fx.order_ids);
+    qaAssertOk_(res);
+    var orderId = qaOrderIdsFromSubmit_(res)[0];
+    var before = qaFindProductLine_(qaReadOrder_(fx.token, orderId), target.id);
+    qaAssert_(before && Number(before.unit_final_price) === 700, 'Original conditional promotion must price target at 700', before);
+
+    qaAssertOk_(qaCall_('updatePromotionRpc', [fx.token, promo.promotion_id, {
+      discount_value:50,
+      condition_type:'min_subtotal',
+      condition_json:{ min_subtotal:99999 }
+    }]));
+    var after = qaFindProductLine_(qaReadOrder_(fx.token, orderId), target.id);
+    qaAssert_(after && Number(after.unit_base_price) === 1000
+      && Number(after.unit_discount_amount) === 300
+      && Number(after.unit_final_price) === 700
+      && after.promotion
+      && String(after.promotion.promotion_id) === String(promo.promotion_id)
+      && Number(after.promotion.discount_value) === 300
+      && after.promotion.application_mode === 'conditional'
+      && after.promotion.condition_type === 'required_products',
+      'Persisted order promotion snapshot changed after admin edit', { before:before, after:after });
+    output = { order_id:orderId, promotion_snapshot:after.promotion, unit_final_price:after.unit_final_price };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunOrderRulesGiftRuleSnapshotImmutableFlow_(ctx) {
+  var fx = qaCreateGiftEligibilityFixture_(ctx, 'OrderRuleGiftSnapshot', {
+    product_stock:10, gift_stock:20, min_qty:1, gift_qty:2, repeat_mode:'per_threshold'
+  });
+  var caught = null, output = null;
+  try {
+    var originalRule = qaFindGiftRule_(fx.token, fx.rule_id);
+    qaAssert_(!!originalRule, 'Gift rule must exist before snapshot test', { rule_id:fx.rule_id });
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rule-gift-snapshot', fx.stamp, 'Buyer', fx.product.id, fx.shipping, { qty:3 }), fx.order_ids);
+    qaAssertOk_(res);
+    var orderId = qaOrderIdsFromSubmit_(res)[0];
+    var before = qaActiveGiftLines_(qaReadOrder_(fx.token, orderId), fx.gift_id)[0];
+    qaAssert_(before && Number(before.gift_qty) === 6, 'Original order must contain six multiplied gift units', before);
+    qaAssertOk_(qaCall_('updateGiftRuleRpc', [fx.token, fx.rule_id, {
+      name:'QA Gift Rule Changed ' + fx.stamp,
+      gift_qty:1,
+      repeat_mode:'once_per_order'
+    }]));
+    qaAssertOk_(qaCall_('deleteGiftRuleRpc', [fx.token, fx.rule_id]));
+    var deletedRuleId = fx.rule_id;
+    fx.rule_id = '';
+    var after = qaActiveGiftLines_(qaReadOrder_(fx.token, orderId), fx.gift_id)[0];
+    qaAssert_(after && String(after.rule_id) === String(deletedRuleId)
+      && after.rule_name === originalRule.name
+      && Number(after.gift_qty) === 6,
+      'Persisted gift-rule snapshot changed after rule edit/delete', { original_rule:originalRule, before:before, after:after });
+    output = { order_id:orderId, rule_id:deletedRuleId, rule_name:after.rule_name, gift_qty:after.gift_qty };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupGiftFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunOrderRulesVariantPromoAnyRepeatGiftFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'OrderRuleVariantPromoGift');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'VariantPromoAnyGift', -1, {
+      price:1000,
+      variants:[{ name:'Size', type:'text', options:[
+        { label:'M', price:1000, weight_grams:100, stock:10 },
+        { label:'L', price:1000, weight_grams:100, stock:10 }
+      ]}]
+    });
+    fx.product_ids.push(product.id);
+    var promo = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'VariantMDirect', {
+      discount_value:100,
+      target_type:'variant',
+      target:[{ product_id:product.id, variant_key:'Size=M' }]
+    });
+    fx.promotion_ids.push(promo.promotion_id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'VariantAnyRepeat', { stock:20 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'VariantAnyRepeat', gift.gift_id, {
+      condition_type:'required_variants',
+      condition_json:{
+        match_mode:'any',
+        required_variants:[
+          { product_id:product.id, variant_key:'Size=M', min_qty:2 },
+          { product_id:product.id, variant_key:'Size=L', min_qty:3 }
+        ]
+      },
+      gift_qty:2,
+      repeat_mode:'per_threshold'
+    });
+    fx.rule_ids.push(rule.rule_id);
+    var cart = [
+      qaCartItem_(product.id, 1, { Size:'M' }),
+      qaCartItem_(product.id, 3, { Size:'M' }),
+      qaCartItem_(product.id, 3, { Size:'L' })
+    ];
+    var promoPreview = qaPreviewPromo_(cart);
+    var giftPreview = qaCall_('previewGiftEligibilityRpc', [{ items:cart }]);
+    qaAssertOk_(giftPreview);
+    var giftEligible = (giftPreview.eligible || []).filter(function(e){ return String(e.rule_id) === String(rule.rule_id); })[0];
+    qaAssert_(giftEligible && Number(giftEligible.gift.qty) === 6 && giftEligible.match_mode === 'any',
+      'ANY variant thresholds must sum to three rounds and award six units', giftPreview);
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rule-variant-any', fx.stamp, 'Buyer', product.id, fx.shipping, { items:cart }), fx.order_ids);
+    qaAssertOk_(res);
+    var order = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]);
+    var mLines = (order.items || []).filter(function(line){ return line.line_type !== 'gift' && line.variant_key === 'Size=M'; });
+    var lLines = (order.items || []).filter(function(line){ return line.line_type !== 'gift' && line.variant_key === 'Size=L'; });
+    var mQty = mLines.reduce(function(sum, line){ return sum + Number(line.qty || 0); }, 0);
+    var lQty = lLines.reduce(function(sum, line){ return sum + Number(line.qty || 0); }, 0);
+    qaAssert_(mQty === 4 && mLines.every(function(line){
+      return Number(line.unit_final_price) === 900 && line.promotion && String(line.promotion.promotion_id) === String(promo.promotion_id);
+    }), 'Every duplicate M line must carry the direct variant promotion', mLines);
+    qaAssert_(lQty === 3 && lLines.every(function(line){ return Number(line.unit_final_price) === 1000 && !line.promotion; }),
+      'L lines must remain at full price without the M-only promotion', lLines);
+    var giftLines = qaActiveGiftLines_(order, gift.gift_id);
+    qaAssert_(giftLines.length === 1 && Number(giftLines[0].gift_qty) === 6,
+      'Persisted order must contain six repeated gift units', giftLines);
+    qaAssert_(Number(order.subtotal) === 6600 && Number(order.total) === 6600,
+      'Variant promotion subtotal/total mismatch', order);
+    qaAssert_(qaGetVariantStock_(product.id, 'Size', 'M') === 6
+      && qaGetVariantStock_(product.id, 'Size', 'L') === 7
+      && qaGetGiftStock_(gift.gift_id) === 14,
+      'Variant or gift stock deduction mismatch', {
+        m_stock:qaGetVariantStock_(product.id, 'Size', 'M'),
+        l_stock:qaGetVariantStock_(product.id, 'Size', 'L'),
+        gift_stock:qaGetGiftStock_(gift.gift_id)
+      });
+    output = { order_id:order.order_id, promo_preview:promoPreview, gift_preview_qty:giftEligible.gift.qty, subtotal:order.subtotal, gift_qty:giftLines[0].gift_qty };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunOrderRulesMultiPromoMultiGiftContractFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'OrderRuleMultiPromoGift');
+  var caught = null, output = null;
+  try {
+    var productA = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MultiPromoA', 10, { price:300 });
+    var productB = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MultiPromoB', 10, { price:1000 });
+    fx.product_ids = [productA.id, productB.id];
+    var directA = qaCreatePromotion_(fx.token, productA.id, fx.stamp, 'DirectA', { discount_value:50 });
+    var conditionalB = qaCreatePromotion_(fx.token, productB.id, fx.stamp, 'ConditionalB', {
+      discount_value:200,
+      application_mode:'conditional',
+      condition_type:'required_products',
+      condition_json:{ match_mode:'all', required_products:[{ product_id:productA.id, min_qty:2 }] }
+    });
+    fx.promotion_ids = [directA.promotion_id, conditionalB.promotion_id];
+
+    var giftAny = qaCreateGiftItem_(fx.token, fx.stamp, 'MultiAny', { stock:20 });
+    var giftSubtotal = qaCreateGiftItem_(fx.token, fx.stamp, 'MultiSubtotal', { stock:20 });
+    fx.gift_ids = [giftAny.gift_id, giftSubtotal.gift_id];
+    var anyRule = qaCreateGiftRule_(fx.token, fx.stamp, 'MultiAny', giftAny.gift_id, {
+      condition_type:'required_products',
+      condition_json:{ match_mode:'any', required_products:[
+        { product_id:productA.id, min_qty:2 },
+        { product_id:productB.id, min_qty:1 }
+      ]},
+      repeat_mode:'per_threshold',
+      priority:9200
+    });
+    var subtotalRule = qaCreateGiftRule_(fx.token, fx.stamp, 'MultiSubtotal', giftSubtotal.gift_id, {
+      condition_type:'min_subtotal',
+      condition_json:{ min_subtotal:500 },
+      repeat_mode:'per_threshold',
+      priority:9100
+    });
+    fx.rule_ids = [anyRule.rule_id, subtotalRule.rule_id];
+
+    var cart = [qaCartItem_(productA.id, 2, {}), qaCartItem_(productB.id, 1, {})];
+    var promoPreview = qaPreviewPromo_(cart);
+    var giftPreview = qaCall_('previewGiftEligibilityRpc', [{ items:cart }]);
+    qaAssertOk_(giftPreview);
+    var lineA = qaPromoPreviewLine_(promoPreview, productA.id, '');
+    var lineB = qaPromoPreviewLine_(promoPreview, productB.id, '');
+    qaAssert_(lineA && Number(lineA.unit_final_price) === 250
+      && lineA.promotion && String(lineA.promotion.promotion_id) === String(directA.promotion_id),
+      'Product A direct promotion preview mismatch', lineA);
+    qaAssert_(lineB && Number(lineB.unit_final_price) === 800
+      && lineB.promotion && String(lineB.promotion.promotion_id) === String(conditionalB.promotion_id),
+      'Product B conditional promotion preview mismatch', lineB);
+    function previewGiftQty(ruleId) {
+      var match = (giftPreview.eligible || []).filter(function(e){ return String(e.rule_id) === String(ruleId); })[0];
+      return match ? Number(match.gift.qty) : 0;
+    }
+    qaAssert_(previewGiftQty(anyRule.rule_id) === 2,
+      'ANY gift must sum one completed round from A and one from B', giftPreview);
+    qaAssert_(previewGiftQty(subtotalRule.rule_id) === 3,
+      'Subtotal gift must use 1500 after DIRECT discounts and ignore the conditional discount', giftPreview);
+
+    var payload = qaBuildOrderPayloadForProduct_('qa-rule-multi-contract', fx.stamp, 'Buyer', productA.id, fx.shipping, { items:cart });
+    payload.client_pricing = qaRuleOrderClientPricingFromPreview_(promoPreview, cart, fx.shipping.method.flat_rate);
+    var res = qaSubmitAndTrack_(payload, fx.order_ids);
+    qaAssertOk_(res);
+    var order = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]);
+    var persistedA = qaFindProductLine_(order, productA.id);
+    var persistedB = qaFindProductLine_(order, productB.id);
+    var anyLines = qaActiveGiftLines_(order, giftAny.gift_id);
+    var subtotalLines = qaActiveGiftLines_(order, giftSubtotal.gift_id);
+    qaAssert_(persistedA && Number(persistedA.unit_final_price) === 250
+      && persistedB && Number(persistedB.unit_final_price) === 800,
+      'Persisted promotion prices do not match preview', { product_a:persistedA, product_b:persistedB });
+    qaAssert_(anyLines.length === 1 && Number(anyLines[0].gift_qty) === 2
+      && subtotalLines.length === 1 && Number(subtotalLines[0].gift_qty) === 3,
+      'Persisted multi-gift quantities do not match preview', { any:anyLines, subtotal:subtotalLines });
+    qaAssert_(Number(order.subtotal) === 1300 && Number(order.shipping_fee) === 0 && Number(order.total) === 1300,
+      'Gift lines must not alter the final monetary totals', order);
+    var attached = res.gifts_attached || [];
+    qaAssert_(attached.some(function(g){ return String(g.gift_id) === String(giftAny.gift_id) && Number(g.qty) === 2; })
+      && attached.some(function(g){ return String(g.gift_id) === String(giftSubtotal.gift_id) && Number(g.qty) === 3; }),
+      'Success response gift quantities do not match persisted order lines', res);
+    var tokenGifts = qaCall_('getOrderGiftsByTokenRpc', [res.token]);
+    qaAssertOk_(tokenGifts);
+    qaAssert_((tokenGifts.gifts || []).some(function(g){ return String(g.gift_id) === String(giftAny.gift_id) && Number(g.gift_qty) === 2; })
+      && (tokenGifts.gifts || []).some(function(g){ return String(g.gift_id) === String(giftSubtotal.gift_id) && Number(g.gift_qty) === 3; }),
+      'Customer-token gift read does not match the checkout result', tokenGifts);
+    qaAssert_(qaGetProductStock_(productA.id) === 8 && qaGetProductStock_(productB.id) === 9
+      && qaGetGiftStock_(giftAny.gift_id) === 18 && qaGetGiftStock_(giftSubtotal.gift_id) === 17,
+      'Multi-rule product/gift stocks were not deducted correctly', {
+        product_a:qaGetProductStock_(productA.id), product_b:qaGetProductStock_(productB.id),
+        gift_any:qaGetGiftStock_(giftAny.gift_id), gift_subtotal:qaGetGiftStock_(giftSubtotal.gift_id)
+      });
+    output = {
+      order_id:order.order_id,
+      subtotal:order.subtotal,
+      attached_gifts:attached,
+      token_gifts:tokenGifts.gifts || [],
+      direct_subtotal_base:1500
+    };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+// One deliberately dense checkout contract that exercises every supported conditional
+// promotion/gift condition plus competing order-total discounts in a single order.
+// Promotions never stack: the lowest final unit price wins per line, then one best
+// order-total promotion is deducted once. Gift min-subtotal rules intentionally use the
+// DIRECT-only subtotal, matching previewGiftEligibilityRpc and submit.
+function qaRunOrderRulesMegaOverlapSingleOrderWorkflow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'OrderRuleMegaOverlap', { flat_rate:125 });
+  var steps = [], caught = null, output = null;
+
+  function trackProduct(product) {
+    fx.product_ids.push(product.id);
+    return product;
+  }
+  function trackPromotion(promotion) {
+    fx.promotion_ids.push(promotion.promotion_id);
+    return promotion;
+  }
+  function trackGift(gift) {
+    fx.gift_ids.push(gift.gift_id);
+    return gift;
+  }
+  function trackRule(rule) {
+    fx.rule_ids.push(rule.rule_id);
+    return rule;
+  }
+  function idSet(ids) {
+    var out = {};
+    (ids || []).forEach(function(id){ out[String(id)] = true; });
+    return out;
+  }
+  function containsLine(lines, productId, variantKey) {
+    return (lines || []).some(function(line) {
+      return String(line.product_id) === String(productId)
+        && String(line.variant_key || '') === String(variantKey || '');
+    });
+  }
+
+  try {
+    qaStep_(steps, 'สร้าง shipping แบบ flat สำหรับ mega order', 'ok', {
+      company_id:fx.shipping.company.id,
+      method_id:fx.shipping.method.id,
+      flat_rate:fx.shipping.method.flat_rate
+    });
+
+    var productA = trackProduct(qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MegaA', 20, {
+      price:1000
+    }));
+    var productB = trackProduct(qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MegaB', 20, {
+      price:600
+    }));
+    var variantProduct = trackProduct(qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MegaVariant', -1, {
+      price:400,
+      variants:[{ name:'Size', type:'text', options:[
+        { label:'M', price:800, weight_grams:100, stock:10 },
+        { label:'S', price:400, weight_grams:100, stock:10 }
+      ]}]
+    }));
+    var productD = trackProduct(qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MegaD', 20, {
+      price:250
+    }));
+    var productE = trackProduct(qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MegaE', 20, {
+      price:300
+    }));
+    var variantMKey = 'Size=M';
+    var variantSKey = 'Size=S';
+
+    qaStep_(steps, 'สร้างสินค้า 5 ประเภท รวม 6 order lines', 'ok', {
+      products:[productA.id, productB.id, variantProduct.id, productD.id, productE.id],
+      variant_keys:[variantMKey, variantSKey]
+    });
+
+    var directBE = trackPromotion(qaCreatePromotion_(fx.token, productB.id, fx.stamp, 'MegaDirectBE', {
+      discount_type:'percent',
+      discount_value:10,
+      target_type:'product',
+      target:[{ product_id:productB.id }, { product_id:productE.id }]
+    }));
+    var conditionalSubtotalAll = trackPromotion(qaCreatePromotion_(fx.token, '', fx.stamp, 'MegaSubtotalAll', {
+      discount_type:'fixed',
+      discount_value:20,
+      target_type:'all',
+      target:[],
+      application_mode:'conditional',
+      condition_type:'min_subtotal',
+      condition_json:{ min_subtotal:9500 }
+    }));
+    var conditionalProductAll = trackPromotion(qaCreatePromotion_(fx.token, productB.id, fx.stamp, 'MegaProductAll', {
+      discount_type:'fixed',
+      discount_value:100,
+      target_type:'product',
+      target:[{ product_id:productB.id }],
+      application_mode:'conditional',
+      condition_type:'required_products',
+      condition_json:{ match_mode:'all', required_products:[
+        { product_id:productA.id, min_qty:3 },
+        { product_id:productD.id, min_qty:5 }
+      ]}
+    }));
+    var conditionalProductAny = trackPromotion(qaCreatePromotion_(fx.token, productB.id, fx.stamp, 'MegaProductAny', {
+      discount_type:'percent',
+      discount_value:30,
+      target_type:'product',
+      target:[{ product_id:productB.id }],
+      application_mode:'conditional',
+      condition_type:'required_products',
+      condition_json:{ match_mode:'any', required_products:[
+        { product_id:productA.id, min_qty:99 },
+        { product_id:productE.id, min_qty:2 }
+      ]}
+    }));
+    var conditionalVariantAll = trackPromotion(qaCreatePromotion_(fx.token, variantProduct.id, fx.stamp, 'MegaVariantAll', {
+      discount_type:'fixed',
+      discount_value:250,
+      target_type:'variant',
+      target:[{ product_id:variantProduct.id, variant_key:variantMKey }],
+      application_mode:'conditional',
+      condition_type:'required_variants',
+      condition_json:{ match_mode:'all', required_variants:[
+        { product_id:variantProduct.id, variant_key:variantMKey, min_qty:2 },
+        { product_id:variantProduct.id, variant_key:variantSKey, min_qty:3 }
+      ]}
+    }));
+    var conditionalVariantAny = trackPromotion(qaCreatePromotion_(fx.token, variantProduct.id, fx.stamp, 'MegaVariantAny', {
+      discount_type:'percent',
+      discount_value:40,
+      target_type:'variant',
+      target:[{ product_id:variantProduct.id, variant_key:variantMKey }],
+      application_mode:'conditional',
+      condition_type:'required_variants',
+      condition_json:{ match_mode:'any', required_variants:[
+        { product_id:variantProduct.id, variant_key:variantMKey, min_qty:99 },
+        { product_id:variantProduct.id, variant_key:variantSKey, min_qty:3 }
+      ]}
+    }));
+    var orderTotalFixed = trackPromotion(qaCreatePromotion_(fx.token, '', fx.stamp, 'MegaOrderTotalFixed', {
+      discount_type:'fixed',
+      discount_value:700,
+      target_type:'all',
+      target:[],
+      application_mode:'conditional',
+      discount_scope:'order_total',
+      condition_type:'min_subtotal',
+      condition_json:{ min_subtotal:9500, calculation_base:'after_discount_before_shipping' }
+    }));
+    var orderTotalPercent = trackPromotion(qaCreatePromotion_(fx.token, '', fx.stamp, 'MegaOrderTotalPercent', {
+      discount_type:'percent',
+      discount_value:5,
+      target_type:'all',
+      target:[],
+      application_mode:'conditional',
+      discount_scope:'order_total',
+      condition_type:'min_subtotal',
+      condition_json:{ min_subtotal:9500, calculation_base:'after_discount_before_shipping' }
+    }));
+
+    qaStep_(steps, 'สร้าง promotions 8 แบบและให้ชนกันทั้งระดับรายการ/ท้ายบิล', 'ok', {
+      promotion_ids:fx.promotion_ids.slice(),
+      overlap_on_b:[
+        directBE.promotion_id,
+        conditionalSubtotalAll.promotion_id,
+        conditionalProductAll.promotion_id,
+        conditionalProductAny.promotion_id
+      ],
+      order_total_competitors:[orderTotalFixed.promotion_id, orderTotalPercent.promotion_id]
+    });
+
+    var giftSubtotal = trackGift(qaCreateGiftItem_(fx.token, fx.stamp, 'MegaSubtotal', { stock:50 }));
+    var giftProductAll = trackGift(qaCreateGiftItem_(fx.token, fx.stamp, 'MegaProductAll', { stock:50 }));
+    var giftProductAny = trackGift(qaCreateGiftItem_(fx.token, fx.stamp, 'MegaProductAny', { stock:50 }));
+    var giftVariantAll = trackGift(qaCreateGiftItem_(fx.token, fx.stamp, 'MegaVariantAll', { stock:50 }));
+    var giftVariantAny = trackGift(qaCreateGiftItem_(fx.token, fx.stamp, 'MegaVariantAny', { stock:50 }));
+
+    var ruleSubtotal = trackRule(qaCreateGiftRule_(fx.token, fx.stamp, 'MegaSubtotal', giftSubtotal.gift_id, {
+      condition_type:'min_subtotal',
+      condition_json:{ min_subtotal:3000 },
+      gift_qty:1,
+      repeat_mode:'per_threshold',
+      priority:9500
+    }));
+    var ruleProductAll = trackRule(qaCreateGiftRule_(fx.token, fx.stamp, 'MegaProductAll', giftProductAll.gift_id, {
+      condition_type:'required_products',
+      condition_json:{ match_mode:'all', required_products:[
+        { product_id:productA.id, min_qty:1 },
+        { product_id:productB.id, min_qty:2 }
+      ]},
+      gift_qty:2,
+      repeat_mode:'once_per_order',
+      priority:9400
+    }));
+    var ruleProductAny = trackRule(qaCreateGiftRule_(fx.token, fx.stamp, 'MegaProductAny', giftProductAny.gift_id, {
+      condition_type:'required_products',
+      condition_json:{ match_mode:'any', required_products:[
+        { product_id:productA.id, min_qty:2 },
+        { product_id:productD.id, min_qty:2 },
+        { product_id:productE.id, min_qty:2 }
+      ]},
+      gift_qty:1,
+      repeat_mode:'per_threshold',
+      priority:9300
+    }));
+    var ruleVariantAll = trackRule(qaCreateGiftRule_(fx.token, fx.stamp, 'MegaVariantAll', giftVariantAll.gift_id, {
+      condition_type:'required_variants',
+      condition_json:{ match_mode:'all', required_variants:[
+        { product_id:variantProduct.id, variant_key:variantMKey, min_qty:1 },
+        { product_id:variantProduct.id, variant_key:variantSKey, min_qty:2 }
+      ]},
+      gift_qty:3,
+      repeat_mode:'per_threshold',
+      priority:9200
+    }));
+    var ruleVariantAny = trackRule(qaCreateGiftRule_(fx.token, fx.stamp, 'MegaVariantAny', giftVariantAny.gift_id, {
+      condition_type:'required_variants',
+      condition_json:{ match_mode:'any', required_variants:[
+        { product_id:variantProduct.id, variant_key:variantMKey, min_qty:1 },
+        { product_id:variantProduct.id, variant_key:variantSKey, min_qty:1 }
+      ]},
+      gift_qty:1,
+      repeat_mode:'per_threshold',
+      priority:9100
+    }));
+
+    var cart = [
+      qaCartItem_(productA.id, 3, {}),
+      qaCartItem_(productB.id, 4, {}),
+      qaCartItem_(variantProduct.id, 2, { Size:'M' }),
+      qaCartItem_(variantProduct.id, 3, { Size:'S' }),
+      qaCartItem_(productD.id, 5, {}),
+      qaCartItem_(productE.id, 2, {})
+    ];
+    var expected = {
+      raw_subtotal:10050,
+      direct_subtotal:9750,
+      subtotal:8410,
+      order_discount:700,
+      subtotal_after_order_discount:7710,
+      shipping_fee:125,
+      total:7835,
+      lines:[
+        { label:'A', product_id:productA.id, variant_key:'', qty:3, base:1000, discount:20, final:980, promotion_id:conditionalSubtotalAll.promotion_id, application_mode:'conditional', condition_type:'min_subtotal' },
+        { label:'B', product_id:productB.id, variant_key:'', qty:4, base:600, discount:180, final:420, promotion_id:conditionalProductAny.promotion_id, application_mode:'conditional', condition_type:'required_products' },
+        { label:'Variant M', product_id:variantProduct.id, variant_key:variantMKey, qty:2, base:800, discount:320, final:480, promotion_id:conditionalVariantAny.promotion_id, application_mode:'conditional', condition_type:'required_variants' },
+        { label:'Variant S', product_id:variantProduct.id, variant_key:variantSKey, qty:3, base:400, discount:20, final:380, promotion_id:conditionalSubtotalAll.promotion_id, application_mode:'conditional', condition_type:'min_subtotal' },
+        { label:'D', product_id:productD.id, variant_key:'', qty:5, base:250, discount:20, final:230, promotion_id:conditionalSubtotalAll.promotion_id, application_mode:'conditional', condition_type:'min_subtotal' },
+        { label:'E', product_id:productE.id, variant_key:'', qty:2, base:300, discount:30, final:270, promotion_id:directBE.promotion_id, application_mode:'direct', condition_type:'' }
+      ],
+      gifts:[
+        { label:'subtotal', gift_id:giftSubtotal.gift_id, rule_id:ruleSubtotal.rule_id, qty:3, stock:47, condition_type:'min_subtotal', match_mode:'all' },
+        { label:'product_all', gift_id:giftProductAll.gift_id, rule_id:ruleProductAll.rule_id, qty:2, stock:48, condition_type:'required_products', match_mode:'all' },
+        { label:'product_any', gift_id:giftProductAny.gift_id, rule_id:ruleProductAny.rule_id, qty:4, stock:46, condition_type:'required_products', match_mode:'any' },
+        { label:'variant_all', gift_id:giftVariantAll.gift_id, rule_id:ruleVariantAll.rule_id, qty:3, stock:47, condition_type:'required_variants', match_mode:'all' },
+        { label:'variant_any', gift_id:giftVariantAny.gift_id, rule_id:ruleVariantAny.rule_id, qty:5, stock:45, condition_type:'required_variants', match_mode:'any' }
+      ]
+    };
+
+    var promoPreview = qaPreviewPromo_(cart);
+    var previewRawSubtotal = (promoPreview.lines || []).reduce(function(sum, line) {
+      return sum + Number(line.unit_base_price || 0) * Number(line.qty || 0);
+    }, 0);
+    qaAssert_(previewRawSubtotal === expected.raw_subtotal,
+      'Mega promotion preview raw subtotal mismatch', { expected:expected.raw_subtotal, actual:previewRawSubtotal, preview:promoPreview });
+    qaAssert_(Number(promoPreview.subtotal_after_promo) === expected.direct_subtotal,
+      'Conditional promotion qualification must use the direct-only subtotal', { expected:expected.direct_subtotal, preview:promoPreview });
+    qaAssert_(Number(promoPreview.subtotal) === expected.subtotal,
+      'Mega promotion preview final subtotal mismatch', { expected:expected.subtotal, preview:promoPreview });
+
+    expected.lines.forEach(function(exp) {
+      var line = qaPromoPreviewLine_(promoPreview, exp.product_id, exp.variant_key);
+      qaAssert_(line
+        && Number(line.qty) === exp.qty
+        && Number(line.unit_base_price) === exp.base
+        && Number(line.unit_discount_amount) === exp.discount
+        && Number(line.unit_final_price) === exp.final
+        && line.promotion
+        && String(line.promotion.promotion_id) === String(exp.promotion_id),
+        'Mega promotion preview line mismatch: ' + exp.label, { expected:exp, actual:line, preview:promoPreview });
+    });
+
+    var conditionalIds = [
+      conditionalSubtotalAll.promotion_id,
+      conditionalProductAll.promotion_id,
+      conditionalProductAny.promotion_id,
+      conditionalVariantAll.promotion_id,
+      conditionalVariantAny.promotion_id,
+      orderTotalFixed.promotion_id,
+      orderTotalPercent.promotion_id
+    ];
+    var conditionalIdMap = idSet(conditionalIds);
+    var eligibleFixturePromos = (promoPreview.eligible || []).filter(function(entry) {
+      return conditionalIdMap[String(entry.promotion_id)];
+    });
+    qaAssert_(eligibleFixturePromos.length === conditionalIds.length,
+      'All seven fixture conditional promotions must qualify', { expected_ids:conditionalIds, eligible:eligibleFixturePromos, preview:promoPreview });
+    function eligiblePromotion(promotionId) {
+      return eligibleFixturePromos.filter(function(entry){ return String(entry.promotion_id) === String(promotionId); })[0] || null;
+    }
+    var eligibleSubtotal = eligiblePromotion(conditionalSubtotalAll.promotion_id);
+    var eligibleProductAll = eligiblePromotion(conditionalProductAll.promotion_id);
+    var eligibleProductAny = eligiblePromotion(conditionalProductAny.promotion_id);
+    var eligibleVariantAll = eligiblePromotion(conditionalVariantAll.promotion_id);
+    var eligibleVariantAny = eligiblePromotion(conditionalVariantAny.promotion_id);
+    var eligibleOrderTotalFixed = eligiblePromotion(orderTotalFixed.promotion_id);
+    var eligibleOrderTotalPercent = eligiblePromotion(orderTotalPercent.promotion_id);
+    qaAssert_(eligibleSubtotal && eligibleSubtotal.applied === true
+      && containsLine(eligibleSubtotal.applied_lines, productA.id, '')
+      && containsLine(eligibleSubtotal.applied_lines, variantProduct.id, variantSKey)
+      && containsLine(eligibleSubtotal.applied_lines, productD.id, ''),
+      'Subtotal conditional promotion should win A, Variant S, and D', eligibleSubtotal);
+    qaAssert_(eligibleProductAll && eligibleProductAll.applied === false
+      && containsLine(eligibleProductAll.outpriced_lines, productB.id, ''),
+      'Product ALL promotion should qualify but be outpriced on B', eligibleProductAll);
+    qaAssert_(eligibleProductAny && eligibleProductAny.applied === true
+      && containsLine(eligibleProductAny.applied_lines, productB.id, ''),
+      'Product ANY promotion should win B', eligibleProductAny);
+    qaAssert_(eligibleVariantAll && eligibleVariantAll.applied === false
+      && containsLine(eligibleVariantAll.outpriced_lines, variantProduct.id, variantMKey),
+      'Variant ALL promotion should qualify but be outpriced on M', eligibleVariantAll);
+    qaAssert_(eligibleVariantAny && eligibleVariantAny.applied === true
+      && containsLine(eligibleVariantAny.applied_lines, variantProduct.id, variantMKey),
+      'Variant ANY promotion should win M', eligibleVariantAny);
+    qaAssert_(eligibleOrderTotalFixed && eligibleOrderTotalFixed.applied === true
+      && Number(eligibleOrderTotalFixed.order_discount_amount) === expected.order_discount,
+      'Fixed order-total promotion should win once for the whole mega order', eligibleOrderTotalFixed);
+    qaAssert_(eligibleOrderTotalPercent && eligibleOrderTotalPercent.applied === false
+      && Number(eligibleOrderTotalPercent.order_discount_amount) === 421,
+      'Percent order-total promotion should qualify but lose to the larger fixed discount', eligibleOrderTotalPercent);
+    qaAssert_(promoPreview.order_discount
+      && String(promoPreview.order_discount.promotion.promotion_id) === String(orderTotalFixed.promotion_id)
+      && Number(promoPreview.order_discount.amount) === expected.order_discount
+      && Number(promoPreview.subtotal_after_order_discount) === expected.subtotal_after_order_discount,
+      'Mega preview order-total winner/net subtotal mismatch', { expected:expected, preview:promoPreview });
+
+    qaStep_(steps, 'ตรวจ promotion preview และ best-price winners', 'ok', {
+      raw_subtotal:previewRawSubtotal,
+      direct_subtotal:promoPreview.subtotal_after_promo,
+      final_subtotal:promoPreview.subtotal,
+      order_discount:promoPreview.order_discount,
+      subtotal_after_order_discount:promoPreview.subtotal_after_order_discount,
+      winners:expected.lines.map(function(line){ return { label:line.label, promotion_id:line.promotion_id, final:line.final }; }),
+      qualified_conditional_ids:eligibleFixturePromos.map(function(entry){ return entry.promotion_id; })
+    });
+
+    var giftPreview = qaCall_('previewGiftEligibilityRpc', [{ items:cart }]);
+    qaAssertOk_(giftPreview);
+    qaAssert_(Number(giftPreview.subtotal_after_promo) === expected.direct_subtotal,
+      'Gift preview must use the same direct-only subtotal as promotion qualification', { expected:expected.direct_subtotal, preview:giftPreview });
+    var ruleIdMap = idSet(expected.gifts.map(function(g){ return g.rule_id; }));
+    var eligibleFixtureGifts = (giftPreview.eligible || []).filter(function(entry) {
+      return ruleIdMap[String(entry.rule_id)];
+    });
+    qaAssert_(eligibleFixtureGifts.length === expected.gifts.length,
+      'All five fixture gift rules must qualify', { expected:expected.gifts, eligible:eligibleFixtureGifts, preview:giftPreview });
+    expected.gifts.forEach(function(exp) {
+      var entry = eligibleFixtureGifts.filter(function(item){ return String(item.rule_id) === String(exp.rule_id); })[0];
+      qaAssert_(entry
+        && entry.gift
+        && String(entry.gift.gift_id) === String(exp.gift_id)
+        && Number(entry.gift.qty) === exp.qty
+        && entry.condition_type === exp.condition_type
+        && entry.match_mode === exp.match_mode,
+        'Mega gift preview mismatch: ' + exp.label, { expected:exp, actual:entry, preview:giftPreview });
+    });
+    qaStep_(steps, 'ตรวจ gift preview ครบทุก condition', 'ok', {
+      direct_subtotal:giftPreview.subtotal_after_promo,
+      gifts:expected.gifts.map(function(g){ return { label:g.label, rule_id:g.rule_id, qty:g.qty }; })
+    });
+
+    var payload = qaBuildOrderPayloadForProduct_('qa-rule-mega-overlap', fx.stamp, 'Buyer', productA.id, fx.shipping, { items:cart });
+    payload.client_pricing = qaRuleOrderClientPricingFromPreview_(promoPreview, cart, expected.shipping_fee);
+    qaAssert_(Number(payload.client_pricing.subtotal) === expected.subtotal
+      && Number(payload.client_pricing.order_discount) === expected.order_discount
+      && Number(payload.client_pricing.shipping_fee) === expected.shipping_fee
+      && Number(payload.client_pricing.total) === expected.total,
+      'Mega order client_pricing snapshot mismatch before submit', { expected:expected, client_pricing:payload.client_pricing });
+
+    // This is intentionally the only submitOrderRpc invocation in the flow.
+    var submit = qaSubmitAndTrack_(payload, fx.order_ids);
+    qaAssertOk_(submit);
+    var submittedOrderIds = qaOrderIdsFromSubmit_(submit);
+    qaAssert_(submittedOrderIds.length === 1,
+      'Mega workflow must create exactly one order', { order_ids:submittedOrderIds, response:submit });
+    var orderId = submittedOrderIds[0];
+    var orderToken = submit.token || (submit.orders && submit.orders[0] && submit.orders[0].token) || '';
+    qaAssert_(!!orderId && !!orderToken, 'Mega order submit must return one order id and customer token', submit);
+
+    var giftIdMap = idSet(expected.gifts.map(function(g){ return g.gift_id; }));
+    var attachedFixtureGifts = (submit.gifts_attached || []).filter(function(g){ return giftIdMap[String(g.gift_id)]; });
+    var skippedFixtureGifts = (submit.gifts_skipped || []).filter(function(g){ return giftIdMap[String(g.gift_id)]; });
+    qaAssert_(attachedFixtureGifts.length === expected.gifts.length,
+      'Submit response must report all five fixture gifts attached', { expected:expected.gifts, attached:attachedFixtureGifts, response:submit });
+    qaAssert_(skippedFixtureGifts.length === 0,
+      'No fixture gift may be skipped in the mega workflow', { skipped:skippedFixtureGifts, response:submit });
+    expected.gifts.forEach(function(exp) {
+      var attached = attachedFixtureGifts.filter(function(g){ return String(g.gift_id) === String(exp.gift_id); })[0];
+      qaAssert_(attached && Number(attached.qty) === exp.qty,
+        'Submit response gift quantity mismatch: ' + exp.label, { expected:exp, actual:attached, response:submit });
+    });
+    qaStep_(steps, 'submit mega checkout เพียงหนึ่ง order', 'ok', {
+      order_id:orderId,
+      token_returned:!!orderToken,
+      gifts_attached:attachedFixtureGifts,
+      gifts_skipped:skippedFixtureGifts
+    });
+
+    var order = qaReadOrder_(fx.token, orderId);
+    var productLines = (order.items || []).filter(function(item){ return item.line_type !== 'gift'; });
+    var fixtureGiftLines = (order.items || []).filter(function(item){
+      return item.line_type === 'gift' && item.status !== 'removed' && giftIdMap[String(item.gift_id)];
+    });
+    qaAssert_(productLines.length === expected.lines.length,
+      'Persisted mega order must contain exactly six product lines', { expected:expected.lines, lines:productLines, order:order });
+    qaAssert_(fixtureGiftLines.length === expected.gifts.length,
+      'Persisted mega order must contain all five fixture gift lines', { expected:expected.gifts, lines:fixtureGiftLines, order:order });
+    expected.lines.forEach(function(exp) {
+      var line = qaFindProductLineByVariantKey_(order, exp.product_id, exp.variant_key);
+      qaAssert_(line
+        && Number(line.qty) === exp.qty
+        && Number(line.unit_base_price) === exp.base
+        && Number(line.unit_discount_amount) === exp.discount
+        && Number(line.unit_final_price) === exp.final
+        && Number(line.subtotal) === exp.final * exp.qty
+        && line.promotion
+        && String(line.promotion.promotion_id) === String(exp.promotion_id)
+        && line.promotion.application_mode === exp.application_mode
+        && String(line.promotion.condition_type || '') === exp.condition_type,
+        'Persisted mega pricing/promotion snapshot mismatch: ' + exp.label, { expected:exp, actual:line, order:order });
+    });
+    expected.gifts.forEach(function(exp) {
+      var lines = qaActiveGiftLines_(order, exp.gift_id);
+      var line = lines[0];
+      qaAssert_(lines.length === 1
+        && Number(line.gift_qty) === exp.qty
+        && String(line.rule_id) === String(exp.rule_id)
+        && !!line.rule_name
+        && line.source === 'auto'
+        && line.status === 'active',
+        'Persisted mega gift/rule snapshot mismatch: ' + exp.label, { expected:exp, lines:lines, order:order });
+    });
+    var persistedProductSubtotal = productLines.reduce(function(sum, line){ return sum + Number(line.subtotal || 0); }, 0);
+    qaAssert_(persistedProductSubtotal === expected.subtotal
+      && Number(order.subtotal) === expected.subtotal
+      && order.order_discount
+      && String(order.order_discount.promotion.promotion_id) === String(orderTotalFixed.promotion_id)
+      && order.order_discount.promotion.discount_scope === 'order_total'
+      && Number(order.order_discount.amount) === expected.order_discount
+      && Number(order.shipping_fee) === expected.shipping_fee
+      && Number(order.total) === expected.total
+      && order.status === 'unpaid',
+      'Persisted mega order totals/status mismatch', { expected:expected, product_subtotal:persistedProductSubtotal, order:order });
+    qaAssert_((order.shipping_info || []).length === 1
+      && String(order.shipping_info[0].method_id) === String(fx.shipping.method.id)
+      && Number(order.shipping_info[0].fee) === expected.shipping_fee,
+      'Persisted mega order shipping snapshot mismatch', { expected_method_id:fx.shipping.method.id, shipping_info:order.shipping_info });
+    qaStep_(steps, 'ตรวจ persisted order pricing/promotion/gift snapshots', 'ok', {
+      order_id:orderId,
+      product_line_count:productLines.length,
+      fixture_gift_line_count:fixtureGiftLines.length,
+      subtotal:order.subtotal,
+      order_discount:order.order_discount,
+      shipping_fee:order.shipping_fee,
+      total:order.total,
+      status:order.status
+    });
+
+    var tokenOrder = qaCall_('getOrderByTokenRpc', [orderToken]);
+    qaAssertOk_(tokenOrder);
+    qaAssert_(tokenOrder.record
+      && String(tokenOrder.record.order_id) === String(orderId)
+      && Number(tokenOrder.record.subtotal) === expected.subtotal
+      && tokenOrder.record.order_discount
+      && String(tokenOrder.record.order_discount.promotion.promotion_id) === String(orderTotalFixed.promotion_id)
+      && Number(tokenOrder.record.order_discount.amount) === expected.order_discount
+      && Number(tokenOrder.record.shipping_fee) === expected.shipping_fee
+      && Number(tokenOrder.record.total) === expected.total,
+      'Customer token order read must match the persisted mega order', { expected:expected, token_read:tokenOrder });
+    expected.lines.forEach(function(exp) {
+      var line = qaFindProductLineByVariantKey_(tokenOrder.record, exp.product_id, exp.variant_key);
+      qaAssert_(line && Number(line.unit_final_price) === exp.final
+        && line.promotion && String(line.promotion.promotion_id) === String(exp.promotion_id),
+        'Customer token pricing snapshot mismatch: ' + exp.label, { expected:exp, actual:line, token_read:tokenOrder });
+    });
+
+    var tokenGifts = qaCall_('getOrderGiftsByTokenRpc', [orderToken]);
+    qaAssertOk_(tokenGifts);
+    var tokenFixtureGifts = (tokenGifts.gifts || []).filter(function(g){ return giftIdMap[String(g.gift_id)]; });
+    qaAssert_(tokenFixtureGifts.length === expected.gifts.length,
+      'Customer token gift read must return all five fixture gifts', { expected:expected.gifts, gifts:tokenFixtureGifts, token_read:tokenGifts });
+    expected.gifts.forEach(function(exp) {
+      var line = tokenFixtureGifts.filter(function(g){ return String(g.gift_id) === String(exp.gift_id); })[0];
+      qaAssert_(line && Number(line.gift_qty) === exp.qty && String(line.rule_id) === String(exp.rule_id),
+        'Customer token gift snapshot mismatch: ' + exp.label, { expected:exp, actual:line, token_read:tokenGifts });
+    });
+    qaStep_(steps, 'ตรวจ customer token reads', 'ok', {
+      order_id:tokenOrder.record.order_id,
+      order_discount:tokenOrder.record.order_discount,
+      total:tokenOrder.record.total,
+      fixture_gifts:tokenFixtureGifts.map(function(g){ return { gift_id:g.gift_id, rule_id:g.rule_id, qty:g.gift_qty }; })
+    });
+
+    var finalStock = {
+      product_a:qaGetProductStock_(productA.id),
+      product_b:qaGetProductStock_(productB.id),
+      product_d:qaGetProductStock_(productD.id),
+      product_e:qaGetProductStock_(productE.id),
+      variant_m:qaGetVariantStock_(variantProduct.id, 'Size', 'M'),
+      variant_s:qaGetVariantStock_(variantProduct.id, 'Size', 'S'),
+      gifts:expected.gifts.map(function(g){ return { gift_id:g.gift_id, stock:qaGetGiftStock_(g.gift_id) }; })
+    };
+    qaAssert_(finalStock.product_a === 17
+      && finalStock.product_b === 16
+      && finalStock.product_d === 15
+      && finalStock.product_e === 18
+      && finalStock.variant_m === 8
+      && finalStock.variant_s === 7,
+      'Mega order product/variant stocks were not deducted exactly once', finalStock);
+    expected.gifts.forEach(function(exp) {
+      var actual = finalStock.gifts.filter(function(g){ return String(g.gift_id) === String(exp.gift_id); })[0];
+      qaAssert_(actual && Number(actual.stock) === exp.stock,
+        'Mega order gift stock mismatch: ' + exp.label, { expected:exp, actual:actual, final_stock:finalStock });
+    });
+    qaStep_(steps, 'ตรวจ product/variant/gift stocks หลัง submit', 'ok', finalStock);
+
+    output = {
+      steps:steps,
+      order_id:orderId,
+      order_count:submittedOrderIds.length,
+      token_returned:!!orderToken,
+      expected:expected,
+      preview:{
+        raw_subtotal:previewRawSubtotal,
+        direct_subtotal:promoPreview.subtotal_after_promo,
+        final_subtotal:promoPreview.subtotal,
+        order_discount:promoPreview.order_discount,
+        subtotal_after_order_discount:promoPreview.subtotal_after_order_discount,
+        eligible_fixture_promotions:eligibleFixturePromos,
+        eligible_fixture_gifts:eligibleFixtureGifts
+      },
+      order_totals:{
+        subtotal:order.subtotal,
+        order_discount:order.order_discount,
+        shipping_fee:order.shipping_fee,
+        total:order.total
+      },
+      attached_fixture_gifts:attachedFixtureGifts,
+      token_fixture_gifts:tokenFixtureGifts,
+      final_stock:finalStock
+    };
+  } catch (err) {
+    caught = err;
+  }
+
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  qaStep_(steps, 'cleanup mega order fixtures', cleanup && cleanup.ok ? 'ok' : 'failed', { cleanup:cleanup });
+  if (caught) {
+    caught.details = Object.assign({}, caught.details || {}, {
+      steps:steps,
+      fixture_ids:{
+        order_ids:fx.order_ids,
+        product_ids:fx.product_ids,
+        promotion_ids:fx.promotion_ids,
+        gift_ids:fx.gift_ids,
+        rule_ids:fx.rule_ids
+      },
+      cleanup:cleanup
+    });
+    throw caught;
+  }
+  qaAssert_(cleanup && cleanup.ok === true, 'Mega order fixture cleanup failed', cleanup);
+  output.steps = steps;
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Dense recovery workflow for a promotion edit between preview and submit. It proves that
+// stale order-total money is rejected before stock writes, then the refreshed checkout can
+// complete and retain immutable promotion/gift snapshots after the live rule is edited/deleted.
+function qaRunOrderRulesMegaPromotionUpdateRecoveryFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'OrderRuleMegaPromoUpdate', { flat_rate:50 });
+  var steps = [], caught = null, output = null;
+  try {
+    var productA = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MegaUpdateA', 10, { price:1000 });
+    var productB = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'MegaUpdateB', 10, { price:500 });
+    fx.product_ids = [productA.id, productB.id];
+
+    var directPromo = qaCreatePromotion_(fx.token, productA.id, fx.stamp, 'MegaUpdateDirect', {
+      discount_type:'fixed', discount_value:100,
+      target_type:'product', target:[{ product_id:productA.id }]
+    });
+    var orderPromo = qaCreatePromotion_(fx.token, '', fx.stamp, 'MegaUpdateOrderTotal', {
+      discount_type:'fixed', discount_value:200,
+      target_type:'all', target:[], application_mode:'conditional',
+      discount_scope:'order_total', condition_type:'min_subtotal',
+      condition_json:{ min_subtotal:2000, calculation_base:'after_discount_before_shipping' }
+    });
+    fx.promotion_ids = [directPromo.promotion_id, orderPromo.promotion_id];
+
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'MegaUpdateGift', { stock:5 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'MegaUpdateGift', gift.gift_id, {
+      condition_type:'min_subtotal', condition_json:{ min_subtotal:2000 },
+      gift_qty:1, repeat_mode:'once_per_order', priority:9800
+    });
+    fx.rule_ids.push(rule.rule_id);
+
+    var cart = [
+      qaCartItem_(productA.id, 2, {}),
+      qaCartItem_(productB.id, 1, {})
+    ];
+    var stalePreview = qaPreviewPromo_(cart);
+    var staleGiftPreview = qaCall_('previewGiftEligibilityRpc', [{ items:cart }]);
+    qaAssertOk_(staleGiftPreview);
+    var staleLineA = qaPromoPreviewLine_(stalePreview, productA.id, '');
+    qaAssert_(staleLineA && Number(staleLineA.unit_final_price) === 900
+      && staleLineA.promotion
+      && String(staleLineA.promotion.promotion_id) === String(directPromo.promotion_id),
+      'Initial direct promotion line snapshot mismatch', { line:staleLineA, preview:stalePreview });
+    qaAssert_(Number(stalePreview.subtotal) === 2300
+      && stalePreview.order_discount
+      && Number(stalePreview.order_discount.amount) === 200
+      && Number(stalePreview.subtotal_after_order_discount) === 2100,
+      'Initial order-total promotion preview mismatch', stalePreview);
+    qaAssert_(qaHasEligibleRule_(staleGiftPreview, rule.rule_id)
+      && Number(staleGiftPreview.subtotal_after_promo) === 2300,
+      'Gift should qualify from the direct-only subtotal before the order-total discount', staleGiftPreview);
+    qaStep_(steps, 'preview ราคาเดิม + promotion + gift ครบทุกชั้น', 'ok', {
+      subtotal:stalePreview.subtotal,
+      order_discount:stalePreview.order_discount,
+      gift_subtotal_basis:staleGiftPreview.subtotal_after_promo
+    });
+
+    var stalePayload = qaBuildOrderPayloadForProduct_('qa-mega-promo-update-stale', fx.stamp, 'Buyer', productA.id, fx.shipping, { items:cart });
+    stalePayload.client_pricing = qaRuleOrderClientPricingFromPreview_(stalePreview, cart, 50);
+    qaAssert_(Number(stalePayload.client_pricing.total) === 2150,
+      'Initial client pricing total should be 2300 - 200 + 50', stalePayload.client_pricing);
+
+    var update = qaCall_('updatePromotionRpc', [fx.token, orderPromo.promotion_id, { discount_value:400 }]);
+    qaAssertOk_(update);
+    var beforeCount = qaOrderCount_(fx.token);
+    var rejected = qaSubmitAndTrack_(stalePayload, fx.order_ids);
+    var counts = qaAssertNoNewOrderAfterFailure_(fx.token, beforeCount, rejected, fx.order_ids, 'PRICE_CHANGED', stalePayload);
+    var diffKinds = qaAssertDiffKinds_(rejected, ['order_discount', 'total']);
+    qaAssert_(Number(rejected.updated_subtotal) === 2300
+      && Number(rejected.updated_order_discount) === 400
+      && Number(rejected.updated_shipping_fee) === 50
+      && Number(rejected.updated_total) === 1950,
+      'PRICE_CHANGED response should expose the fully refreshed checkout summary', rejected);
+    qaAssert_(qaGetProductStock_(productA.id) === 10
+      && qaGetProductStock_(productB.id) === 10
+      && qaGetGiftStock_(gift.gift_id) === 5,
+      'Rejected stale submit must not change product or gift stock', rejected);
+    qaStep_(steps, 'แก้ promotion แล้ว reject stale client pricing ก่อนแตะ stock', 'ok', {
+      diff_kinds:diffKinds,
+      order_counts:counts,
+      updated_total:rejected.updated_total
+    });
+
+    var freshPreview = qaPreviewPromo_(cart);
+    qaAssert_(freshPreview.order_discount
+      && Number(freshPreview.order_discount.amount) === 400
+      && Number(freshPreview.subtotal_after_order_discount) === 1900,
+      'Refreshed preview should expose the updated order-total discount', freshPreview);
+    var freshPayload = qaBuildOrderPayloadForProduct_('qa-mega-promo-update-fresh', fx.stamp, 'Buyer', productA.id, fx.shipping, { items:cart });
+    freshPayload.client_pricing = qaRuleOrderClientPricingFromPreview_(freshPreview, cart, 50);
+    var submit = qaSubmitAndTrack_(freshPayload, fx.order_ids);
+    qaAssertOk_(submit);
+    var orderId = qaOrderIdsFromSubmit_(submit)[0];
+    var record = qaReadOrder_(fx.token, orderId);
+    var lineA = qaFindProductLine_(record, productA.id);
+    var giftLines = qaActiveGiftLines_(record, gift.gift_id);
+    qaAssert_(Number(record.subtotal) === 2300
+      && record.order_discount
+      && Number(record.order_discount.amount) === 400
+      && String(record.order_discount.promotion.promotion_id) === String(orderPromo.promotion_id)
+      && Number(record.order_discount.promotion.discount_value) === 400
+      && record.order_discount.promotion.discount_scope === 'order_total'
+      && Number(record.shipping_fee) === 50
+      && Number(record.total) === 1950,
+      'Refreshed order totals/order-total snapshot mismatch', record);
+    qaAssert_(lineA && Number(lineA.unit_final_price) === 900
+      && lineA.promotion
+      && String(lineA.promotion.promotion_id) === String(directPromo.promotion_id),
+      'Direct line promotion must remain independent from the order-total snapshot', lineA);
+    qaAssert_(giftLines.length === 1
+      && Number(giftLines[0].gift_qty) === 1
+      && String(giftLines[0].rule_id) === String(rule.rule_id),
+      'Refreshed order should attach exactly one snapshotted gift', giftLines);
+    qaAssert_(qaGetProductStock_(productA.id) === 8
+      && qaGetProductStock_(productB.id) === 9
+      && qaGetGiftStock_(gift.gift_id) === 4,
+      'Successful refreshed submit should deduct all stocks exactly once', record);
+    qaStep_(steps, 'refresh แล้ว submit order ใหม่พร้อม snapshot ที่ถูกต้อง', 'ok', {
+      order_id:orderId,
+      subtotal:record.subtotal,
+      order_discount:record.order_discount,
+      total:record.total
+    });
+
+    qaAssertOk_(qaCall_('updatePromotionRpc', [fx.token, orderPromo.promotion_id, { discount_value:650, name:'QA Mutated Mega Order Total ' + fx.stamp }]));
+    qaAssertOk_(qaCall_('deletePromotionRpc', [fx.token, orderPromo.promotion_id]));
+    fx.promotion_ids = fx.promotion_ids.filter(function(id){ return String(id) !== String(orderPromo.promotion_id); });
+
+    var immutableAdmin = qaReadOrder_(fx.token, orderId);
+    var immutableToken = qaCall_('getOrderByTokenRpc', [submit.token]);
+    qaAssertOk_(immutableToken);
+    [immutableAdmin, immutableToken.record].forEach(function(snapshot) {
+      qaAssert_(snapshot.order_discount
+        && Number(snapshot.order_discount.amount) === 400
+        && String(snapshot.order_discount.promotion.promotion_id) === String(orderPromo.promotion_id)
+        && Number(snapshot.order_discount.promotion.discount_value) === 400
+        && snapshot.order_discount.promotion.discount_scope === 'order_total'
+        && Number(snapshot.total) === 1950,
+        'Order-total snapshot must survive source promotion edit/delete', snapshot);
+    });
+
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'cancelled', 'qa mega promotion update cancel']));
+    qaAssert_(qaGetProductStock_(productA.id) === 10
+      && qaGetProductStock_(productB.id) === 10
+      && qaGetGiftStock_(gift.gift_id) === 5,
+      'Cancel should restore product/gift stock without changing monetary snapshots', immutableAdmin);
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'paid', 'qa mega promotion update un-cancel']));
+    var finalRecord = qaReadOrder_(fx.token, orderId);
+    qaAssert_(qaGetProductStock_(productA.id) === 8
+      && qaGetProductStock_(productB.id) === 9
+      && qaGetGiftStock_(gift.gift_id) === 4,
+      'Un-cancel should re-deduct product/gift stock exactly once', finalRecord);
+    qaAssert_(finalRecord.status === 'paid'
+      && finalRecord.order_discount
+      && Number(finalRecord.order_discount.amount) === 400
+      && Number(finalRecord.total) === 1950,
+      'Status lifecycle must not recalculate the immutable order-total promotion', finalRecord);
+    qaStep_(steps, 'snapshot คงเดิมหลัง edit/delete และ stock lifecycle ยัง atomic', 'ok', {
+      status:finalRecord.status,
+      order_discount:finalRecord.order_discount,
+      final_stock:{ product_a:8, product_b:9, gift:4 }
+    });
+
+    output = {
+      steps:steps,
+      order_id:orderId,
+      stale_response:{ error:rejected.error, diff_kinds:diffKinds, updated_total:rejected.updated_total },
+      persisted:{ subtotal:finalRecord.subtotal, order_discount:finalRecord.order_discount, shipping_fee:finalRecord.shipping_fee, total:finalRecord.total },
+      final_status:finalRecord.status,
+      final_stock:{ product_a:8, product_b:9, gift:4 }
+    };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  qaStep_(steps, 'cleanup mega promotion-update fixtures', cleanup && cleanup.ok ? 'ok' : 'failed', { cleanup:cleanup });
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps:steps, cleanup:cleanup }); throw caught; }
+  qaAssert_(cleanup && cleanup.ok === true, 'Mega promotion-update fixture cleanup failed', cleanup);
+  output.steps = steps;
+  output.cleanup = cleanup;
+  return output;
+}
+
+// Order-total discount allocation for split shipping. An odd amount deliberately creates a
+// rounding remainder so the sum of persisted per-order snapshots must still equal the cart
+// discount exactly (100 + 233 = 333).
+function qaRunOrderRulesOrderTotalSplitAllocationFlow_(ctx) {
+  var token = ctx.options.adminToken;
+  var stamp = qaStamp_();
+  var shipping = qaCreateMultiMethodShippingFixture_(token, stamp, 'OrderTotalSplit', [
+    { name:'QA Order Total Split A', mode:'flat', flat_rate:10 },
+    { name:'QA Order Total Split B', mode:'flat', flat_rate:20 }
+  ]);
+  var fx = { token:token, stamp:stamp, shipping:shipping, order_ids:[], product_ids:[], promotion_ids:[], gift_ids:[], rule_ids:[] };
+  var steps = [], caught = null, output = null;
+  try {
+    var methodA = shipping.methods[0], methodB = shipping.methods[1];
+    var productA = qaCreateOrderQaProduct_(token, shipping, stamp, 'OrderTotalSplitA', 5, {
+      price:300, allowed_shipping_ids:[methodA.id]
+    });
+    var productB = qaCreateOrderQaProduct_(token, shipping, stamp, 'OrderTotalSplitB', 5, {
+      price:700, allowed_shipping_ids:[methodB.id]
+    });
+    fx.product_ids = [productA.id, productB.id];
+    var promo = qaCreatePromotion_(token, '', stamp, 'OrderTotalSplit', {
+      discount_type:'fixed', discount_value:333,
+      target_type:'all', target:[], application_mode:'conditional',
+      discount_scope:'order_total', condition_type:'min_subtotal',
+      condition_json:{ min_subtotal:1000, calculation_base:'after_discount_before_shipping' }
+    });
+    fx.promotion_ids.push(promo.promotion_id);
+
+    var cart = [qaCartItem_(productA.id, 1, {}), qaCartItem_(productB.id, 1, {})];
+    var preview = qaPreviewPromo_(cart);
+    qaAssert_(Number(preview.subtotal) === 1000
+      && preview.order_discount
+      && Number(preview.order_discount.amount) === 333
+      && Number(preview.subtotal_after_order_discount) === 667,
+      'Split checkout preview should calculate one cart-wide order-total discount', preview);
+
+    var payload = qaBuildOrderPayloadForProduct_('qa-order-total-split', stamp, 'Buyer', productA.id, shipping, { items:cart });
+    payload.shipping_info = [
+      { company_id:shipping.company.id, method_id:methodA.id, item_product_ids:[productA.id] },
+      { company_id:shipping.company.id, method_id:methodB.id, item_product_ids:[productB.id] }
+    ];
+    payload.client_pricing = qaRuleOrderClientPricingFromPreview_(preview, cart, 30);
+    qaAssert_(Number(payload.client_pricing.total) === 697,
+      'Split client pricing must net the cart discount before both shipping fees', payload.client_pricing);
+    var submit = qaSubmitAndTrack_(payload, fx.order_ids);
+    qaAssertOk_(submit);
+    qaAssert_(Array.isArray(submit.orders) && submit.orders.length === 2 && fx.order_ids.length === 2,
+      'Split order-total checkout should create exactly two orders', submit);
+
+    var records = fx.order_ids.map(function(id){ return qaReadOrder_(token, id); });
+    var orderA = records.filter(function(order){ return !!qaFindProductLine_(order, productA.id); })[0];
+    var orderB = records.filter(function(order){ return !!qaFindProductLine_(order, productB.id); })[0];
+    qaAssert_(orderA && orderB, 'Each assigned product should persist in its own split order', records);
+    qaAssert_(Number(orderA.subtotal) === 300
+      && orderA.order_discount
+      && Number(orderA.order_discount.amount) === 100
+      && Number(orderA.shipping_fee) === 10
+      && Number(orderA.total) === 210,
+      'Product A split order should receive its proportional discount and shipping fee', orderA);
+    qaAssert_(Number(orderB.subtotal) === 700
+      && orderB.order_discount
+      && Number(orderB.order_discount.amount) === 233
+      && Number(orderB.shipping_fee) === 20
+      && Number(orderB.total) === 487,
+      'Product B split order should receive the integer remainder and shipping fee', orderB);
+
+    var aggregate = records.reduce(function(sum, order) {
+      return {
+        subtotal:sum.subtotal + Number(order.subtotal || 0),
+        order_discount:sum.order_discount + Number(order.order_discount && order.order_discount.amount || 0),
+        shipping_fee:sum.shipping_fee + Number(order.shipping_fee || 0),
+        total:sum.total + Number(order.total || 0)
+      };
+    }, { subtotal:0, order_discount:0, shipping_fee:0, total:0 });
+    qaAssert_(aggregate.subtotal === 1000
+      && aggregate.order_discount === 333
+      && aggregate.shipping_fee === 30
+      && aggregate.total === 697,
+      'Split-order aggregates must exactly match the cart preview/client snapshot', { aggregate:aggregate, preview:preview });
+
+    (submit.orders || []).forEach(function(summary) {
+      var tokenRead = qaCall_('getOrderByTokenRpc', [summary.token]);
+      qaAssertOk_(tokenRead);
+      var persisted = records.filter(function(order){ return String(order.order_id) === String(summary.order_id); })[0];
+      qaAssert_(persisted
+        && String(tokenRead.record.order_id) === String(persisted.order_id)
+        && Number(tokenRead.record.total) === Number(persisted.total)
+        && tokenRead.record.order_discount
+        && Number(tokenRead.record.order_discount.amount) === Number(persisted.order_discount.amount)
+        && String(tokenRead.record.order_discount.promotion.promotion_id) === String(promo.promotion_id),
+        'Each split customer token must expose its allocated immutable discount', { summary:summary, token_read:tokenRead, persisted:persisted });
+    });
+    qaAssert_(qaGetProductStock_(productA.id) === 4 && qaGetProductStock_(productB.id) === 4,
+      'Split checkout should deduct each product stock exactly once', records);
+    qaStep_(steps, 'กระจายส่วนลดท้ายบิล 333 เป็น 100 + 233 ข้ามสอง order', 'ok', {
+      order_ids:fx.order_ids.slice(),
+      aggregate:aggregate,
+      order_a:{ discount:orderA.order_discount.amount, total:orderA.total },
+      order_b:{ discount:orderB.order_discount.amount, total:orderB.total }
+    });
+    output = { steps:steps, order_ids:fx.order_ids.slice(), aggregate:aggregate };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  qaStep_(steps, 'cleanup split order-total fixtures', cleanup && cleanup.ok ? 'ok' : 'failed', { cleanup:cleanup });
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { steps:steps, cleanup:cleanup }); throw caught; }
+  qaAssert_(cleanup && cleanup.ok === true, 'Split order-total fixture cleanup failed', cleanup);
+  output.steps = steps;
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunOrderRulesIdempotentMultiRepeatGiftsFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'OrderRuleIdempotentMultiGift');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'IdempotentMultiGift', 10, { price:100 });
+    fx.product_ids.push(product.id);
+    var giftA = qaCreateGiftItem_(fx.token, fx.stamp, 'IdempotentGiftA', { stock:20 });
+    var giftB = qaCreateGiftItem_(fx.token, fx.stamp, 'IdempotentGiftB', { stock:10 });
+    fx.gift_ids = [giftA.gift_id, giftB.gift_id];
+    var ruleA = qaCreateGiftRule_(fx.token, fx.stamp, 'IdempotentGiftA', giftA.gift_id, {
+      condition_json:{ required_products:[{ product_id:product.id, min_qty:1 }] },
+      gift_qty:2, repeat_mode:'per_threshold', priority:9200
+    });
+    var ruleB = qaCreateGiftRule_(fx.token, fx.stamp, 'IdempotentGiftB', giftB.gift_id, {
+      condition_json:{ required_products:[{ product_id:product.id, min_qty:2 }] },
+      gift_qty:1, repeat_mode:'per_threshold', priority:9100
+    });
+    fx.rule_ids = [ruleA.rule_id, ruleB.rule_id];
+    var clientOrderId = 'qa-rule-idem-' + fx.stamp + '-' + Utilities.getUuid().replace(/-/g,'').slice(0,8);
+    var payload = qaBuildOrderPayloadForProduct_('qa-rule-idem', fx.stamp, 'Buyer', product.id, fx.shipping, { qty:3, client_order_id:clientOrderId });
+    var first = qaSubmitAndTrack_(payload, fx.order_ids);
+    qaAssertOk_(first);
+    var afterFirst = {
+      product:qaGetProductStock_(product.id),
+      gift_a:qaGetGiftStock_(giftA.gift_id),
+      gift_b:qaGetGiftStock_(giftB.gift_id)
+    };
+    qaAssert_(afterFirst.product === 7 && afterFirst.gift_a === 14 && afterFirst.gift_b === 9,
+      'First submit deducted incorrect multiplied quantities', afterFirst);
+    var second = qaCall_('submitOrderRpc', [payload]);
+    qaAssert_(second && second.ok === false && second.error === 'DUPLICATE_ORDER',
+      'Second submit with the same client_order_id must be rejected', second);
+    var afterSecond = {
+      product:qaGetProductStock_(product.id),
+      gift_a:qaGetGiftStock_(giftA.gift_id),
+      gift_b:qaGetGiftStock_(giftB.gift_id)
+    };
+    qaAssert_(JSON.stringify(afterSecond) === JSON.stringify(afterFirst),
+      'Duplicate submit deducted stock a second time', { first:afterFirst, second:afterSecond });
+    var order = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(first)[0]);
+    qaAssert_(qaActiveGiftLines_(order, giftA.gift_id).reduce(function(s,g){ return s + Number(g.gift_qty || 0); }, 0) === 6
+      && qaActiveGiftLines_(order, giftB.gift_id).reduce(function(s,g){ return s + Number(g.gift_qty || 0); }, 0) === 1,
+      'Persisted idempotent order gift quantities mismatch', order.items);
+    output = { client_order_id:clientOrderId, first:first, second:second, stocks:afterSecond, order_id:order.order_id };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunOrderRulesCancelSameGiftMultiRuleLifecycleFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'OrderRuleCancelSameGift');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'CancelSameGift', 10, { price:200 });
+    fx.product_ids.push(product.id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'CancelSameGift', { stock:20 });
+    fx.gift_ids.push(gift.gift_id);
+    var condition = { required_products:[{ product_id:product.id, min_qty:1 }] };
+    var ruleHigh = qaCreateGiftRule_(fx.token, fx.stamp, 'CancelSameGiftHigh', gift.gift_id, {
+      condition_json:condition, repeat_mode:'per_threshold', priority:9200
+    });
+    var ruleLow = qaCreateGiftRule_(fx.token, fx.stamp, 'CancelSameGiftLow', gift.gift_id, {
+      condition_json:condition, repeat_mode:'per_threshold', priority:9100
+    });
+    fx.rule_ids = [ruleHigh.rule_id, ruleLow.rule_id];
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rule-cancel-same-gift', fx.stamp, 'Buyer', product.id, fx.shipping, { qty:2 }), fx.order_ids);
+    qaAssertOk_(res);
+    var orderId = qaOrderIdsFromSubmit_(res)[0];
+    var order = qaReadOrder_(fx.token, orderId);
+    var giftLines = qaActiveGiftLines_(order, gift.gift_id);
+    var totalGiftQty = giftLines.reduce(function(sum, line){ return sum + Number(line.gift_qty || 0); }, 0);
+    qaAssert_(giftLines.length === 2 && totalGiftQty === 4,
+      'Two repeated rules must persist as two lines totalling four gift units', giftLines);
+    qaAssert_(qaGetProductStock_(product.id) === 8 && qaGetGiftStock_(gift.gift_id) === 16,
+      'Submit stock state mismatch', { product:qaGetProductStock_(product.id), gift:qaGetGiftStock_(gift.gift_id) });
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'cancelled', 'qa cancel repeated gift order']));
+    qaAssert_(qaGetProductStock_(product.id) === 10 && qaGetGiftStock_(gift.gift_id) === 20,
+      'Cancel must restore aggregated product/gift quantities', { product:qaGetProductStock_(product.id), gift:qaGetGiftStock_(gift.gift_id) });
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'cancelled', 'qa repeated cancel must be idempotent']));
+    qaAssert_(qaGetProductStock_(product.id) === 10 && qaGetGiftStock_(gift.gift_id) === 20,
+      'Repeated cancel must not restore stock twice', { product:qaGetProductStock_(product.id), gift:qaGetGiftStock_(gift.gift_id) });
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'paid', 'qa un-cancel repeated gift order']));
+    qaAssert_(qaGetProductStock_(product.id) === 8 && qaGetGiftStock_(gift.gift_id) === 16,
+      'Un-cancel must atomically re-deduct aggregated product/gift quantities', { product:qaGetProductStock_(product.id), gift:qaGetGiftStock_(gift.gift_id) });
+    output = { order_id:orderId, gift_line_count:giftLines.length, total_gift_qty:totalGiftQty, final_product_stock:8, final_gift_stock:16 };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunOrderRulesProductionSummaryMultipliedGiftsFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'OrderRuleProductionSummary');
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'ProductionSummary', 10, { price:1000 });
+    fx.product_ids.push(product.id);
+    var promo = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'ProductionSummary', { discount_value:100 });
+    fx.promotion_ids.push(promo.promotion_id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'ProductionSummary', { stock:20 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'ProductionSummary', gift.gift_id, {
+      condition_json:{ required_products:[{ product_id:product.id, min_qty:2 }] },
+      gift_qty:2, repeat_mode:'per_threshold'
+    });
+    fx.rule_ids.push(rule.rule_id);
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rule-production-summary', fx.stamp, 'Buyer', product.id, fx.shipping, { qty:4 }), fx.order_ids);
+    qaAssertOk_(res);
+    var orderId = qaOrderIdsFromSubmit_(res)[0];
+    qaAssertOk_(qaCall_('orderUpdateStatusRpc', [fx.token, orderId, 'approved', 'qa production summary']));
+    var summary = qaCall_('orderProductionSummaryRpc', [fx.token, { statuses:['approved'] }]);
+    qaAssertOk_(summary);
+    var productSummary = (summary.products || []).filter(function(p){ return String(p.product_id) === String(product.id); })[0];
+    var giftSummary = (summary.gifts || []).filter(function(g){ return String(g.gift_id) === String(gift.gift_id); })[0];
+    qaAssert_(productSummary && Number(productSummary.qty) === 4,
+      'Production summary must count all four product units', { product:productSummary, summary:summary });
+    qaAssert_(giftSummary && Number(giftSummary.qty) === 4,
+      'Production summary must count all four multiplied gift units', { gift:giftSummary, summary:summary });
+    var order = qaReadOrder_(fx.token, orderId);
+    var line = qaFindProductLine_(order, product.id);
+    qaAssert_(line && Number(line.unit_final_price) === 900,
+      'Production-summary fixture must retain its promotion snapshot', line);
+    output = { order_id:orderId, product_summary:productSummary, gift_summary:giftSummary, filtered_statuses:summary.filteredStatuses };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
+  output.cleanup = cleanup;
+  return output;
+}
+
+function qaRunOrderRulesMultipliedGiftsMonetaryNeutralFlow_(ctx) {
+  var fx = qaCreateCommerceFixture_(ctx, 'OrderRuleGiftMonetaryNeutral', {
+    mode:'weight',
+    brackets:[
+      { from_g:0, to_g:999, price:40 },
+      { from_g:1000, to_g:1999, price:80 },
+      { from_g:2000, to_g:999999, price:130 }
+    ]
+  });
+  var caught = null, output = null;
+  try {
+    var product = qaCreateOrderQaProduct_(fx.token, fx.shipping, fx.stamp, 'GiftMonetaryNeutral', 5, {
+      price:1000, weight_grams:750
+    });
+    fx.product_ids.push(product.id);
+    var promo = qaCreatePromotion_(fx.token, product.id, fx.stamp, 'GiftMonetaryNeutral', { discount_value:100 });
+    fx.promotion_ids.push(promo.promotion_id);
+    var gift = qaCreateGiftItem_(fx.token, fx.stamp, 'GiftMonetaryNeutral', { stock:50 });
+    fx.gift_ids.push(gift.gift_id);
+    var rule = qaCreateGiftRule_(fx.token, fx.stamp, 'GiftMonetaryNeutral', gift.gift_id, {
+      condition_json:{ required_products:[{ product_id:product.id, min_qty:1 }] },
+      gift_qty:10, repeat_mode:'per_threshold'
+    });
+    fx.rule_ids.push(rule.rule_id);
+    var res = qaSubmitAndTrack_(qaBuildOrderPayloadForProduct_('qa-rule-gift-money', fx.stamp, 'Buyer', product.id, fx.shipping, { qty:2 }), fx.order_ids);
+    qaAssertOk_(res);
+    var order = qaReadOrder_(fx.token, qaOrderIdsFromSubmit_(res)[0]);
+    var line = qaFindProductLine_(order, product.id);
+    var gifts = qaActiveGiftLines_(order, gift.gift_id);
+    qaAssert_(line && Number(line.unit_final_price) === 900 && Number(line.subtotal) === 1800,
+      'Promoted product monetary snapshot mismatch', line);
+    qaAssert_(gifts.length === 1 && Number(gifts[0].gift_qty) === 20,
+      'Repeated gift quantity must be twenty', gifts);
+    qaAssert_(Number(order.subtotal) === 1800 && Number(order.shipping_fee) === 80 && Number(order.total) === 1880,
+      'Gift quantity must not affect subtotal, shipping weight, or total', order);
+    qaAssert_(qaGetProductStock_(product.id) === 3 && qaGetGiftStock_(gift.gift_id) === 30,
+      'Product/gift stocks must still deduct their own quantities', { product:qaGetProductStock_(product.id), gift:qaGetGiftStock_(gift.gift_id) });
+    output = { order_id:order.order_id, product_subtotal:order.subtotal, shipping_fee:order.shipping_fee, total:order.total, gift_qty:gifts[0].gift_qty };
+  } catch (err) { caught = err; }
+  var cleanup = qaCleanupCommerceFixture_(fx);
+  if (caught) { caught.details = Object.assign({}, caught.details || {}, { cleanup:cleanup }); throw caught; }
   output.cleanup = cleanup;
   return output;
 }

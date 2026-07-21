@@ -932,6 +932,9 @@
       ? '<hr class="r5div">'
         + '<div class="r5tots">'
         + '<div class="r5tr"><span>ราคาสินค้า</span><span>' + fmtMoney(o.subtotal) + '</span></div>'
+        + (((o.order_discount && Number(o.order_discount.amount)) || 0) > 0
+            ? '<div class="r5tr"><span>ส่วนลดท้ายบิล</span><span>-' + fmtMoney(Number(o.order_discount.amount)) + '</span></div>'
+            : '')
         + shippingRows
         + '<div class="r5grand"><span>รวมทั้งสิ้น</span><span>' + fmtMoney(o.total) + '</span></div>'
         + '</div>'
@@ -1378,7 +1381,7 @@
         icon: 'warning', showCancelButton: true,
         confirmButtonText: 'ดำเนินการต่อ', cancelButtonText: 'ยกเลิก', confirmButtonColor: '#111827'
       });
-      if (!res.isConfirmed) return;
+      if (!res.isConfirmed) { _setExportBusy(false); hideHUD('ok', ''); return; }
     }
     _saveSenderSilent();
     _setExportBusy(true, 'กำลังสร้าง PDF ใบเสร็จ…');
