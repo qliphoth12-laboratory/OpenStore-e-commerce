@@ -1,10 +1,12 @@
 # Performance Test Report
 
-> ไฟล์นี้เป็น template อ้างอิง รายงานจริงจะถูกสร้างใน `performance/results/report-YYYYMMDD-HHMM.md`
+> ไฟล์นี้เป็น template อ้างอิงสำหรับ Open Storefront `v1.1.0` รายงานจริงจะถูกสร้างใน `QA/performance/results/report-YYYYMMDD-HHMM.md`
 
 ## สรุป
 
 - URL ที่ทดสอบ:
+- System version / deployment:
+- Git commit หรือ release tag:
 - วันที่ทดสอบ:
 - รูปแบบทดสอบ:
 - จำนวนผู้ใช้พร้อมกัน:

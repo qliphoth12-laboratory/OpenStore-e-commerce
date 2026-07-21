@@ -1,5 +1,7 @@
 # ระบบ Activity Log
 
+เอกสารนี้อ้างอิงระบบ logging ของ **Open Storefront `v1.1.0`**
+
 เอกสารนี้อธิบายระบบ **traffic และ activity log แบบ best-effort** ของ Open Storefront ที่รันบน Google Apps Script (GAS) Web App
 ระบบนี้บันทึกเหตุการณ์ด้าน authentication, order, payment, admin และ security เป็นไฟล์ JSON Lines ที่อ่านด้วยเครื่องได้ใน Google Drive
 
@@ -110,8 +112,8 @@ field นี้บอกว่า client context มาจากที่ไห�
 | `request` | context ถูกเก็บจากหน้าที่เรียก RPC นั้นโดยตรง เช่น login หรือ storefront checkout |
 | `session_login` | context มาจาก session ของ admin ซึ่งถูกสังเกตตอน admin login ไม่ใช่ตอน action ปัจจุบัน |
 
-admin mutation events เช่น `product.*`, `order.status.update`, `order.mark.shipped`,
-`user.*`, `promotion.*`, `payment.config.update`, `key.rotate.*`
+admin mutation events เช่น `product.*`, `order.status.update`, `order.fulfillment.update`, `order.mark.shipped`,
+`user.*`, `promotion.*`, `gift.*`, `payment.config.update`, `key.rotate.*`
 จะใช้ `context_source: session_login`
 
 ค่า `client.ip` และ `user_agent` ของ event เหล่านี้จึงเป็นค่าที่เห็นตอน login

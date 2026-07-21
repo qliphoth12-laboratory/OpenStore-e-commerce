@@ -1,5 +1,7 @@
 # Performance Test สำหรับหน้า Storefront
 
+เอกสารนี้อ้างอิง storefront ของ **Open Storefront `v1.1.0`**
+
 โฟลเดอร์นี้เป็นเครื่องมือทดสอบ performance ของหน้า `index.html` / storefront ที่ deploy ผ่าน Google Apps Script Web App แล้ว โดยเน้น Phase แรกเป็นการยิง `GET` หน้าเว็บเท่านั้น เพื่อวัดแบบคร่าว ๆ ว่าระบบยังตอบสนองได้ดีถึงผู้ใช้พร้อมกันประมาณกี่คน
 
 เครื่องมือนี้ไม่แก้ business logic ของร้านค้า และไม่ส่งคำสั่ง checkout หรือสร้าง order จริง
@@ -16,7 +18,7 @@
 คัดลอกไฟล์ตัวอย่าง:
 
 ```powershell
-cd performance
+cd QA\performance
 Copy-Item config.example.json config.json
 ```
 
@@ -57,7 +59,7 @@ Copy-Item config.example.json config.json
 ติดตั้ง/ตรวจ package:
 
 ```powershell
-cd performance
+cd QA\performance
 npm install
 ```
 
@@ -121,13 +123,13 @@ node run-performance-test.js --config config.json --users 10 --duration 60 --ram
 รายงาน Markdown จะถูกสร้างที่:
 
 ```text
-performance/results/report-YYYYMMDD-HHMM.md
+QA/performance/results/report-YYYYMMDD-HHMM.md
 ```
 
 และมี raw data เป็น JSON คู่กัน:
 
 ```text
-performance/results/report-YYYYMMDD-HHMM.json
+QA/performance/results/report-YYYYMMDD-HHMM.json
 ```
 
 ## วิธีอ่านผล

@@ -1,5 +1,7 @@
 # Open Storefront
 
+**Current system version: `v1.1.0`**
+
 Open Storefront คือระบบหน้าร้านอีคอมเมิร์ซแบบ self-hosted ที่ทำงานบน **Google Apps Script (GAS)** ทั้งระบบ
 ไม่ต้อง build โปรเจกต์ ไม่ต้องใช้ package manager และไม่ต้องเช่า server เพิ่ม โดย backend เป็น Apps Script Web App เพียงตัวเดียว
 ข้อมูลจัดเก็บใน Google Sheets และรูปสินค้าเก็บใน Google Drive
@@ -15,8 +17,11 @@ Open Storefront คือระบบหน้าร้านอีคอมเ�
 
 ## คุณสมบัติหลัก
 
-- หน้าร้านพร้อมตะกร้าสินค้า checkout ตัวเลือกสินค้า โปรโมชัน และแคมเปญของแถม
+- หน้าร้านพร้อมตะกร้าสินค้า checkout ตัวเลือกสินค้า และการตรวจราคา/สต็อก/variant จากข้อมูล authoritative ฝั่ง server
+- โปรโมชันแบบลดทันทีหรือมีเงื่อนไข รองรับส่วนลดต่อสินค้าและส่วนลดท้ายบิล (`order_total`) โดยเลือกส่วนลดที่คุ้มที่สุดและไม่ stack
+- แคมเปญของแถมแบบครั้งเดียวหรือแจกซ้ำตามจำนวน threshold รองรับเงื่อนไขสินค้า/variant แบบ ALL และ ANY
 - แผงจัดการหลังบ้านสำหรับสินค้า คำสั่งซื้อ โปรโมชัน ของแถม ขนส่ง การชำระเงิน และผู้ใช้
+- แยกวิธีจัดส่งที่ลูกค้าจ่ายเงินออกจากบริษัทขนส่งจริงที่ร้านเลือกใช้ โดยไม่แก้ snapshot ราคาเดิมของออเดอร์
 - หน้าติดตามคำสั่งซื้อสำหรับลูกค้าผ่านลิงก์ส่วนตัวแบบ `?token=` โดยไม่ต้องเข้าสู่ระบบ
 - รองรับการเชื่อมต่อสถานะขนส่ง เช่น AfterShip, Thailand Post และ ETracking
 - ระบบเข้าสู่ระบบผู้ดูแลด้วยการ hash รหัสผ่านแบบ PBKDF2 และเลือกเปิดใช้ OTP 2FA ทางอีเมลได้
@@ -39,7 +44,7 @@ Open Storefront คือระบบหน้าร้านอีคอมเ�
 | `System/Frontend/login.html` | หน้าเข้าสู่ระบบผู้ดูแลและ OTP 2FA |
 | `System/Frontend/admin-shared.html` | ส่วน UI กลางของหลังบ้าน เช่น sidebar, topbar และ helper ต่าง ๆ |
 | `System/Frontend/privacy-policy.html`, `term_and_service.html` | หน้าเอกสารทางกฎหมายสำหรับผู้ใช้ทั่วไป |
-| `QA/` | ชุดทดสอบ integration, E2E และเครื่องมือ load test ด้าน performance |
+| `QA/` | ชุดทดสอบ unit, integration, E2E และเครื่องมือ load test ด้าน performance |
 | `docs/` | เอกสาร architecture และ logging |
 
 ## การติดตั้ง
@@ -66,8 +71,10 @@ Open Storefront คือระบบหน้าร้านอีคอมเ�
 
 ## QA
 
+- `QA/unit/` คือ dependency-free Node.js unit tests สำหรับตรวจ pricing parity ระหว่างหน้าร้านกับ live editor
+  และตรวจ zero-trust cart/variant/quantity contract ของ backend รันจาก root ด้วย `npm --prefix QA/unit test`
 - `QA/Integration/` คือชุดทดสอบ integration ให้คัดลอก `integration-tests.gs` และ `integration-dashboard.html`
-  เข้า Apps Script project แล้วเรียก `qaOpenIntegrationDashboard()` จาก editor
+  เข้า Apps Script project อัปเดต test deployment แล้วเปิด `?page=qa-integration` บน Web App URL
 - `QA/performance/` คือ Node.js load test สำหรับ Node 18+ ให้คัดลอก `config.example.json`
   เป็น `config.json` ตั้งค่า deployed Web App URL จากนั้นรัน `npm install` และ `npm run smoke`
 - `QA/E2E/` คือ Playwright Chromium E2E tests สำหรับทดสอบกับ deployed Web App ให้คัดลอก
@@ -75,6 +82,8 @@ Open Storefront คือระบบหน้าร้านอีคอมเ�
   จากนั้นรัน `npm install && npx playwright install chromium` และ `npm run e2e`
 
 อ่านคู่มือ QA แบบเต็มได้ที่ [QA/Dev.md](QA/Dev.md)
+
+ลำดับตรวจรุ่นที่แนะนำคือ Unit → Integration บน QA deployment → E2E → Performance smoke
 
 ## Activity logging (ไม่บังคับ)
 
